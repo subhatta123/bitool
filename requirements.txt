@@ -1,0 +1,19 @@
+streamlit
+pandas
+# For database connections (will add specific ones as we implement them)
+sqlalchemy
+# psycopg2-binary
+# oracledb
+pyodbc # For SQL Server
+Werkzeug # For password hashing
+
+# For LLM integration (choose one and uncomment)
+# openai
+# google-generativeai
+openai # Using OpenAI
+
+# For advanced visualizations if needed
+# matplotlib
+plotly # Using Plotly for interactive charts
+
+# plotly 

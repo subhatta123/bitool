@@ -1,0 +1,15 @@
+{
+    "admin": {
+        "hashed_password": "pbkdf2:sha256:600000$A1r3ZKLPEunANLbF$825cfaa165704d2d93d0d0515b58e55ab98be8da02b082aa1fc57f1807e1f29e",
+        "roles": [
+            "admin",
+            "superuser"
+        ]
+    },
+    "test": {
+        "hashed_password": "pbkdf2:sha256:600000$AumEQbBRILZxOXjc$68386c172b1d66cc06669644c38b4b428e98a348ccdbecb244984a76d439fc53",
+        "roles": [
+            "query_user"
+        ]
+    }
+}
