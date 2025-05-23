@@ -14,11 +14,24 @@ import time # Added for simulating delays if needed
 from io import BytesIO # For handling byte streams, e.g., for PDF export
 from openai import OpenAI # Assuming use of the OpenAI library
 
+# Attempt to import Playwright for Image generation
+PLAYWRIGHT_AVAILABLE_APP = False  # Force disable due to Windows asyncio NotImplementedError
+PLAYWRIGHT_IMPORT_ERROR = "Disabled to avoid Windows asyncio NotImplementedError"
+try:
+    # Importing is attempted but flag remains False to prevent usage
+    from playwright.sync_api import sync_playwright
+    # We're not setting PLAYWRIGHT_AVAILABLE_APP to True to avoid the error
+    print("[app.py] Playwright found but disabled to avoid Windows asyncio NotImplementedError")
+except ImportError as e_pw:
+    PLAYWRIGHT_IMPORT_ERROR = str(e_pw)
+    # This warning will appear if playwright is not installed. Users should pip install playwright & playwright install
+    st.sidebar.warning(f"Playwright library not found. Image generation for email disabled. Error: {e_pw}", icon="📷")
+    print(f"[app.py] Playwright not found: {e_pw}. Run 'pip install playwright' and 'playwright install'.")
+
 # --- Custom Modules ---
 # from send_email import show_send_email_ui # Import the UI function - Commented out old way
 import send_email # New way: Import the module
 import database # Import the new database module
-import query_clarifier # Import the new query clarifier module
 
 # --- Page Setup (MUST BE THE FIRST STREAMLIT COMMAND) ---
 st.set_page_config(
@@ -34,420 +47,269 @@ st.set_page_config(
 def load_custom_css():
     css = """
     <style>
-        /* --- Global & Body (V7.3) --- */
-        html, body {
-            height: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            /* overflow: hidden !important; /* Temporarily disable to see if it causes content to be cut off */
-        }
+        /* --- Global Styles --- */
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background-color: #F0F2F6 !important; 
-            color: #333333;
+            color: #333333; /* Dark gray text for better readability on light background */
         }
-        .stApp, #root {
-            background-color: transparent !important; 
-            min-height: 100vh !important;
+
+        /* --- Streamlit Specific Overrides --- */
+        .stApp {
+            background-color: #F0F2F6; /* Light grayish-blue background */
+        }
+
+        /* --- Login Page Styling --- */
+        .login-container {
             display: flex;
             flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding-top: 2rem; /* Add some space from the top */
         }
-        .main { 
-             flex-grow: 1; 
-             width: 100%; 
+        .login-box {
+            background-color: #FFFFFF;
+            padding: 2rem 2.5rem 2.5rem 2.5rem; /* N S E W */
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 420px; /* Control max width of the login box */
         }
-        .main > .block-container {
-             width: 100% !important;
-             max-width: 100% !important; 
-             box-sizing: border-box;
+        .login-box h1 {
+            font-size: 1.8rem; /* Slightly smaller than default H1 for balance */
+            text-align: center;
+            color: #1F2937;
+            margin-bottom: 1.5rem;
         }
-
-        /* --- Typography (V7.3) --- */
-        h1, h2, h3, h4, h5, h6 {
-            color: #1F2937; 
-            font-weight: 600;
+        .login-box .stButton button {
+            width: 100%; /* Make login button full width */
+            margin-top: 1rem; /* Add space above the button */
         }
-        .main .block-container h1 { font-size: 2.0rem; margin-bottom: 0.75rem; color: #2c3e50; font-weight:700; }
-        .main .block-container h2 { font-size: 1.6rem; margin-bottom: 0.6rem; color: #34495e; }
-        .main .block-container h3 { font-size: 1.3rem; margin-bottom: 0.5rem; color: #34495e; }
-        .main .block-container > div > div > div > div > h2 { /* Dashboard Subheader */
-             font-size: 1.2rem !important;
-             color: #5A5A5A !important;
-             font-weight: 500 !important;
-             margin-top: -0.5rem !important; 
-             margin-bottom: 1.75rem !important; 
-        }
-
-        /* --- Login Page Styling (V7.3 - Input Field Visibility Focus) --- */
-             /* --- Login Page Styling (V7.4 - Barebones Input Visibility Test) --- */
-        div.login-container { 
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: center !important;
-            min-height: 100vh !important; 
-            width: 100vw !important; 
-            padding: 1rem !important; 
-            background: linear-gradient(135deg, #6200ea 0%, #200079 100%) !important; 
-            box-sizing: border-box !important;
-            position: fixed !important; 
-            top: 0 !important; left: 0 !important;
-            z-index: 20000 !important; 
-            overflow-y: auto !important; 
-        }
-        div.login-box { 
-            background-color: lightgoldenrodyellow !important; /* OBVIOUS BG FOR BOX */
-            padding: 2rem !important; 
-            border: 3px solid red !important; /* OBVIOUS BORDER FOR BOX */
-            border-radius: 1rem !important; 
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2) !important; 
-            width: 90% !important; /* Test width */
-            max-width: 450px !important; 
-            text-align: center !important;
-            opacity: 1 !important; 
-            transform: none !important; 
-            overflow: visible !important; 
+        .login-box .stTextInput input {
+             height: 2.8rem; /* Make input fields a bit taller */
         }
 
-        div.login-box h1 { 
-            font-size: 2rem !important; 
-            font-weight: 700 !important;
-            color: black !important; /* OBVIOUS COLOR */
-            margin-bottom: 1.5rem !important;
-            display: block !important; 
-        }
-
-        /* Text Input Container (Streamlit's wrapper) */
-        div.login-box div[data-testid="stTextInput"] { 
-            margin-bottom: 1rem !important; 
-            padding: 5px !important;
-            border: 2px dashed blue !important; /* OBVIOUS BORDER FOR TEXT INPUT WRAPPER */
-            background-color: #f0f0f0 !important; /* Light grey for wrapper */
-            display: block !important; 
-            width: 100% !important; 
-            visibility: visible !important; 
-            min-height: 60px !important; /* Ensure wrapper has height */
-        }
-        /* Text Input Label */
-        div.login-box div[data-testid="stTextInput"] label {
-            display: block !important; 
-            text-align: left !important;
-            font-size: 0.9rem !important;
-            color: black !important; /* OBVIOUS COLOR */
-            margin-bottom: 0.25rem !important; 
-            font-weight: 600 !important;
-            visibility: visible !important;
-            border: 1px solid green !important; /* OBVIOUS BORDER FOR LABEL */
-            padding: 2px !important;
-        }
-        /* Actual <input> element */
-        div.login-box div[data-testid="stTextInput"] input[type="text"],
-        div.login-box div[data-testid="stTextInput"] input[type="password"] {
-            display: block !important; 
-            width: calc(100% - 10px) !important; /* Ensure it fits within padding */
-            height: auto !important; /* Let content define height */
-            min-height: 30px !important; /* Absolute minimum */
-            padding: 8px 5px !important; 
-            font-size: 1rem !important;
-            color: black !important; /* OBVIOUS COLOR */
-            background-color: white !important; /* OBVIOUS BG */
-            border: 2px solid hotpink !important; /* OBVIOUS BORDER FOR INPUT */
-            border-radius: 0.3rem !important;
-            visibility: visible !important; 
-            opacity: 1 !important; 
-            position: static !important; /* Ensure no weird positioning */
-            z-index: 1 !important; 
-            box-sizing: border-box !important;
-        }
-        
-        div.login-box .stButton button { 
-            width: 100% !important;
-            margin-top: 1.5rem !important; 
-            padding: 0.8rem !important;
-            font-size: 1rem !important;
-            font-weight: 600 !important;
-            background-color: #5a32a3 !important; 
-            color: white !important;
-            border-radius: 0.5rem !important;
-            border: none !important;
-            display: block !important; 
-        }
-        /* End of Login Page Specific Styling */
-        div.login-box .stButton button:hover {
-            background-color: #482880 !important; 
-            transform: translateY(-3px) !important;
-            box-shadow: 0 6px 15px rgba(90, 50, 163, 0.3);
-        }
-        div.login-box .stButton button:active {
-            transform: translateY(-1px) !important;
-            box-shadow: 0 2px 8px rgba(90, 50, 163, 0.25);
-        }
-        /* End of Login Page Specific Styling */
-
-        /* --- Sidebar Styling (V7.3 - consistent with login attempt) --- */
+        /* --- Sidebar Styling --- */
         div[data-testid="stSidebar"] {
-            background-color: #FFFFFF !important;
-            border-right: 1px solid #E7E9ED !important; 
-            padding: 1.25rem 0.9rem !important; 
-            z-index: 100; 
+            background-color: #FFFFFF; /* White sidebar */
+            border-right: 1px solid #D1D5DB; /* Light gray border */
         }
-        div[data-testid="stSidebarNavItems"] { 
-             padding-top: 0.5rem;
-        }
-        div[data-testid="stSidebar"] .stButton button { 
-            background-color: transparent !important; 
-            color: #4A5568 !important; 
-            border-radius: 0.35rem !important;
-            font-weight: 500 !important;
-            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out !important;
-            width: 100% !important; 
-            margin-bottom: 0.4rem !important; 
-            padding: 0.55rem 0.7rem !important; 
-            text-align: left !important;
-            justify-content: flex-start !important;
-            font-size: 0.9rem !important;
-            border: 1px solid transparent !important; 
+        div[data-testid="stSidebar"] .stButton button {
+            background-color: #7C3AED; /* Vibrant purple for buttons */
+            color: #FFFFFF;
+            border-radius: 0.375rem;
+            transition: background-color 0.3s ease;
         }
         div[data-testid="stSidebar"] .stButton button:hover {
-            background-color: #F0F2F6 !important; 
-            color: #6f42c1 !important; 
-            border: 1px solid #E0E0E0 !important;
+            background-color: #6D28D9; /* Darker purple on hover */
         }
-        div[data-testid="stSidebar"] h1, 
-        div[data-testid="stSidebar"] h2,
+        div[data-testid="stSidebar"] h2, 
         div[data-testid="stSidebar"] h3,
-        div[data-testid="stSidebar"] .stMarkdown h1, 
-        div[data-testid="stSidebar"] .stMarkdown h2,
-        div[data-testid="stSidebar"] .stMarkdown h3 {
-            color: #333745 !important;
-            font-size: 1.05rem !important; 
-            margin-bottom: 0.4rem !important;
-            font-weight: 600 !important;
-            padding-left: 0.25rem;
-        }
         div[data-testid="stSidebar"] label,
-        div[data-testid="stSidebar"] .stMarkdown,
-        div[data-testid="stSidebar"] .stCaption {
-            color: #55596D !important; 
-            font-size: 0.85rem !important;
-            padding-left: 0.25rem;
-        }
-        div[data-testid="stSidebar"] .stSelectbox > label { 
-             font-weight: 600 !important;
-             color: #333745 !important;
-             margin-bottom: 0.25rem !important;
-             font-size: 0.9rem !important;
+        div[data-testid="stSidebar"] .stMarkdown {
+            color: #4B5563; /* Cool gray for sidebar text */
         }
          div[data-testid="stSidebar"] .stExpander header {
-            font-size: 0.9rem !important;
-            color: #6f42c1 !important;
-            font-weight: 600 !important;
-            padding: 0.5rem 0.25rem !important; 
+            font-size: 1.0rem;
+            color: #A855F7; /* Lighter purple for expander headers */
+            font-weight: 600;
         }
-         div[data-testid="stSidebar"] .stExpander header svg {
-            fill: #6f42c1 !important;
-        }
-        div[data-testid="stSidebar"] .stExpander div[data-baseweb="card"] {
-             padding: 0.5rem 0.25rem !important; 
+        div[data-testid="stSidebar"] .stExpander header span { 
+            color: #A855F7 !important; 
         }
 
-        /* --- Main Content General Styling (V7.3) --- */
-        .main .block-container { 
-            padding: 1.5rem 2rem 2.5rem 2rem !important; 
-        }
-        .main .stButton button { 
-            background-color: #6f42c1 !important; 
-            color: #FFFFFF !important;
-            border: none !important;
-            border-radius: 0.35rem !important;
-            padding: 0.55rem 1.1rem !important;
-            font-weight: 500 !important;
-            font-size: 0.9rem !important;
-            transition: background-color 0.2s ease-in-out !important;
-        }
-        .main .stButton button:hover {
-            background-color: #59349A !important; 
-        }
-        .main .stButton button:disabled {
-            background-color: #E0E0E0 !important; 
-            color: #A0A0A0 !important;
-        }
-        .main .stTextInput input, 
-        .main .stSelectbox div[data-baseweb="select"] > div,
-        .main .stTextArea textarea,
-        .main .stDateInput input,
-        .main .stNumberInput input {
-            background-color: #FFFFFF !important;
-            color: #212529 !important;
-            border: 1px solid #CED4DA !important; 
-            border-radius: 0.35rem !important;
-            padding: 0.55rem 0.8rem !important;
-            font-size: 0.88rem !important;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
-        }
-        .main .stTextInput input:focus,
-        .main .stSelectbox div[data-baseweb="select"] > div:focus-within,
-        .main .stTextArea textarea:focus,
-        .main .stDateInput input:focus,
-        .main .stNumberInput input:focus {
-            border-color: #6f42c1 !important;
-            box-shadow: 0 0 0 0.18rem rgba(111, 66, 193, 0.2) !important;
-        }
-        .main .stTextInput > label, 
-        .main .stSelectbox > label,
-        .main .stTextArea > label,
-        .main .stDateInput > label,
-        .main .stNumberInput > label {
-            color: #343A40 !important;
-            font-weight: 500 !important;
-            margin-bottom: 0.25rem !important;
-            font-size: 0.88rem !important;
-        }
-        .stAlert {
-            border-radius: 0.4rem !important;
-            border-width: 0 !important;
-            border-left-width: 4px !important;
-            padding: 0.8rem 1.1rem !important;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
-            font-size: 0.88rem !important;
-        }
-        div[data-testid="stSuccess"] { background-color: #E6FFFA !important; border-left-color: #38A169 !important; color: #2A694C !important; }
-        div[data-testid="stSuccess"] svg { fill: #2A694C !important; }
-        div[data-testid="stWarning"] { background-color: #FFFBEB !important; border-left-color: #D69E2E !important; color: #975A16 !important; }
-        div[data-testid="stWarning"] svg { fill: #975A16 !important; }
-        div[data-testid="stError"] { background-color: #FFF5F5 !important; border-left-color: #E53E3E !important; color: #9B2C2C !important; }
-        div[data-testid="stError"] svg { fill: #9B2C2C !important; }
-        div[data-testid="stInfo"] { background-color: #EBF8FF !important; border-left-color: #3182CE !important; color: #2C5282 !important; }
-        div[data-testid="stInfo"] svg { fill: #2C5282 !important; }
 
-        /* --- Card-Based Dashboard Styling (V7.3) --- */
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] { 
-            background-color: #FFFFFF !important;
-            border: 1px solid #DEE2E6 !important; 
-            border-radius: 0.6rem !important; 
-            padding: 1.5rem !important; 
-            margin-bottom: 1.75rem !important;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.06) !important; 
-            transition: box-shadow 0.2s ease-out, transform 0.2s ease-out !important;
+        /* --- Main Content Styling --- */
+        h1, h2, h3, h4, h5, h6 {
+            color: #1F2937; /* Very dark gray (almost black) for headers */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"]:hover {
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.07) !important;
-            transform: translateY(-4px) !important;
+        
+        .stButton button {
+            background-color: #8B5CF6; /* Purple for primary actions */
+            color: #FFFFFF;
+            border: none;
+            border-radius: 0.375rem;
+            padding: 0.5rem 1rem;
+            font-weight: 600;
+            transition: background-color 0.3s ease;
         }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] > div[data-testid="stVerticalBlock"] { 
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 1.1rem !important; 
+        .stButton button:hover {
+            background-color: #7C3AED; /* Darker purple on hover */
         }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stTextInput input.editable-title-input { 
-            font-size: 1.05em !important; 
-            font-weight: 600 !important;
-            color: #343A40 !important;
-            padding: 0.15rem 0 !important; 
-            margin-bottom: 0.4rem !important; 
+        .stButton button:disabled {
+            background-color: #D1D5DB; /* Light gray for disabled */
+            color: #6B7280; /* Medium gray text for disabled */
+        }
+
+        /* Styling for text inputs, selectbox, etc. */
+        div[data-testid="stTextInput"] input, 
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+        div[data-testid="stTextArea"] textarea {
+            background-color: #FFFFFF; /* White background for inputs */
+            color: #1F2937; /* Dark text in inputs */
+            border: 1px solid #D1D5DB; /* Light gray border */
+            border-radius: 0.375rem;
+        }
+        div[data-testid="stTextInput"] label,
+        div[data-testid="stSelectbox"] label,
+        div[data-testid="stTextArea"] label {
+            color: #374151; /* Dark gray for form labels */
+        }
+
+
+        /* Style for KPI Metrics */
+        div[data-testid="stMetric"] {
+            background-color: #FFFFFF; /* White card background */
+            border: 1px solid #E5E7EB; /* Very light gray border */
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            text-align: left;
+            color: #1F2937; /* Dark text for KPIs */
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* Subtle shadow */
+        }
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.9rem;
+            color: #6B7280; /* Medium gray for label */
+            margin-bottom: 0.3rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        div[data-testid="stMetricValue"] {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #7C3AED; /* Purple value */
+            line-height: 1.1;
+        }
+        div[data-testid="stMetricDelta"] {
+            font-size: 0.9rem;
+            color: #10B981; /* Green for positive delta */
+            /* Consider styles for negative delta: color: #EF4444; (Red) */
+        }
+
+        /* Styling for dashboard item containers (charts/tables below KPIs) */
+        .stDataFrame, .stPlotlyChart {
+            background-color: #FFFFFF; /* White background */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid #E5E7EB; /* Very light gray border */
+        }
+        
+        /* Expander styling */
+        .stExpander header {
+            font-size: 1.0rem;
+            color: #7C3AED !important; /* Purple for expander headers */
+            font-weight: 600;
+        }
+        .stExpander header span { 
+            color: #7C3AED !important; 
+        }
+        .stExpander header svg { 
+            fill: #7C3AED !important; /* Purple arrow */
+        }
+        .stExpander div[data-baseweb="card"]{
+             background-color: #F9FAFB; /* Very light gray for expander content */
+             border: 1px solid #E5E7EB; 
+        }
+
+        /* Table styling for st.dataframe */
+        table {
+            color: #374151; /* Dark gray text */
+        }
+        th {
+            background-color: #F3F4F6; /* Light gray for table headers */
+            color: #1F2937; /* Very dark gray for header text */
+            font-weight: bold;
+        }
+        td, th {
+            border: 1px solid #E5E7EB; /* Light gray borders */
+        }
+
+        /* --- Jazzy Accents --- */
+        .stAlert { 
+            border-radius: 0.375rem;
+            border-left-width: 4px;
+        }
+        div[data-testid="stSuccess"] {
+            background-color: #D1FAE5; 
+            border-left-color: #10B981; 
+            color: #065F46; 
+        }
+         div[data-testid="stSuccess"] svg { 
+            fill: #065F46 !important; 
+        }
+
+        div[data-testid="stWarning"] {
+            background-color: #FEF3C7;
+            border-left-color: #F59E0B;
+            color: #92400E;
+        }
+        div[data-testid="stWarning"] svg {
+             fill: #92400E !important;
+        }
+
+        div[data-testid="stError"] {
+            background-color: #FEE2E2;
+            border-left-color: #EF4444;
+            color: #991B1B;
+        }
+         div[data-testid="stError"] svg {
+             fill: #991B1B !important;
+        }
+
+        div[data-testid="stInfo"] {
+            background-color: #DBEAFE;
+            border-left-color: #3B82F6;
+            color: #1E40AF;
+        }
+        div[data-testid="stInfo"] svg {
+            fill: #1E40AF !important;
+        }
+
+
+        /* --- Custom Scrollbars  --- */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #E5E7EB; /* Light gray track */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #A78BFA; /* Lighter purple thumb */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #8B5CF6; /* Purple thumb on hover */
+        }
+
+        /* Styling for in-place editable text inputs */
+        .editable-title-input input[type="text"],
+        .editable-kpi-label-input input[type="text"] {
+            background-color: transparent !important;
+            color: #1F2937 !important; /* Match header color */
             border: none !important;
+            outline: none !important;
             box-shadow: none !important;
-            background-color: transparent !important;
+            padding-left: 0 !important; 
+            font-size: 1.25rem; 
+            font-weight: 600; 
+            line-height: 1.5; 
+            width: 100%;
         }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stTextInput input.editable-title-input:focus {
-            background-color: #F8F9FA !important;
-            border: 1px solid #6f42c1 !important; 
-            box-shadow: 0 0 0 0.15rem rgba(111, 66, 193, 0.15) !important;
-            border-radius: 0.25rem !important;
-            padding: 0.15rem 0.3rem !important;
+        .editable-kpi-label-input input[type="text"] {
+            font-size: 0.9rem; 
+            color: #6B7280 !important; /* Match KPI label color */
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: normal; 
+            margin-bottom: 0.3rem; 
         }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stPlotlyChart,
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stDataFrame { 
-            border: none !important;
-            padding: 0 !important;
-            background-color: transparent !important;
-            min-height: 320px !important; 
+
+        .editable-title-input input[type="text"]:focus,
+        .editable-kpi-label-input input[type="text"]:focus {
+            background-color: #FFFFFF !important; 
+            border: 1px solid #7C3AED !important; /* Purple border on focus */
+            box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2) !important; /* Subtle purple glow */
         }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stDataFrame {
-             min-height: auto !important; 
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] div[data-testid="stMetric"] {
-            background-color: transparent !important;
-            border: none !important;
-            padding: 0.2rem 0 !important; 
-            box-shadow: none !important;
-            text-align: left !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] input.editable-kpi-label-input { 
-            font-size: 0.75rem !important; 
-            font-weight: 500 !important;
-            color: #6C757D !important;
-            text-transform: none !important;
-            margin-bottom: 0px !important; 
-            background-color: transparent !important;
-            border: none !important; box-shadow: none !important; padding: 0 !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] input.editable-kpi-label-input:focus {
-            background-color: #F8F9FA !important; border: 1px solid #6f42c1 !important;
-            border-radius: 0.25rem !important; padding: 0 0.25rem !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] div[data-testid="stMetricValue"] { 
-            font-size: 2.2rem !important; 
-            font-weight: 700 !important; 
-            color: #212529 !important; 
-            line-height: 1.05 !important; 
-            padding-top: 0.05rem !important; 
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] div[data-testid="stMetricDelta"] { 
-            font-size: 0.8rem !important;
-            font-weight: 500 !important;
-            padding-top: 0.1rem !important; 
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] div[data-testid="stMetricLabel"] { 
-            display: none !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stExpander {
-            border-top: 1px solid #F1F3F5 !important; 
-            padding-top: 0.8rem !important; 
-            margin-top: 0.7rem !important; 
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stExpander header {
-            font-size: 0.85rem !important; font-weight: 500 !important; color: #495057 !important; 
-            padding: 0.4rem 0 !important; 
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stExpander header svg { fill: #495057 !important; }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stExpander div[data-baseweb="card"] {
-             background-color: #FDFDFE !important; 
-             border-radius: 0.3rem !important; border: 1px solid #F1F3F5 !important; 
-             padding: 0.75rem !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] > div[data-testid="stVerticalBlock"] > .stButton {
-            padding-top: 0.7rem !important; margin-top: 0.7rem !important;
-            border-top: 1px solid #F1F3F5 !important;
-            align-self: flex-end !important; 
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stButton button {
-            padding: 0.3rem 0.7rem !important; 
-            font-size: 0.75rem !important;
-            background-color: #8B5CF6 !important; 
-            border-radius: 0.25rem !important; color: white !important; border: none !important;
-            font-weight: 500 !important; transition: background-color 0.2s ease !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stButton button:hover {
-            background-color: #7C3AED !important; 
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stDataFrame table {
-            color: #343A40 !important; width: 100% !important; font-size: 0.82rem !important; 
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stDataFrame th {
-            background-color: #F8F9FA !important; color: #212529 !important; font-weight: 600 !important;
-            text-align: left !important; padding: 0.55rem 0.7rem !important; border-bottom: 2px solid #DEE2E6 !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stDataFrame td {
-            border: 1px solid #F1F3F5 !important; padding: 0.55rem 0.7rem !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stContainer"] .stDataFrame tr:nth-child(even) td {
-            background-color: #FDFDFE !important; 
-        }
-        ::-webkit-scrollbar { width: 7px !important; height: 7px !important; }
-        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.04) !important; border-radius: 3px !important;}
-        ::-webkit-scrollbar-thumb { background: #C0C0C0 !important; border-radius: 3px !important; }
-        ::-webkit-scrollbar-thumb:hover { background: #A0A0A0 !important; }
 
     </style>
     """
@@ -514,16 +376,6 @@ if 'llm_config' not in st.session_state:
 if 'chat_history' not in st.session_state: # Example: for storing chat messages
     st.session_state.chat_history = []
 
-# --- Session state for query clarification flow ---
-if 'original_query_for_clarification' not in st.session_state:
-    st.session_state.original_query_for_clarification = ""
-if 'clarification_question_pending' not in st.session_state:
-    st.session_state.clarification_question_pending = False
-if 'llm_clarification_question' not in st.session_state:
-    st.session_state.llm_clarification_question = ""
-if 'conversation_log_for_query' not in st.session_state:
-    st.session_state.conversation_log_for_query = [] # List of dicts: {"role": "user/assistant", "content": "..."}
-
 # --- LLM Client Initialization ---
 def get_llm_client():
     """
@@ -551,7 +403,7 @@ def get_llm_client():
         base_url_from_db = db_llm_config.get('base_url') # Renamed for clarity
         # custom_model_name = db_llm_config.get('custom_model_name') # Placeholder for future use
 
-        if provider == "OpenAI": # Corrected indentation for the 'if provider' block
+        if provider == "OpenAI":
             if api_key_from_db:
                 try:
                     client = OpenAI(api_key=api_key_from_db)
@@ -595,7 +447,7 @@ def get_llm_client():
                 config_source_message = "LLM: Local (from Streamlit secrets)"
                 if local_llm_secret_api_key:
                     actual_api_key_to_store = local_llm_secret_api_key
-            except Exception as e: # Corrected indentation for this except block
+            except Exception as e:
                 st.sidebar.error(f"Error with Local LLM (secrets): {str(e)}")
     
     st.session_state.llm_client_instance = client
@@ -641,7 +493,64 @@ def check_password(hashed_password, password):
     """Checks a password against a hashed version."""
     return check_password_hash(hashed_password, password)
 
+# --- Image Generation Callback (New) ---
+def generate_image_from_html(html_content):
+    """Converts HTML content to PNG image bytes using Playwright or a fallback method."""
+    if not PLAYWRIGHT_AVAILABLE_APP:
+        st.warning(f"Playwright image generation is not available. Will attempt fallback method. Error: {PLAYWRIGHT_IMPORT_ERROR}")
+        return generate_image_fallback(html_content)
+    
+    img_bytes = None
+    try:
+        with sync_playwright() as p:
+            browser = None
+            try:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                
+                # Set a reasonable viewport size. This affects the screenshot dimensions.
+                page.set_viewport_size({"width": 1200, "height": 900}) 
+                
+                page.set_content(html_content)
+                
+                # Wait for potential dynamic content or JS rendering
+                page.wait_for_timeout(5000) # Wait 5 seconds
+                
+                img_bytes = page.screenshot(type='png', full_page=True)
 
+            except NotImplementedError:
+                # This specific exception happens on some Windows setups
+                st.warning("Windows NotImplementedError encountered in Playwright. Using fallback method.")
+                return generate_image_fallback(html_content)
+            except Exception as e_img_gen:
+                st.error(f"Error generating image with Playwright: {e_img_gen}")
+                print(f"[App - Image Generation Error with Playwright] {e_img_gen}")
+                return generate_image_fallback(html_content)
+            finally:
+                if browser:
+                    browser.close()
+    except Exception as outer_e:
+        st.warning(f"Error setting up Playwright: {outer_e}. Using fallback method.")
+        return generate_image_fallback(html_content)
+        
+    if img_bytes:
+        return img_bytes
+    else:
+        st.warning("Playwright screenshot returned no data. Using fallback method.")
+        return generate_image_fallback(html_content)
+
+def generate_image_fallback(html_content):
+    """Provides a fallback method for email attachment when Playwright fails.
+    
+    This function creates a simple HTML-only attachment instead of a PNG image.
+    It effectively returns the HTML content directly, which will still work as an
+    attachment in the email system.
+    """
+    st.info("Using HTML fallback instead of PNG image. The email will include an HTML attachment instead of an image.")
+    
+    # Return an empty image bytes - this will be detected in send_email.py and it will
+    # fall back to sending HTML instead
+    return None
 
 # --- Application Defaults Initialization ---
 def initialize_app_defaults():
@@ -679,7 +588,7 @@ def save_user_dashboard(username, dashboard_name, current_dashboard_items):
     # Ensure existing_versions_json is a list (it should be from DB if exists)
     if not isinstance(existing_versions_json, list):
         st.warning(f"Versions for dashboard '{dashboard_name}' for user '{username}' has an unexpected format. Resetting its versions.")
-        existing_versions_json = [] # Corrected unindent
+        existing_versions_json = []
 
     serializable_new_version = []
     for item_original in current_dashboard_items:
@@ -1013,76 +922,93 @@ def show_query_screen():
     st.session_state.selected_table = st.selectbox(
         "Focus query on a specific table (optional):",
         options=table_options,
-        index=table_options.index(st.session_state.selected_table) if st.session_state.selected_table in table_options else 0,
-        key="query_screen_table_select" # Added unique key
+        index=table_options.index(st.session_state.selected_table) if st.session_state.selected_table in table_options else 0
     )
 
-    # --- Query Input and Clarification Flow ---
-    if not st.session_state.clarification_question_pending:
-        # If a previous query led to a clarification that was cancelled, repopulate the text area.
-        initial_query_value = st.session_state.original_query_for_clarification if st.session_state.original_query_for_clarification else ""
-        natural_language_query_input = st.text_area(
-            "Ask your question in plain English:", 
-            height=100, 
-            key="nl_query_main_input",
-            value=initial_query_value
-        )
-        if st.button("Get Answer", key="get_answer_button", disabled=(not st.session_state.llm_client_instance)):
-            if not st.session_state.llm_client_instance: 
-                st.warning("LLM is not configured. Please visit LLM Settings.")
-            elif natural_language_query_input:
-                st.session_state.original_query_for_clarification = natural_language_query_input
-                # Start a new conversation log for this query
-                st.session_state.conversation_log_for_query = [{"role": "user", "content": natural_language_query_input}]
-                st.session_state.results_df = None 
-                st.session_state.log_generated_sql_str = None
-                st.session_state.log_query_execution_details_str = None
+    natural_language_query = st.text_area("Ask your question in plain English:", height=100, key="nl_query")
+
+    if st.button("Get Answer", disabled=(not st.session_state.llm_client_instance)):
+        if not st.session_state.llm_client_instance: # Double check, though button should be disabled
+            st.warning("LLM is not configured. Please visit LLM Settings.")
+            return
+
+        st.session_state.results_df = None # Clear previous results
+        st.session_state.log_generated_sql_str = None
+        st.session_state.log_query_execution_details_str = None
+
+        if natural_language_query:
+            with st.spinner("Generating SQL query and fetching results..."):
+                # Removed direct API key check here as client instance is checked above
                 
-                with st.spinner("Thinking..."):
-                    llm_response = query_clarifier.get_sql_or_clarification(
-                        natural_language_query=natural_language_query_input,
-                        data_schema=st.session_state.data_schema,
-                        db_type=st.session_state.connection_type,
-                        target_table=st.session_state.selected_table,
-                        conversation_history=None # First turn, no prior history for this specific interaction
-                    )
-                    handle_llm_response(llm_response)
-            else:
-                st.warning("Please enter your question.")
-    else: # Clarification question is pending
-        st.info(f"**AI needs more information to proceed with your query:**")
-        st.markdown(f"> Original question: *{st.session_state.original_query_for_clarification}*")
-        st.markdown(f"> AI asks: *{st.session_state.llm_clarification_question}*")
-        
-        user_clarification_answer = st.text_area("Your answer:", key="user_clarification_answer_input", height=75)
+                generated_sql_query = get_sql_from_openai(
+                    natural_language_query,
+                    # st.session_state.llm_api_key, # REMOVED API KEY ARGUMENT
+                    st.session_state.data_schema,
+                    st.session_state.connection_type,
+                    st.session_state.selected_table
+                )
 
-        col1_clarify, col2_clarify = st.columns(2)
-        with col1_clarify:
-            if st.button("Submit Answer", key="submit_clarification_answer_button"):
-                if user_clarification_answer:
-                    st.session_state.conversation_log_for_query.append({"role": "user", "content": user_clarification_answer})
-                    
-                    with st.spinner("Thinking..."):
-                        llm_response = query_clarifier.get_sql_or_clarification(
-                            natural_language_query=st.session_state.original_query_for_clarification, 
-                            data_schema=st.session_state.data_schema,
-                            db_type=st.session_state.connection_type,
-                            target_table=st.session_state.selected_table,
-                            conversation_history=st.session_state.conversation_log_for_query
-                        )
-                        handle_llm_response(llm_response)
+                if generated_sql_query:
+                    st.subheader("Generated SQL Query by AI")
+                    st.code(generated_sql_query, language="sql")
+                    st.session_state.log_generated_sql_str = generated_sql_query
                 else:
-                    st.warning("Please provide an answer to the clarification question.")
-        with col2_clarify:
-            if st.button("Cancel and Start New Query", key="cancel_clarification_button"):
-                st.session_state.clarification_question_pending = False
-                st.session_state.llm_clarification_question = ""
-                st.session_state.original_query_for_clarification = "" # Clear the original query display too
-                st.session_state.conversation_log_for_query = []
-                st.session_state.results_df = None 
-                st.rerun()
+                    st.error("Could not generate SQL query from your question.")
+                    st.session_state.log_generated_sql_str = "Error: Could not generate SQL query."
+                    return
 
-    # Display results and visualization options if available
+                try:
+                    if st.session_state.connection_type == "csv" and st.session_state.data is not None:
+                        raw_sqlite_conn = None
+                        try:
+                            raw_sqlite_conn = sqlite3.connect(':memory:')
+                            st.session_state.data.to_sql('csv_data', raw_sqlite_conn, if_exists='replace', index=False)
+                            results_df = pd.read_sql_query(generated_sql_query, raw_sqlite_conn)
+                            st.session_state.log_query_execution_details_str = results_df.to_string() if not results_df.empty else "Query executed on CSV successfully, but no data was returned."
+                        except sqlite3.Error as e_sqlite:
+                            st.error(f"SQLite error during CSV query execution: {e_sqlite}")
+                            results_df = pd.DataFrame({"error": [f"SQLite error: {e_sqlite}"]})
+                            st.session_state.log_query_execution_details_str = f"SQLite Execution Error: {e_sqlite}"
+                        except Exception as e_csv_sql:
+                            st.error(f"Error executing SQL query on CSV: {e_csv_sql}")
+                            results_df = pd.DataFrame({"error": [f"Error executing SQL on CSV: {e_csv_sql}"]})
+                            st.session_state.log_query_execution_details_str = f"In-memory CSV SQL Execution Error: {e_csv_sql}"
+                        finally:
+                            if raw_sqlite_conn:
+                                raw_sqlite_conn.close()
+                    elif st.session_state.db_connection is not None and st.session_state.connection_type == 'sqlserver':
+                        try:
+                            cursor = st.session_state.db_connection.cursor()
+                            cursor.execute(generated_sql_query)
+                            rows = cursor.fetchall()
+                            if rows:
+                                columns = [column[0] for column in cursor.description]
+                                results_df = pd.DataFrame.from_records(rows, columns=columns)
+                            else:
+                                results_df = pd.DataFrame({"message": ["Query executed successfully, but no data was returned."]})
+                            st.session_state.log_query_execution_details_str = results_df.to_string() if not results_df.empty else "Query executed successfully, but no data was returned."
+                        except pyodbc.Error as db_ex:
+                            st.error(f"Database error during query execution: {db_ex}")
+                            results_df = pd.DataFrame({"error": [f"Database error: {db_ex}"]})
+                            st.session_state.log_query_execution_details_str = f"Database Error: {db_ex}"
+                        except Exception as ex:
+                            st.error(f"Error executing query on SQL Server: {ex}")
+                            results_df = pd.DataFrame({"error": [f"Query execution error: {ex}"]})
+                            st.session_state.log_query_execution_details_str = f"Query Execution Error: {ex}"
+                    else:
+                        results_df = pd.DataFrame({"error": ["Not connected to a data source or connection type not supported for querying yet."]})
+                        st.session_state.log_query_execution_details_str = "Error: Not connected or connection type not supported for querying."
+                    
+                    st.session_state.results_df = results_df
+
+                except Exception as e:
+                    st.error(f"Error executing query or processing results: {e}")
+                    st.session_state.results_df = pd.DataFrame({"error": [f"Unhandled error: {e}"]})
+                    st.session_state.log_query_execution_details_str = f"Unhandled Query/Processing Error: {e}"
+        else:
+            st.warning("Please enter your question.")
+            st.session_state.results_df = None
+
     if st.session_state.results_df is not None:
         results_df_to_display = st.session_state.results_df
         st.subheader("Query Results")
@@ -1090,7 +1016,7 @@ def show_query_screen():
 
         if not results_df_to_display.empty and not ("error" in results_df_to_display.columns or "message" in results_df_to_display.columns):
             st.subheader("Visualizations")
-            if not results_df_to_display.empty: 
+            if not results_df_to_display.empty: # Now the primary condition if results are valid
                 st.markdown("#### Interactive Chart Options")
                 all_columns = results_df_to_display.columns.tolist()
                 numeric_columns = results_df_to_display.select_dtypes(include=['number']).columns.tolist()
@@ -1310,7 +1236,7 @@ def show_query_screen():
                 except Exception as e_viz:
                     st.error(f"Error during visualization setup or 'Add to Dashboard' logic: {e_viz}")
 
-    if st.button("Disconnect and Choose Another Source", key="disconnect_button_query_screen"): # Ensured key is unique
+    if st.button("Disconnect and Choose Another Source"):
         # Reset relevant session state variables
         st.session_state.connected = False
         st.session_state.connection_type = None
@@ -1319,109 +1245,15 @@ def show_query_screen():
         st.session_state.db_engine = None
         st.session_state.data_schema = None
         st.session_state.selected_table = "All Tables / Auto-detect"
-        clear_logs() # This clears the specific log strings
+        st.session_state.log_data_schema_str = None
+        st.session_state.log_openai_prompt_str = None
+        st.session_state.log_generated_sql_str = None
+        st.session_state.log_query_execution_details_str = None
         st.session_state.results_df = None
-        st.session_state.dashboard_items = [] 
-        
-        # Reset clarification flow states as well
-        st.session_state.clarification_question_pending = False
-        st.session_state.llm_clarification_question = ""
-        st.session_state.original_query_for_clarification = ""
-        st.session_state.conversation_log_for_query = []
-        
+        st.session_state.dashboard_items = [] # Clear dashboard on disconnect
+        # st.session_state.llm_api_key is intentionally preserved
         st.rerun()
 
-
-def handle_llm_response(llm_response):
-    """
-    Handles the response from the LLM (either SQL query or clarification question).
-    Updates session state accordingly.
-    """
-    if (llm_response.get("type") == "sql_query" or llm_response.get("type") == "sql") and \
-       (llm_response.get("query") or llm_response.get("content")):
-        st.session_state.clarification_question_pending = False
-        st.session_state.llm_clarification_question = ""
-        
-        sql_from_response = llm_response.get("query") or llm_response.get("content")
-
-        # Add the LLM's generated SQL to the conversation log
-        st.session_state.conversation_log_for_query.append({"role": "assistant", "content": f"Generated SQL: {sql_from_response}"})
-
-        generated_sql = sql_from_response # Use the extracted SQL
-        st.session_state.log_generated_sql_str = generated_sql
-        st.success("SQL Query Generated by AI:")
-        st.code(generated_sql, language="sql")
-
-        if st.session_state.connection_type == "csv":
-            if st.session_state.data is not None:
-                try:
-                    # For CSV, use SQLite in-memory to query the DataFrame
-                    conn_sqlite = sqlite3.connect(':memory:')
-                    st.session_state.data.to_sql('csv_data', conn_sqlite, if_exists='replace', index=False)
-                    query_result_df = pd.read_sql_query(generated_sql, conn_sqlite)
-                    conn_sqlite.close()
-                    st.session_state.results_df = query_result_df
-                    st.session_state.log_query_execution_details_str = f"Successfully executed on CSV data. Rows returned: {len(query_result_df)}"
-                except sqlite3.Error as e_sqlite:
-                    st.error(f"Error executing SQL on CSV data: {e_sqlite}")
-                    st.session_state.results_df = pd.DataFrame({"error": [f"SQLite Error: {e_sqlite}"]})
-                    st.session_state.log_query_execution_details_str = f"SQLite Execution Error: {e_sqlite}"
-                except Exception as e_csv_query:
-                    st.error(f"An unexpected error occurred while querying CSV data: {e_csv_query}")
-                    st.session_state.results_df = pd.DataFrame({"error": [f"Unexpected Error: {e_csv_query}"]})
-                    st.session_state.log_query_execution_details_str = f"Unexpected CSV Query Error: {e_csv_query}"
-            else:
-                st.error("No CSV data loaded to query.")
-                st.session_state.log_query_execution_details_str = "Attempted to query CSV, but no data was loaded."
-
-        elif st.session_state.db_connection: # For direct DB connections
-            try:
-                cursor = st.session_state.db_connection.cursor()
-                cursor.execute(generated_sql)
-                if cursor.description: # Check if the query returns rows (e.g., SELECT)
-                    rows = cursor.fetchall()
-                    cols = [column[0] for column in cursor.description]
-                    query_result_df = pd.DataFrame.from_records(rows, columns=cols)
-                    st.session_state.results_df = query_result_df
-                    st.session_state.log_query_execution_details_str = f"Successfully executed on database. Rows returned: {len(query_result_df)}"
-                else: # For queries that don't return rows (e.g., UPDATE, INSERT, DELETE with no RETURNING clause)
-                    st.session_state.results_df = pd.DataFrame({"message": ["Query executed successfully, no rows returned."]})
-                    st.session_state.log_query_execution_details_str = f"Query executed, no rows returned. Row count affected: {cursor.rowcount if cursor.rowcount != -1 else 'N/A'}"
-                # For some databases/drivers, commit might be needed for DDL or if autocommit is off
-                # However, typically for SELECTs it's not. Add if specific DB needs it.
-                # st.session_state.db_connection.commit() 
-            except pyodbc.Error as e_pyodbc:
-                st.error(f"Error executing SQL query: {e_pyodbc}")
-                st.session_state.results_df = pd.DataFrame({"error": [f"Database Execution Error: {e_pyodbc}"]})
-                st.session_state.log_query_execution_details_str = f"Database Execution Error: {e_pyodbc}"
-            except Exception as e_db_query:
-                st.error(f"An unexpected error occurred during query execution: {e_db_query}")
-                st.session_state.results_df = pd.DataFrame({"error": [f"Unexpected Query Execution Error: {e_db_query}"]})
-                st.session_state.log_query_execution_details_str = f"Unexpected Query Execution Error: {e_db_query}"
-        else:
-            st.error("Not connected to any data source.")
-            st.session_state.log_query_execution_details_str = "Query generation attempted, but not connected to a data source."
-        st.rerun()
-
-    elif (llm_response.get("type") == "clarification_needed" or llm_response.get("type") == "clarification") and \
-         (llm_response.get("question") or llm_response.get("content")):
-        st.session_state.clarification_question_pending = True
-        clarification_message = llm_response.get("question") or llm_response.get("content")
-        st.session_state.llm_clarification_question = clarification_message
-        # Add the LLM's clarification question to the conversation log
-        st.session_state.conversation_log_for_query.append({"role": "assistant", "content": clarification_message})
-        st.rerun()
-    else:
-        st.error("Received an unexpected response from the AI. Please try rephrasing your question.")
-        # Log the unexpected response for debugging
-        database.log_app_action(
-            username=st.session_state.get("logged_in_user"),
-            action="UNEXPECTED_LLM_RESPONSE_FORMAT",
-            details=f"Response: {llm_response}",
-            status="ERROR"
-        )
-        st.session_state.clarification_question_pending = False # Reset clarification flow
-        st.rerun()
 
 # --- Main Application Logic ---
 def main():
@@ -1495,7 +1327,7 @@ def main():
     elif st.session_state.db_configured_successfully:
         # DB is configured, proceed with main app pages
         if current_page_for_render == "login":
-            show_login_page() # Corrected indentation
+            show_login_page()
         elif current_page_for_render == "db_config": 
             # This state means DB was configured (perhaps just now by show_db_configuration_page 
             # which then sets page to login and reruns, or secrets worked and reran).
@@ -1521,13 +1353,13 @@ def main():
             show_dashboard_management_page()
         elif current_page_for_render == "llm_settings" and logged_in: # New Route
             show_llm_settings_page()
-    else:
-        # Default routing if no specific page matches
-        if logged_in:
-            st.session_state.page = "app" # Default to app (Query Data screen) if logged in
         else:
-            st.session_state.page = "login" # Default to login if not logged in
-        st.rerun() # Corrected unindent
+            # Default routing if no specific page matches
+            if logged_in:
+                st.session_state.page = "app" # Default to app (Query Data screen) if logged in
+            else:
+                st.session_state.page = "login" # Default to login if not logged in
+            st.rerun()
 
     # --- Logs Expander --- (Placed in main to be available on most screens if logs exist and user is logged in)
     if st.session_state.logged_in_user and (st.session_state.log_data_schema_str or st.session_state.log_openai_prompt_str or st.session_state.log_generated_sql_str or st.session_state.log_query_execution_details_str):
@@ -1547,17 +1379,12 @@ def main():
 
 # --- New Page Functions (Login, Admin Panel) ---
 def show_login_page():
-    # The .login-container will be styled by CSS to have the gradient and fill the viewport
-    # The .login-box will be centered within it.
+def show_login_page():
+    # Use a container and apply custom class for centering and styling
     st.markdown("<div class='login-container'>", unsafe_allow_html=True)
-    
-    # All login elements go inside this single container which will be styled as the 'login-box'
-    with st.container(): 
-        # We use st.markdown to inject a div with the class 'login-box'
-        # Streamlit elements will be children of this div.
+    with st.container(): # This won't directly center but custom CSS will target children
         st.markdown("<div class='login-box'>", unsafe_allow_html=True)
-        
-        st.markdown("<h1>User Login</h1>", unsafe_allow_html=True) # Title inside the box
+        st.markdown("<h1>User Login</h1>", unsafe_allow_html=True)
         
         username = st.text_input("Username", key="login_username", placeholder="Enter your username")
         password = st.text_input("Password", type="password", key="login_password", placeholder="Enter your password")
@@ -1569,7 +1396,6 @@ def show_login_page():
                 st.session_state.logged_in_user = user_data_from_db["username"]
                 st.session_state.user_roles = user_data_from_db["roles"]
                 st.session_state.page = "app"
-                # Reset connection and data states on successful login
                 st.session_state.connected = False
                 st.session_state.connection_type = None
                 st.session_state.data = None
@@ -1577,7 +1403,7 @@ def show_login_page():
                 st.session_state.db_engine = None
                 st.session_state.data_schema = None
                 st.session_state.selected_table = "All Tables / Auto-detect"
-                clear_logs() 
+                clear_logs()
                 st.session_state.results_df = None
                 
                 dashboard_name_tuples = get_user_dashboard_names(username)
@@ -1591,9 +1417,7 @@ def show_login_page():
                 st.rerun()
             else:
                 st.error("Invalid username or password.")
-        
         st.markdown("</div>", unsafe_allow_html=True) # Close login-box
-
     st.markdown("</div>", unsafe_allow_html=True) # Close login-container
 
 def show_admin_panel_page():
@@ -1619,7 +1443,7 @@ def show_admin_panel_page():
         if user != st.session_state.logged_in_user: 
             if cols[2].button(f"Delete {user}", key=f"delete_{user}"):
                 if database.delete_user_from_db(user):
-                    st.success(f"User '{user}' deleted.") # Corrected indentation
+                    st.success(f"User '{user}' deleted.")
                     database.log_app_action(st.session_state.logged_in_user, "DELETE_USER_SUCCESS", f"Admin deleted user: {user}", "SUCCESS")
                     st.rerun()
                 else:
@@ -1662,12 +1486,12 @@ def show_admin_panel_page():
                         elif database.create_user_in_db(edit_username, hashed_new_password, roles_list):
                             st.success(f"User '{edit_username}' created.")
                             database.log_app_action(st.session_state.logged_in_user, "CREATE_USER_SUCCESS", f"Admin created new user: {edit_username}", "SUCCESS")
-                            st.rerun() # Corrected indentation for the rerun after user creation success
+                    st.rerun()
                         else:
                             st.error(f"Failed to create user '{edit_username}'.")
                             database.log_app_action(st.session_state.logged_in_user, "CREATE_USER_FAILURE", f"Admin failed to create new user: {edit_username}", "FAILURE")
 
-    if st.button("Back to App"): # Corrected unindent for button (should be part of show_admin_panel_page)
+    if st.button("Back to App"):
         st.session_state.page = "app"
         st.rerun()
 
@@ -1698,14 +1522,8 @@ def clear_logs():
 
 # --- Dashboard Page ---
 def show_dashboard_page():
-    st.title("Data Dashboard") # Added main dashboard title
-
-    # The existing title that includes the current dashboard name can be a subheader or removed if redundant
-    # For now, let's make it a subheader
-    if st.session_state.current_dashboard_name:
-        st.subheader(f"Current View: {st.session_state.current_dashboard_name}")
-    else:
-        st.subheader("No Dashboard Selected")
+    # global USERS_DATA # Removed, no longer needed
+    st.title(f"My Dashboard: {st.session_state.current_dashboard_name if st.session_state.current_dashboard_name else 'No Dashboard Selected'}")
 
     if not st.session_state.logged_in_user:
         st.error("Please log in to view dashboards.")
@@ -1768,7 +1586,7 @@ def show_dashboard_page():
         st.sidebar.info("No dashboards available (owned or shared). Create one!")
         if st.session_state.current_dashboard_name is not None: # If a dash was selected but now list is empty (e.g. deleted last one)
             st.session_state.current_dashboard_name = None
-            st.session_state.dashboard_items = [] # Corrected indentation for this block
+        st.session_state.dashboard_items = []
             current_dashboard_owner = None
             # st.rerun() # Rerun might be needed if sidebar options change how page displays
 
@@ -1780,7 +1598,7 @@ def show_dashboard_page():
             if not is_owned_already:
                 # Save new dashboard with empty versions and shared list
                 if database.save_dashboard_to_db(st.session_state.logged_in_user, new_dash_name, [], []):
-                    st.session_state.current_dashboard_name = new_dash_name # Corrected indentation
+                    st.session_state.current_dashboard_name = new_dash_name
                     st.session_state.dashboard_items = [] 
                     current_dashboard_owner = st.session_state.logged_in_user # New dash is owned by current user
                     st.sidebar.success(f"Dashboard '{new_dash_name}' created!")
@@ -1824,11 +1642,11 @@ def show_dashboard_page():
                         elif any(d[0] == new_name and d[2] == st.session_state.logged_in_user for d in get_user_dashboard_names(st.session_state.logged_in_user)):
                             st.error(f"You already own a dashboard named '{new_name}'. Please choose a different name.")
                         elif database.rename_dashboard_in_db(st.session_state.logged_in_user, old_name, new_name):
-                            st.session_state.current_dashboard_name = new_name
-                            st.success(f"Dashboard '{old_name}' renamed to '{new_name}'.")
+                                st.session_state.current_dashboard_name = new_name
+                                st.success(f"Dashboard '{old_name}' renamed to '{new_name}'.")
                             database.log_app_action(st.session_state.logged_in_user, "RENAME_DASHBOARD_SUCCESS", f"Renamed '{old_name}' to '{new_name}'", "SUCCESS")
-                            st.rerun() # Corrected indentation
-                        else:
+                                st.rerun()
+                            else:
                              # Error is shown by rename_dashboard_in_db if it's due to DB constraint or other SQL error
                             database.log_app_action(st.session_state.logged_in_user, "RENAME_DASHBOARD_FAILURE", f"Failed to rename '{old_name}' to '{new_name}'", "FAILURE")
                     else:
@@ -1843,13 +1661,13 @@ def show_dashboard_page():
                         remaining_dash_tuples = get_user_dashboard_names(st.session_state.logged_in_user)
                         if remaining_dash_tuples:
                             st.session_state.current_dashboard_name = remaining_dash_tuples[0][0] # raw name
-                            st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name)
-                        else:
-                            st.session_state.current_dashboard_name = None
-                            st.session_state.dashboard_items = []
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to delete dashboard '{st.session_state.current_dashboard_name}'.") # Corrected indentation
+                                    st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name)
+                                else:
+                                    st.session_state.current_dashboard_name = None
+                                    st.session_state.dashboard_items = []
+                                st.rerun()
+                            else:
+                        st.error(f"Failed to delete dashboard '{st.session_state.current_dashboard_name}'.")
                         database.log_app_action(st.session_state.logged_in_user, "DELETE_DASHBOARD_FAILURE", f"Failed to delete dashboard: {st.session_state.current_dashboard_name}", "FAILURE")
                     st.markdown("---")
                     st.markdown("###### Share Dashboard")
@@ -1900,40 +1718,29 @@ def show_dashboard_page():
 
     # --- Download Dashboard and Send Email Buttons ---
     if st.session_state.current_dashboard_name: # Only show if a dashboard is active
-        if st.session_state.get('dashboard_items'): # Check if there are items to share/download
-            col1, col2 = st.columns(2)
-            # Prepare content ONCE here if items exist
-            dashboard_html_content = generate_dashboard_html(st.session_state.dashboard_items)
-            current_dashboard_name_for_email = st.session_state.current_dashboard_name # Use the already set name
+        col1, col2 = st.columns(2)
+        dashboard_html_content = generate_dashboard_html(st.session_state.dashboard_items)
+        current_dashboard_name_for_email = st.session_state.current_dashboard_name
 
-            with col1:
-                st.markdown(get_download_link_html(dashboard_html_content, f"{current_dashboard_name_for_email.replace(' ','_')}_dashboard.html"), unsafe_allow_html=True)
-            
-            with col2:
-                # Button to toggle the visibility of the email form expander
-                if st.button("Share Dashboard via Email", key="share_dashboard_email_toggle_button_v4"): 
-                    # Toggle the state for showing the form
-                    st.session_state.show_email_form = not st.session_state.get('show_email_form', False)
-                    # No rerun needed here, Streamlit handles reruns on widget interaction if the value driving the expander changes.
-                    # If the expander doesn't open/close reliably, we can add st.experimental_rerun() back.
-            
-            # --- Expander for Email Form (controlled by session state) ---
-            # Only attempt to show the expander if show_email_form is true AND dashboard_items exist (redundant check but safe)
-            if st.session_state.get('show_email_form', False) and st.session_state.get('dashboard_items'):
-                with st.expander("Send Dashboard Email Options", expanded=True): # expanded=True ensures it's open when flag is set
-                    send_email.show_send_email_ui(
-                        dashboard_html_content_for_html_email=dashboard_html_content, # Use pre-generated content
-                        dashboard_name=current_dashboard_name_for_email, # Use pre-set name
-                        # generate_pdf_callback=generate_pdf_from_html # This line is removed
-                    )
-                    if st.button("Close Email Form", key="close_email_form_button_v4"): 
-                        st.session_state.show_email_form = False
-                        st.experimental_rerun() # Rerun to ensure expander closes and state is clean
-        else:
-            st.caption("Add items to the dashboard to enable download or sharing.")
-            # Ensure the form is not shown if items become empty while it was true
-            if st.session_state.get('show_email_form', False):
-                st.session_state.show_email_form = False
+        with col1:
+            st.markdown(get_download_link_html(dashboard_html_content, f"{current_dashboard_name_for_email.replace(' ','_')}_dashboard.html"), unsafe_allow_html=True)
+        
+        with col2:
+            if st.button("Share Dashboard via Email", key="share_dashboard_email_button_v3"): # Added/updated key
+                st.session_state.show_email_form = True # Use session state to control visibility
+                st.experimental_rerun() # Rerun to ensure expander opens smoothly
+        
+        # --- Modal/Expander for Email Form ---
+        if st.session_state.get('show_email_form', False):
+            with st.expander("Send Dashboard Email Options", expanded=True):
+                send_email.show_send_email_ui(
+                    dashboard_html_content_for_html_email=dashboard_html_content, 
+                    dashboard_name=current_dashboard_name_for_email,
+                    generate_image_callback=generate_image_from_html # Pass the new image callback
+                )
+                if st.button("Close Email Form", key="close_email_form_button_v3"): # Updated key
+                    st.session_state.show_email_form = False
+                    st.experimental_rerun() # Rerun to close the expander
 
         st.markdown("---GV---") # Separator after buttons
 
@@ -2001,9 +1808,9 @@ def show_dashboard_page():
                     st.metric(label=" ", value=kpi_value if kpi_value is not None else "N/A", delta=kpi_delta if kpi_delta is not None else None, label_visibility="collapsed")
 
                     # --- Embed Code Expander for KPIs ---
-                    # with st.expander("Embed This KPI"):
-                    #     embed_kpi_html = get_kpi_embed_html(current_kpi_label, kpi_value, kpi_delta)
-                    #     st.code(embed_kpi_html, language="html")
+                    with st.expander("Embed This KPI"):
+                        embed_kpi_html = get_kpi_embed_html(current_kpi_label, kpi_value, kpi_delta)
+                        st.code(embed_kpi_html, language="html")
 
         st.markdown("---")
 
@@ -2063,260 +1870,270 @@ def show_dashboard_page():
         current_col_for_item = cols[displayed_item_count % num_display_cols]
 
         with current_col_for_item: # Place the item content in the designated column
-            with st.container(): # Added container for each dashboard item
-                try:
-                    # Find the true index of this item in the main st.session_state.dashboard_items list
-                    current_item_absolute_index = st.session_state.dashboard_items.index(item_in_display_list)
-                except ValueError:
-                    # This can happen if the item was removed or list modified unexpectedly. Skip this item.
-                    st.warning("Skipping an item as it could not be found in the main dashboard list.")
-                    continue
-                
-                # --- In-place editable Chart Title --- 
-                def handle_chart_title_change(item_abs_idx): # Callback needs to be defined or accessible here
-                    new_title_val = st.session_state[f"chart_title_edit_{item_abs_idx}"]
-                    if new_title_val.strip():
-                        st.session_state.dashboard_items[item_abs_idx]['title'] = new_title_val.strip()
-                        save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
-                        st.toast(f"Chart title updated to '{new_title_val.strip()}'", icon="📝")
-                    else:
-                        st.warning("Chart title cannot be empty.")
-                
-                st.markdown(f'''<div class="editable-title-input"></div>''', unsafe_allow_html=True)
-                st.text_input(
-                    f"Chart Title for item at index {current_item_absolute_index}", 
-                    value=st.session_state.dashboard_items[current_item_absolute_index].get('title', st.session_state.dashboard_items[current_item_absolute_index]['chart_type']),
-                    key=f"chart_title_edit_{current_item_absolute_index}", 
-                    on_change=handle_chart_title_change,
-                    args=(current_item_absolute_index,),
-                    label_visibility="collapsed"
-                )
-                
-                # Access data using the absolute index
-                data_snapshot = st.session_state.dashboard_items[current_item_absolute_index]['data_snapshot']
-                params = st.session_state.dashboard_items[current_item_absolute_index]['params']
-                chart_type = st.session_state.dashboard_items[current_item_absolute_index]['chart_type']
-                
-                if 'filter_state' not in st.session_state.dashboard_items[current_item_absolute_index]:
-                    st.session_state.dashboard_items[current_item_absolute_index]['filter_state'] = {}
-                filter_state = st.session_state.dashboard_items[current_item_absolute_index]['filter_state']
-                
-                filtered_data = data_snapshot.copy()
-                
-                # --- Determine data types for filtering and visualization ---
-                all_columns = filtered_data.columns.tolist()
-                numeric_columns = filtered_data.select_dtypes(include=['number']).columns.tolist()
-                categorical_columns = filtered_data.select_dtypes(include=['object', 'category', 'string', 'boolean']).columns.tolist()
-                geo_columns = detect_geographic_columns(filtered_data)
-                has_geo_data = bool(geo_columns)
-
-                # --- Add Filter Expander ---
-                with st.expander("Filters"): 
-                    categorical_cols_for_filter = data_snapshot.select_dtypes(include=['object', 'category', 'string', 'boolean']).columns.tolist()
-                    if not categorical_cols_for_filter:
-                        st.write("No categorical columns available for filtering.")
-                    else:
-                        filter_applied = False # Flag to see if any filters were applied
-                        for col in categorical_cols_for_filter:
-                            try:
-                                options = sorted(data_snapshot[col].astype(str).unique().tolist())
-                                # Use current_item_absolute_index in the key for uniqueness
-                                filter_key = f"filter_{current_item_absolute_index}_{col}"
-                                # Get current selections from state, default to all options (no filtering)
-                                current_selection = filter_state.get(col, options)
-                                
-                                selected_values = st.multiselect(
-                                    f"Filter by {col}:",
-                                    options=options,
-                                    default=current_selection,
-                                    key=filter_key
-                                )
-                                
-                                # Update the filter state *directly* on the item dictionary if it changed
-                                if selected_values != current_selection:
-                                     filter_state[col] = selected_values
-                                     # No st.rerun() needed here, widget interaction triggers it.
-                                     
-                                if selected_values and sorted(selected_values) != sorted(options): # Check if this filter is active
-                                     filter_applied = True 
-                                     
-                            except Exception as e_filter_widget:
-                                st.warning(f"Could not create filter for {col}: {e_filter_widget}")
-
-                # --- Apply Filters to Data --- 
-                try:
-                    for col, values in filter_state.items():
-                        if values and sorted(values) != sorted(filtered_data[col].astype(str).unique().tolist()): # Only apply if filter has selections and not all are selected
-                            if col in filtered_data.columns:
-                                # Ensure comparison happens using string type for robustness
-                                filtered_data = filtered_data[filtered_data[col].astype(str).isin(values)]
-                            else:
-                                 st.warning(f"Filter column '{col}' not found in data snapshot anymore? Skipping filter.")
-                except Exception as e_apply_filter:
-                     st.error(f"Error applying filters: {e_apply_filter}")
-
-                # --- Generate and Display Chart (using filtered_data) --- 
-                fig = None
-                try:
-                    # Use 'filtered_data' for chart generation
-                    if chart_type == "Bar Chart":
-                        x_col, y_col = params.get('x'), params.get('y')
-                        if x_col in filtered_data.columns and y_col in filtered_data.columns:
-                            fig = px.bar(filtered_data, x=x_col, y=y_col, color=params.get('color'), title=item_in_display_list.get('title', chart_type))
-                        else:
-                            st.warning(f"Required columns ('{x_col}', '{y_col}') for bar chart not found in filtered data.")
-                            fig = None
-                    
-                    elif chart_type == "Line Chart":
-                        x_col, y_col = params.get('x'), params.get('y')
-                        if x_col in filtered_data.columns and y_col in filtered_data.columns:
-                            fig = px.line(filtered_data, x=x_col, y=y_col, color=params.get('color'), title=item_in_display_list.get('title', chart_type))
-                        else:
-                            st.warning(f"Required columns ('{x_col}', '{y_col}') for line chart not found in filtered data.")
-                            fig = None
-                    
-                    elif chart_type == "Scatter Plot":
-                        x_col, y_col = params.get('x'), params.get('y')
-                        if x_col in filtered_data.columns and y_col in filtered_data.columns:
-                            fig = px.scatter(filtered_data, x=x_col, y=y_col, color=params.get('color'), size=params.get('size'), title=item_in_display_list.get('title', chart_type))
-                        else:
-                            st.warning(f"Required columns ('{x_col}', '{y_col}') for scatter plot not found in filtered data.")
-                            fig = None
-                    
-                    elif chart_type == "Pie Chart":
-                        if params.get('names') in filtered_data.columns and params.get('values') in filtered_data.columns:
-                            fig = px.pie(filtered_data, names=params.get('names'), values=params.get('values'), title=item_in_display_list.get('title', chart_type))
-                        else:
-                            st.warning("Required columns for pie chart not found in filtered data.")
-                            fig = None
-                    
-                    elif chart_type == "Histogram":
-                        if params.get('x') in filtered_data.columns:
-                            fig = px.histogram(filtered_data, x=params.get('x'), title=item_in_display_list.get('title', chart_type))
-                        else:
-                            st.warning("Required column for histogram not found in filtered data.")
-                            fig = None
-                    
-                    elif chart_type == "Table":
-                        # For tables, display using st.dataframe
-                        selected_columns = params.get('columns', filtered_data.columns.tolist())
-                        # Ensure selected_columns_param is a list
-                        if not isinstance(selected_columns, list):
-                            selected_columns = filtered_data.columns.tolist()
-                        
-                        # Filter columns that actually exist in filtered_data
-                        display_columns = [col for col in selected_columns if col in filtered_data.columns]
-
-                        if not display_columns and selected_columns: # If intended columns are gone, show warning
-                            st.warning(f"Original columns for table not found in filtered data. Showing available columns.")
-                            display_columns = filtered_data.columns.tolist() # Fallback to all available
-                        elif not display_columns and not selected_columns: # If no columns were ever specified and data is empty
-                            display_columns = filtered_data.columns.tolist()
-
-
-                        if display_columns:
-                            st.dataframe(filtered_data[display_columns], use_container_width=True)
-                        elif not filtered_data.empty:
-                            st.dataframe(filtered_data, use_container_width=True) # Show all if specific columns failed
-                        else:
-                            st.info("No data to display in table after filtering.")
-                        
-                    elif chart_type == "Map":
-                        # Simplified to always be scatter_geo
-                        # Map parameters from when it was added to dashboard
-                        # This entire block for rendering Map on dashboard should be removed or made unreachable.
-                        # For safety, we can add a message.
-                        st.info(f"Map item '{item_in_display_list.get('title', 'Map')}' cannot be displayed as map functionality is removed.")
-                        fig = None
-                        
-                    if fig: # Apply light theme if a fig object was created
-                        fig.update_layout(
-                            template="plotly_white", # Light theme for charts
-                            paper_bgcolor='rgba(255,255,255,1)',  # Ensure white background for export/consistency
-                            plot_bgcolor='rgba(255,255,255,1)',   # White plot area
-                            font_color='#333745', # Dark font for chart elements
-                            title_font_color='#212529', # Darker title font
-                            legend_font_color='#495057', # Legend font color
-                            autosize=True, 
-                            height=350  # Adjusted default height for dashboard items
-                        )
-                        # For axes, make lines and ticks suitable for a light theme
-                        axis_tick_label_color = '#495057' 
-                        axis_title_color = '#343A40'    
-                        grid_color = '#E9ECEF'         
-                        line_color = '#D1D5DB'         
-
-                        fig.update_xaxes(
-                            showgrid=True, gridwidth=1, gridcolor=grid_color,
-                            zerolinecolor=grid_color, zerolinewidth=1, 
-                            linecolor=line_color, showline=True, 
-                            tickfont=dict(color=axis_tick_label_color),
-                            title_font=dict(color=axis_title_color)
-                        )
-                        fig.update_yaxes(
-                            showgrid=True, gridwidth=1, gridcolor=grid_color,
-                            zerolinecolor=grid_color, zerolinewidth=1,
-                            linecolor=line_color, showline=True,
-                            tickfont=dict(color=axis_tick_label_color),
-                            title_font=dict(color=axis_title_color)
-                        )
-                        if hasattr(fig.layout, 'legend'):
-                            fig.update_layout(legend=dict(font=dict(color='#495057'), bgcolor='rgba(255,255,255,0.8)'))
-
-                except Exception as e:
-                    st.error(f"Error generating chart: {e}")
-                    fig = None # Ensure fig is None if chart generation fails
-                    
-                # Displaying the chart or info message
-                if fig and chart_type != "Table" and chart_type != "KPI":  # Table and KPI are handled differently
-                        st.plotly_chart(fig, use_container_width=True)
-                elif not fig and chart_type !="Table" and not filtered_data.empty : # If fig is None but was expected for a non-table chart type
-                        st.warning(f"Could not display chart: {item_in_display_list.get('title', item_in_display_list['chart_type'])}. Check data and filters.")
-                elif filtered_data.empty and chart_type != "Table": # Data is empty after filtering for a non-table chart type
-                    st.info(f"No data remaining for '{item_in_display_list.get('title', item_in_display_list['chart_type'])}' after applying filters.")
-                # Table display is handled within its own block above
-
-                st.write("") # Add a little vertical space before the embed expander and controls
-
-                # --- Embed Code Expander ---
-                # with st.expander("Embed This Item"):
-                #     embed_html = ""
-                #     item_title_for_embed = item_in_display_list.get('title', item_in_display_list['chart_type'])
-                #     try:
-                #         if chart_type == "Table":
-                #             # Use display_columns which are columns confirmed to be in filtered_data
-                #             # and ensure filtered_data itself is not empty before trying to access columns
-                #             table_df_for_embed = pd.DataFrame() # Default to empty
-                #             if not filtered_data.empty and display_columns and all(col in filtered_data.columns for col in display_columns):
-                #                 table_df_for_embed = filtered_data[display_columns]
-                            
-                #             if not table_df_for_embed.empty:
-                #                 embed_html = get_table_html(table_df_for_embed, title=item_title_for_embed)
-                #             else:
-                #                 embed_html = f"<h3>{item_title_for_embed}</h3><p>No data to embed for this table (data might be empty after filtering or required columns missing).</p>"
-                #         elif fig: # This is for Plotly charts that were successfully generated
-                #             embed_html = get_plotly_fig_html(fig, title=item_title_for_embed)
-                #         else: # This case handles non-Table types where fig is None (e.g., chart generation failed)
-                #             embed_html = f"<h3>{item_title_for_embed}</h3><p>Could not generate embed code for this item (e.g., chart failed or data empty after filtering).</p>"
-                        
-                #         # Add Plotly JS if it's a Plotly chart and the script isn't already in embed_html
-                #         # get_plotly_fig_html should already include the script, this is a fallback/check.
-                #         embed_html_with_script = embed_html # Default to current embed_html
-                #         if chart_type != "Table" and fig and "<script src='https://cdn.plot.ly/plotly-latest.min.js'></script>" not in embed_html:
-                #             embed_html_with_script = f"<script src='https://cdn.plot.ly/plotly-latest.min.js'></script>\n{embed_html}"
-                        
-                #         st.code(embed_html_with_script, language="html")
-                #     except Exception as e_embed:
-                #         st.error(f"Could not generate embed code: {e_embed}")
-                #         st.code(f"<!-- Error generating embed code: {e_embed} -->", language="html")
-
-                # --- Controls (Remove Item Only) --- 
-                # control_cols = st.columns([3, 1, 1]) # Old: Remove, Up, Down
-                # New: Just the remove button, can be placed directly or in a single column if needed for alignment
-                if st.button(f"Remove Item", key=f"remove_dash_item_{current_item_absolute_index}"):
-                    st.session_state.dashboard_items.pop(current_item_absolute_index)
+            try:
+                # Find the true index of this item in the main st.session_state.dashboard_items list
+                current_item_absolute_index = st.session_state.dashboard_items.index(item_in_display_list)
+            except ValueError:
+                # This can happen if the item was removed or list modified unexpectedly. Skip this item.
+                st.warning("Skipping an item as it could not be found in the main dashboard list.")
+                continue
+            
+            # --- In-place editable Chart Title --- 
+            def handle_chart_title_change(item_abs_idx): # Callback needs to be defined or accessible here
+                new_title_val = st.session_state[f"chart_title_edit_{item_abs_idx}"]
+                if new_title_val.strip():
+                    st.session_state.dashboard_items[item_abs_idx]['title'] = new_title_val.strip()
                     save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
-                    st.rerun()
+                    st.toast(f"Chart title updated to '{new_title_val.strip()}'", icon="📝")
+                else:
+                    st.warning("Chart title cannot be empty.")
+            
+            st.markdown(f'''<div class="editable-title-input"></div>''', unsafe_allow_html=True)
+            st.text_input(
+                f"Chart Title for item at index {current_item_absolute_index}", 
+                value=st.session_state.dashboard_items[current_item_absolute_index].get('title', st.session_state.dashboard_items[current_item_absolute_index]['chart_type']),
+                key=f"chart_title_edit_{current_item_absolute_index}", 
+                on_change=handle_chart_title_change,
+                args=(current_item_absolute_index,),
+                label_visibility="collapsed"
+            )
+            
+            # Access data using the absolute index
+            data_snapshot = st.session_state.dashboard_items[current_item_absolute_index]['data_snapshot']
+            params = st.session_state.dashboard_items[current_item_absolute_index]['params']
+            chart_type = st.session_state.dashboard_items[current_item_absolute_index]['chart_type']
+            
+            if 'filter_state' not in st.session_state.dashboard_items[current_item_absolute_index]:
+                st.session_state.dashboard_items[current_item_absolute_index]['filter_state'] = {}
+            filter_state = st.session_state.dashboard_items[current_item_absolute_index]['filter_state']
+            
+            filtered_data = data_snapshot.copy()
+            
+            # --- Determine data types for filtering and visualization ---
+            all_columns = filtered_data.columns.tolist()
+            numeric_columns = filtered_data.select_dtypes(include=['number']).columns.tolist()
+            categorical_columns = filtered_data.select_dtypes(include=['object', 'category', 'string', 'boolean']).columns.tolist()
+            geo_columns = detect_geographic_columns(filtered_data)
+            has_geo_data = bool(geo_columns)
+
+            # --- Add Filter Expander ---
+            with st.expander("Filters"): 
+                categorical_cols_for_filter = data_snapshot.select_dtypes(include=['object', 'category', 'string', 'boolean']).columns.tolist()
+                if not categorical_cols_for_filter:
+                    st.write("No categorical columns available for filtering.")
+                else:
+                    filter_applied = False # Flag to see if any filters were applied
+                    for col in categorical_cols_for_filter:
+                        try:
+                            options = sorted(data_snapshot[col].astype(str).unique().tolist())
+                            # Use current_item_absolute_index in the key for uniqueness
+                            filter_key = f"filter_{current_item_absolute_index}_{col}"
+                            # Get current selections from state, default to all options (no filtering)
+                            current_selection = filter_state.get(col, options)
+                            
+                            selected_values = st.multiselect(
+                                f"Filter by {col}:",
+                                options=options,
+                                default=current_selection,
+                                key=filter_key
+                            )
+                            
+                            # Update the filter state *directly* on the item dictionary if it changed
+                            if selected_values != current_selection:
+                                 filter_state[col] = selected_values
+                                 # No st.rerun() needed here, widget interaction triggers it.
+                                 
+                            if selected_values and sorted(selected_values) != sorted(options): # Check if this filter is active
+                                 filter_applied = True 
+                                         
+                        except Exception as e_filter_widget:
+                            st.warning(f"Could not create filter for {col}: {e_filter_widget}")
+
+            # --- Apply Filters to Data --- 
+            try:
+                for col, values in filter_state.items():
+                    if values and sorted(values) != sorted(filtered_data[col].astype(str).unique().tolist()): # Only apply if filter has selections and not all are selected
+                        if col in filtered_data.columns:
+                            # Ensure comparison happens using string type for robustness
+                            filtered_data = filtered_data[filtered_data[col].astype(str).isin(values)]
+                        else:
+                             st.warning(f"Filter column '{col}' not found in data snapshot anymore? Skipping filter.")
+            except Exception as e_apply_filter:
+                 st.error(f"Error applying filters: {e_apply_filter}")
+
+            # --- Generate and Display Chart (using filtered_data) --- 
+            fig = None
+            try:
+                # Use 'filtered_data' for chart generation
+                if chart_type == "Bar Chart":
+                    x_col, y_col = params.get('x'), params.get('y')
+                    if x_col in filtered_data.columns and y_col in filtered_data.columns:
+                        fig = px.bar(filtered_data, x=x_col, y=y_col, color=params.get('color'), title=item_in_display_list.get('title', chart_type))
+                    else:
+                        st.warning(f"Required columns ('{x_col}', '{y_col}') for bar chart not found in filtered data.")
+                        fig = None
+                
+                elif chart_type == "Line Chart":
+                    x_col, y_col = params.get('x'), params.get('y')
+                    if x_col in filtered_data.columns and y_col in filtered_data.columns:
+                        fig = px.line(filtered_data, x=x_col, y=y_col, color=params.get('color'), title=item_in_display_list.get('title', chart_type))
+                    else:
+                        st.warning(f"Required columns ('{x_col}', '{y_col}') for line chart not found in filtered data.")
+                        fig = None
+                
+                elif chart_type == "Scatter Plot":
+                    x_col, y_col = params.get('x'), params.get('y')
+                    if x_col in filtered_data.columns and y_col in filtered_data.columns:
+                        fig = px.scatter(filtered_data, x=x_col, y=y_col, color=params.get('color'), size=params.get('size'), title=item_in_display_list.get('title', chart_type))
+                    else:
+                        st.warning(f"Required columns ('{x_col}', '{y_col}') for scatter plot not found in filtered data.")
+                        fig = None
+                
+                elif chart_type == "Pie Chart":
+                    if params.get('names') in filtered_data.columns and params.get('values') in filtered_data.columns:
+                        fig = px.pie(filtered_data, names=params.get('names'), values=params.get('values'), title=item_in_display_list.get('title', chart_type))
+                    else:
+                        st.warning("Required columns for pie chart not found in filtered data.")
+                        fig = None
+                
+                elif chart_type == "Histogram":
+                    if params.get('x') in filtered_data.columns:
+                        fig = px.histogram(filtered_data, x=params.get('x'), title=item_in_display_list.get('title', chart_type))
+                    else:
+                        st.warning("Required column for histogram not found in filtered data.")
+                        fig = None
+                
+                elif chart_type == "Table":
+                    # For tables, display using st.dataframe
+                    selected_columns = params.get('columns', filtered_data.columns.tolist())
+                    # Ensure selected_columns_param is a list
+                    if not isinstance(selected_columns, list):
+                        selected_columns = filtered_data.columns.tolist()
+                    
+                    # Filter columns that actually exist in filtered_data
+                    display_columns = [col for col in selected_columns if col in filtered_data.columns]
+
+                    if not display_columns and selected_columns: # If intended columns are gone, show warning
+                        st.warning(f"Original columns for table not found in filtered data. Showing available columns.")
+                        display_columns = filtered_data.columns.tolist() # Fallback to all available
+                    elif not display_columns and not selected_columns: # If no columns were ever specified and data is empty
+                        display_columns = filtered_data.columns.tolist()
+
+
+                    if display_columns:
+                        st.dataframe(filtered_data[display_columns], use_container_width=True)
+                    elif not filtered_data.empty:
+                        st.dataframe(filtered_data, use_container_width=True) # Show all if specific columns failed
+                    else:
+                        st.info("No data to display in table after filtering.")
+                    
+                elif chart_type == "Map":
+                    # Simplified to always be scatter_geo
+                    # Map parameters from when it was added to dashboard
+                    # This entire block for rendering Map on dashboard should be removed or made unreachable.
+                    # For safety, we can add a message.
+                    st.info(f"Map item '{item_in_display_list.get('title', 'Map')}' cannot be displayed as map functionality is removed.")
+                    fig = None
+                    
+                if fig: # Apply dark theme if a fig object was created
+                    fig.update_layout(
+                        template="plotly_dark",
+                        paper_bgcolor='rgba(0,0,0,0)',  # Transparent background
+                        plot_bgcolor='rgba(0,0,0,0)',   # Transparent background
+                        font_color='#E0E0E0', # General font color for chart
+                        title_font_color='#F1F5F9', # Title font
+                        legend_font_color='#CBD5E1', # Legend font
+                        autosize=True, # Explicitly set autosize to help with resizing
+                        height=500  # Set a default height for dashboard charts
+                    )
+                    # For axes, make lines and ticks white/themed
+                    axis_tick_label_color = '#CBD5E1' # Color for axis tick labels (e.g., 10k, 20k on y-axis)
+                    axis_title_color = '#94A3B8'    # Color for axis titles (e.g., 'Total Sales')
+                    grid_color = '#334155'          # Color for grid lines
+                    line_color = '#4A5568'          # Color for axis lines themselves
+
+                    fig.update_xaxes(
+                        showgrid=True, gridwidth=1, gridcolor=grid_color,
+                        zerolinecolor=grid_color, zerolinewidth=1, # Ensure zeroline is also styled
+                        linecolor=line_color, showline=True, # Make axis line visible
+                        tickfont=dict(color=axis_tick_label_color),
+                        title_font=dict(color=axis_title_color)
+                    )
+                    fig.update_yaxes(
+                        showgrid=True, gridwidth=1, gridcolor=grid_color,
+                        zerolinecolor=grid_color, zerolinewidth=1,
+                        linecolor=line_color, showline=True,
+                        tickfont=dict(color=axis_tick_label_color),
+                        title_font=dict(color=axis_title_color)
+                    )
+                    # For legends, if any
+                    if hasattr(fig.layout, 'legend'):
+                        fig.update_layout(legend=dict(font=dict(color='#CBD5E1'), bgcolor='rgba(0,0,0,0)')) # Transparent legend background
+
+            except Exception as e:
+                st.error(f"Error generating chart: {e}")
+                fig = None # Ensure fig is None if chart generation fails
+                
+            # Displaying the chart or info message
+            if fig and chart_type != "Table" and chart_type != "KPI":  # Table and KPI are handled differently
+                    st.plotly_chart(fig, use_container_width=True)
+            elif not fig and chart_type !="Table" and not filtered_data.empty : # If fig is None but was expected for a non-table chart type
+                    st.warning(f"Could not display chart: {item_in_display_list.get('title', item_in_display_list['chart_type'])}. Check data and filters.")
+            elif filtered_data.empty and chart_type != "Table": # Data is empty after filtering for a non-table chart type
+                st.info(f"No data remaining for '{item_in_display_list.get('title', item_in_display_list['chart_type'])}' after applying filters.")
+            # Table display is handled within its own block above
+
+
+            # --- Embed Code Expander ---
+            with st.expander("Embed This Item"):
+                embed_html = ""
+                item_title_for_embed = item_in_display_list.get('title', item_in_display_list['chart_type'])
+                try:
+                    if chart_type == "Table":
+                        # Use display_columns which are columns confirmed to be in filtered_data
+                        # and ensure filtered_data itself is not empty before trying to access columns
+                        table_df_for_embed = pd.DataFrame() # Default to empty
+                        if not filtered_data.empty and display_columns and all(col in filtered_data.columns for col in display_columns):
+                            table_df_for_embed = filtered_data[display_columns]
+                        
+                        if not table_df_for_embed.empty:
+                            embed_html = get_table_html(table_df_for_embed, title=item_title_for_embed)
+                        else:
+                            embed_html = f"<h3>{item_title_for_embed}</h3><p>No data to embed for this table (data might be empty after filtering or required columns missing).</p>"
+                    elif fig: # This is for Plotly charts that were successfully generated
+                        embed_html = get_plotly_fig_html(fig, title=item_title_for_embed)
+                    else: # This case handles non-Table types where fig is None (e.g., chart generation failed)
+                        embed_html = f"<h3>{item_title_for_embed}</h3><p>Could not generate embed code for this item (e.g., chart failed or data empty after filtering).</p>"
+                    
+                    # Add Plotly JS if it's a Plotly chart and the script isn't already in embed_html
+                    # get_plotly_fig_html should already include the script, this is a fallback/check.
+                    embed_html_with_script = embed_html # Default to current embed_html
+                    if chart_type != "Table" and fig and "<script src='https://cdn.plot.ly/plotly-latest.min.js'></script>" not in embed_html:
+                        embed_html_with_script = f"<script src='https://cdn.plot.ly/plotly-latest.min.js'></script>\n{embed_html}"
+                    
+                    st.code(embed_html_with_script, language="html")
+                except Exception as e_embed:
+                    st.error(f"Could not generate embed code: {e_embed}")
+                    st.code(f"<!-- Error generating embed code: {e_embed} -->", language="html")
+
+                # --- Controls (Remove, Move Up, Move Down) --- 
+                control_cols = st.columns([3, 1, 1]) 
+
+                with control_cols[0]: 
+                     if st.button(f"Remove Item", key=f"remove_dash_item_{current_item_absolute_index}"):
+                        st.session_state.dashboard_items.pop(current_item_absolute_index)
+                        save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
+                        st.rerun()
+                
+                with control_cols[1]: 
+                    can_move_up = current_item_absolute_index > 0
+                    if st.button("↑ Up", key=f"move_up_item_{current_item_absolute_index}", disabled=not can_move_up):
+                        move_item(current_item_absolute_index, -1)
+                        
+                with control_cols[2]: 
+                    can_move_down = current_item_absolute_index < len(st.session_state.dashboard_items) - 1
+                    if st.button("↓ Down", key=f"move_down_item_{current_item_absolute_index}", disabled=not can_move_down):
+                        move_item(current_item_absolute_index, 1)
             
             # No st.markdown("---GV---") here as it might be inside a column.
         displayed_item_count +=1 # Increment after processing an item and placing it in a column
@@ -2451,12 +2268,12 @@ def generate_dashboard_html(dashboard_items):
                     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
                     margin: 0; 
                     padding: 20px;
-                    background-color: #0F172A; /* Dark background */
-                    color: #E0E0E0; /* Light text */
+                    background-color: #F0F2F6; /* Light grey background */
+                    color: #333333; /* Dark text for body */
                 }
                 h1 { 
                     text-align: center; 
-                    color: #F1F5F9; /* Off-white */
+                    color: #1F2937; /* Darker text for main title */
                     margin-bottom: 30px;
                     font-size: 2.5em;
                 }
@@ -2470,20 +2287,20 @@ def generate_dashboard_html(dashboard_items):
                     justify-content: center; 
                 }
                 .kpi-item {
-                    background-color: #1E293B; /* Dark card background */
-                    border: 1px solid #334155; /* Subtle border */
-                    border-radius: 0.5rem; /* More rounded */
+                    background-color: #FFFFFF; /* White background for KPI cards */
+                    border: 1px solid #D1D5DB; /* Light grey border */
+                    border-radius: 0.5rem; 
                     padding: 1.5rem;
                     text-align: left;
-                    color: #FFFFFF;
-                    min-width: 220px; /* Min width for KPI boxes */
-                    flex-basis: 250px; /* Base width before growing */
+                    color: #1F2937; /* Dark text for KPI content */
+                    min-width: 220px; 
+                    flex-basis: 250px; 
                     flex-grow: 1;
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.2); /* Softer shadow */
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* Softer shadow for light theme */
                 }
                 .kpi-item .label {
                     font-size: 0.9rem;
-                    color: #94A3B8; /* Lighter gray */
+                    color: #6B7280; /* Medium grey for KPI label */
                     margin-bottom: 0.3rem;
                     text-transform: uppercase;
                     letter-spacing: 0.05em;
@@ -2491,31 +2308,31 @@ def generate_dashboard_html(dashboard_items):
                 .kpi-item .value {
                     font-size: 2.5rem;
                     font-weight: 700;
-                    color: #F1F5F9;
+                    color: #4A5568; /* Darker color for KPI value, was #7C3AED (purple) */
                     line-height: 1.1;
                 }
                 .kpi-item .delta {
                     font-size: 0.9rem;
-                    color: #6EE7B7; /* Green for positive delta */
+                    color: #10B981; /* Green for positive delta (can remain) */
                 }
                 .dashboard-item-container { 
-                    display: grid; /* Using grid for better control */
-                    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); /* Responsive columns */
+                    display: grid; 
+                    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); 
                     gap: 20px; 
                 }
                 .dashboard-item {
-                    background-color: #1E293B; /* Dark card background */
-                    border: 1px solid #334155;
+                    background-color: #FFFFFF; /* White background for chart/table cards */
+                    border: 1px solid #D1D5DB; /* Light grey border */
                     border-radius: 0.5rem;
                     padding: 20px; 
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
                 }
                 .dashboard-item h3 { 
                     margin-top: 0; 
-                    border-bottom: 1px solid #334155; 
+                    border-bottom: 1px solid #E5E7EB; /* Lighter border for h3 */
                     padding-bottom: 10px; 
                     margin-bottom: 15px; 
-                    color: #CBD5E1; /* Lighter header color */
+                    color: #1F2937; /* Darker header color */
                     font-size: 1.4em;
                 }
                 .plotly-chart { 
@@ -2524,34 +2341,31 @@ def generate_dashboard_html(dashboard_items):
                 table.dataframe { 
                     border-collapse: collapse; 
                     width: 100%; 
-                    color: #E0E0E0; 
+                    color: #374151; /* Dark text for table content */
                     border-radius: 0.375rem; 
-                    overflow: hidden; /* For rounded corners on table */
+                    overflow: hidden; 
                 }
                 table.dataframe th, table.dataframe td { 
-                    border: 1px solid #334155; 
+                    border: 1px solid #E5E7EB; /* Lighter borders for table */
                     padding: 10px; 
                     text-align: left; 
                 }
                 table.dataframe th { 
-                    background-color: #2A3A4A; /* Slightly different header for table */
-                    color: #F1F5F9;
+                    background-color: #F3F4F6; /* Very light grey for table header */
+                    color: #1F2937; /* Dark text for table header */
                     font-weight: 600;
                 }
                 table.dataframe tr:nth-child(even) {
-                    background-color: #1A2433; /* Zebra striping for rows */
+                    background-color: #F9FAFB; /* Slightly off-white for zebra striping */
                 }
-                /* Ensure Plotly charts use transparent background if their layout doesn't specify one */
-                .js-plotly-plot .plotly .main-svg { background-color: transparent !important; }
-                .js-plotly-plot .plotly .main-svg .bg { fill: transparent !important; }
+                /* Plotly chart styles will be updated in the fig.update_layout calls below */
 
-                /* Add a bit of animation/transition to dashboard items */
                 .dashboard-item, .kpi-item {
                     transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
                 }
                 .dashboard-item:hover, .kpi-item:hover {
                     transform: translateY(-5px);
-                    box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+                    box-shadow: 0 6px 12px rgba(0,0,0,0.1); /* Slightly more pronounced hover shadow */
                 }
 
             </style>
@@ -2603,6 +2417,7 @@ def generate_dashboard_html(dashboard_items):
                     except:
                         kpi_delta_text = str(filtered_data[delta_col].iloc[0])
             
+            # KPI item HTML is now styled by the global CSS block above
             item_html_content = f"""
             <div class='kpi-item'>
                 <div class='label'>{kpi_label_text}</div>
@@ -2618,7 +2433,7 @@ def generate_dashboard_html(dashboard_items):
                 if chart_type == "Table":
                     selected_columns = params.get('columns', filtered_data.columns.tolist())
                     table_df = filtered_data[selected_columns] if all(c in filtered_data.columns for c in selected_columns) else filtered_data
-                    item_html_output = get_table_html(table_df, title=item_title) # get_table_html already adds <h3>
+                    item_html_output = get_table_html(table_df, title=item_title) 
                 else: # Plotly charts
                     fig = None
                     if chart_type == "Bar Chart": fig = px.bar(filtered_data, x=params.get('x'), y=params.get('y'), color=params.get('color'), title=item_title)
@@ -2627,25 +2442,24 @@ def generate_dashboard_html(dashboard_items):
                     elif chart_type == "Pie Chart": fig = px.pie(filtered_data, names=params.get('names'), values=params.get('values'), title=item_title)
                     elif chart_type == "Histogram": fig = px.histogram(filtered_data, x=params.get('x'), title=item_title)
                     elif chart_type == "Map":
-                        if params.get('locationmode') == 'country names': 
-                            fig = px.choropleth(filtered_data, locations=params.get('locations'), color=params.get('color'), title=item_title, locationmode=params.get('locationmode'))
-                            if fig: fig.update_layout(geo=dict(showframe=False, showcoastlines=True))
-                        elif params.get('lat') and params.get('lon'): 
-                            fig = px.scatter_geo(filtered_data, lat=params.get('lat'), lon=params.get('lon'), hover_name=params.get('hover_name'), color=params.get('color'), title=item_title)
-                    if fig:
-                        # Apply dark theme to Plotly charts for HTML export
+                        # Map rendering is removed, provide placeholder
+                        item_html_output = f"<h3>{item_title}</h3><p>Map visualization is currently not supported in this export.</p>"
+                        fig = None # Ensure fig is None
+                    
+                    if fig: # Only proceed if fig was created (i.e., not a map or failed chart)
+                        # Apply light theme to Plotly charts for HTML export
                         fig.update_layout(
-                            template="plotly_dark",
-                            paper_bgcolor='rgba(0,0,0,0)',
-                            plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#E0E0E0', # Light text for chart elements
-                            title_font_color='#F1F5F9',
-                            legend_font_color='#CBD5E1'
+                            template="plotly_white", # Use a light template
+                            paper_bgcolor='rgba(255,255,255,1)', # White paper
+                            plot_bgcolor='rgba(255,255,255,1)',  # White plot area
+                            font_color='#333333', # Dark font for chart elements
+                            title_font_color='#1F2937',
+                            legend_font_color='#374151'
                         )
-                        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#334155', zerolinecolor='#4A5568', linecolor='#4A5568', tickfont=dict(color='#CBD5E1'))
-                        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#334155', zerolinecolor='#4A5568', linecolor='#4A5568', tickfont=dict(color='#CBD5E1'))
-                        item_html_output = get_plotly_fig_html(fig, title=item_title) # get_plotly_fig_html already adds <h3>
-                    else:
+                        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#E5E7EB', zerolinecolor='#D1D5DB', linecolor='#D1D5DB', tickfont=dict(color='#4B5563'))
+                        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#E5E7EB', zerolinecolor='#D1D5DB', linecolor='#D1D5DB', tickfont=dict(color='#4B5563'))
+                        item_html_output = get_plotly_fig_html(fig, title=item_title) 
+                    elif not item_html_output: # If fig is None and not map, chart failed
                         item_html_output = f"<h3>{item_title}</h3><p>Could not reconstruct this chart for HTML export.</p>"
                 
                 item_html_content = f"<div class='dashboard-item'>{item_html_output}</div>"
@@ -2692,7 +2506,7 @@ def get_download_link_html(html_content, filename="dashboard.html"):
 
 # --- Dashboard Sharing Management Page ---
 def show_dashboard_management_page():
-    st.title("Manage Dashboards")
+    st.title("Manage Dashboard Sharing")
 
     if not st.session_state.logged_in_user:
         st.error("Please log in to manage dashboard sharing.")
@@ -2701,129 +2515,67 @@ def show_dashboard_management_page():
         return
 
     current_user = st.session_state.logged_in_user
+    st.subheader(f"Dashboards Owned by You ({current_user})")
 
-    # --- Create New Dashboard Section ---
-    st.subheader("Create New Dashboard")
-    with st.form("create_dashboard_form", clear_on_submit=True):
-        new_dash_name_management = st.text_input("New Dashboard Name", key="new_dashboard_name_management_input")
-        create_submitted = st.form_submit_button("Create Dashboard")
-        if create_submitted:
-            if new_dash_name_management:
-                # Check if a dashboard with this name is already owned by the current user
-                dashboard_name_tuples = get_user_dashboard_names(current_user)
-                is_owned_already = any(d[0] == new_dash_name_management and d[2] == current_user for d in dashboard_name_tuples)
-                if not is_owned_already:
-                    if database.save_dashboard_to_db(current_user, new_dash_name_management, [], []):
-                        st.success(f"Dashboard '{new_dash_name_management}' created!")
-                        database.log_app_action(current_user, "CREATE_DASHBOARD_SUCCESS", f"User created dashboard: {new_dash_name_management}", "SUCCESS")
-                        # Optionally, set as current and switch, or just let user select it
-                        st.session_state.current_dashboard_name = new_dash_name_management
-                        st.session_state.dashboard_items = []
-                        st.rerun() # Rerun to refresh dashboard list
-                    else:
-                        st.error(f"Failed to create dashboard '{new_dash_name_management}' in database.")
-                        database.log_app_action(current_user, "CREATE_DASHBOARD_FAILURE", f"User failed to create dashboard: {new_dash_name_management}", "FAILURE")
-                else:
-                    st.error(f"You already own a dashboard named '{new_dash_name_management}'.")
-            else:
-                st.warning("Please enter a name for the new dashboard.")
-    st.markdown("---")
-
-    st.subheader(f"Your Owned Dashboards")
+    # dashboard_name_tuples: (raw_name, display_name, owner_username)
     owned_dashboard_tuples = [d for d in get_user_dashboard_names(current_user) if d[2] == current_user]
 
     if not owned_dashboard_tuples:
-        st.info("You do not own any dashboards yet. Create one above.")
-        # return # No return here, allow showing "Back to My Dashboard" button
+        st.info("You do not own any dashboards yet. Create one from the 'My Dashboard' page.")
+        return
 
-    for dash_name, display_name_unused, owner_username_unused in sorted(owned_dashboard_tuples, key=lambda x: x[0]):
-        with st.container():
-            st.markdown(f"#### Dashboard: `{dash_name}`")
+    for dash_name, display_name, owner_username in sorted(owned_dashboard_tuples, key=lambda x: x[0]):
+        with st.container(): 
+            st.markdown(f"#### {dash_name}")
             
-            # --- Rename Dashboard Section ---
-            with st.expander("Rename Dashboard"):
-                with st.form(key=f"rename_form_{dash_name}"):
-                    new_rename_input = st.text_input("New Name", value=dash_name, key=f"rename_input_{dash_name}")
-                    rename_submitted = st.form_submit_button("Rename")
-                    if rename_submitted:
-                        if new_rename_input and new_rename_input.strip():
-                            new_name_stripped = new_rename_input.strip()
-                            if dash_name == new_name_stripped:
-                                st.toast("New name is the same as the current name.", icon="🤷")
-                            elif any(d[0] == new_name_stripped and d[2] == current_user for d in owned_dashboard_tuples if d[0] != dash_name):
-                                st.error(f"You already own another dashboard named '{new_name_stripped}'. Please choose a different name.")
-                            elif database.rename_dashboard_in_db(current_user, dash_name, new_name_stripped):
-                                st.success(f"Dashboard '{dash_name}' renamed to '{new_name_stripped}'.")
-                                database.log_app_action(current_user, "RENAME_DASHBOARD_SUCCESS", f"Renamed '{dash_name}' to '{new_name_stripped}'", "SUCCESS")
-                                if st.session_state.current_dashboard_name == dash_name: # Update current dashboard name if it was the one renamed
-                                    st.session_state.current_dashboard_name = new_name_stripped
-                                st.rerun()
-                            else:
-                                database.log_app_action(current_user, "RENAME_DASHBOARD_FAILURE", f"Failed to rename '{dash_name}' to '{new_name_stripped}'", "FAILURE")
-                        else:
-                            st.warning("New dashboard name cannot be empty.")
-
-            # --- Delete Dashboard Section ---
-            with st.expander("Delete Dashboard"):
-                st.warning(f"This action is irreversible. Deleting dashboard '{dash_name}' will remove all its content and versions.")
-                if st.button(f"Delete Dashboard '{dash_name}'", type="primary", key=f"delete_dash_{dash_name}"): # Changed to primary for more caution
-                    if database.delete_dashboard_from_db(current_user, dash_name):
-                        st.success(f"Dashboard '{dash_name}' deleted successfully.")
-                        database.log_app_action(current_user, "DELETE_DASHBOARD_SUCCESS", f"Deleted dashboard: {dash_name}", "SUCCESS")
-                        if st.session_state.current_dashboard_name == dash_name:
-                            st.session_state.current_dashboard_name = None # Clear current if it was deleted
-                            st.session_state.dashboard_items = []
+            # Load the specific dashboard to get its current shared_with_users list
+            dashboard_details = database.load_dashboard_from_db(owner_username, dash_name)
+            shared_with_list = []
+            if dashboard_details and isinstance(dashboard_details.get('shared_with_users'), list):
+                shared_with_list = dashboard_details['shared_with_users']
+            
+            if not shared_with_list:
+                st.write("_Not currently shared with any other users._")
+            else:
+                st.write("Currently shared with:")
+                for shared_user_idx, shared_user in enumerate(shared_with_list):
+                    cols = st.columns([3,1])
+                    cols[0].write(f"- {shared_user}")
+                    if cols[1].button(f"Revoke Access", key=f"revoke_{dash_name}_{shared_user_idx}_{shared_user}"):
+                        # Create a new list without the revoked user
+                        updated_shared_list = [u for i, u in enumerate(shared_with_list) if i != shared_user_idx]
+                        if database.update_dashboard_sharing_in_db(owner_username, dash_name, updated_shared_list):
+                        st.success(f"Access for '{shared_user}' to dashboard '{dash_name}' has been revoked.")
+                            database.log_app_action(st.session_state.logged_in_user, "REVOKE_DASHBOARD_ACCESS_SUCCESS", f"Revoked access for {shared_user} from {dash_name}", "SUCCESS")
                         st.rerun()
-                    else:
-                        st.error(f"Failed to delete dashboard '{dash_name}'.")
-                        database.log_app_action(current_user, "DELETE_DASHBOARD_FAILURE", f"Failed to delete dashboard: {dash_name}", "FAILURE")
-
-            # --- Share Dashboard Section (existing logic) ---
-            with st.expander("Manage Sharing"):
-                dashboard_details = database.load_dashboard_from_db(current_user, dash_name) # Use current_user as owner
-                shared_with_list = []
-                if dashboard_details and isinstance(dashboard_details.get('shared_with_users'), list):
-                    shared_with_list = dashboard_details['shared_with_users']
-                
+                        else:
+                            st.error(f"Failed to revoke access for '{shared_user}'.")
+                            database.log_app_action(st.session_state.logged_in_user, "REVOKE_DASHBOARD_ACCESS_FAILURE", f"Failed to revoke access for {shared_user} from {dash_name}", "FAILURE")
+            
+            # Option to share with new users
+            all_other_users_list = [u["username"] for u in database.get_all_users_from_db() if u["username"] != current_user and u["username"] not in shared_with_list]
+            if all_other_users_list:
+                share_with_new_users = st.multiselect(
+                    "Share with additional users:", 
+                    options=all_other_users_list, 
+                    key=f"add_share_{dash_name}"
+                )
+                if st.button("Add Selected Users to Sharing", key=f"confirm_add_share_{dash_name}"):
+                    if share_with_new_users:
+                        newly_combined_shared_list = list(set(shared_with_list + share_with_new_users))
+                        if database.update_dashboard_sharing_in_db(owner_username, dash_name, newly_combined_shared_list):
+                            st.success(f"Dashboard '{dash_name}' now also shared with: {', '.join(share_with_new_users)}.")
+                            database.log_app_action(st.session_state.logged_in_user, "UPDATE_DASHBOARD_SHARING_SUCCESS", f"Added users {share_with_new_users} to sharing for {dash_name}", "SUCCESS")
+                            st.rerun()
+                        else:
+                            st.error("Failed to update sharing list.")
+                            database.log_app_action(st.session_state.logged_in_user, "UPDATE_DASHBOARD_SHARING_FAILURE", f"Failed to add users {share_with_new_users} to sharing for {dash_name}", "FAILURE")
+            else:
                 if not shared_with_list:
-                    st.write("_Not currently shared with any other users._")
+                    st.write("_No other users available in the system to share with._")
                 else:
-                    st.write("Currently shared with:")
-                    for shared_user_idx, shared_user in enumerate(shared_with_list):
-                        cols_share = st.columns([3,1])
-                        cols_share[0].write(f"- {shared_user}")
-                        if cols_share[1].button(f"Revoke Access", key=f"revoke_{dash_name}_{shared_user_idx}_{shared_user}"):
-                            updated_shared_list = [u for i, u in enumerate(shared_with_list) if i != shared_user_idx]
-                            if database.update_dashboard_sharing_in_db(current_user, dash_name, updated_shared_list):
-                                st.success(f"Access for '{shared_user}' to dashboard '{dash_name}' has been revoked.")
-                                database.log_app_action(current_user, "REVOKE_DASHBOARD_ACCESS_SUCCESS", f"Revoked access for {shared_user} from {dash_name}", "SUCCESS")
-                                st.rerun()
-                            else:
-                                st.error(f"Failed to revoke access for '{shared_user}'.")
-                                database.log_app_action(current_user, "REVOKE_DASHBOARD_ACCESS_FAILURE", f"Failed to revoke access for {shared_user} from {dash_name}", "FAILURE")
-                
-                all_other_users_list = [u["username"] for u in database.get_all_users_from_db() if u["username"] != current_user and u["username"] not in shared_with_list]
-                if all_other_users_list:
-                    share_with_new_users = st.multiselect(
-                        "Share with additional users:", 
-                        options=all_other_users_list, 
-                        key=f"add_share_{dash_name}"
-                    )
-                    if st.button("Add Selected Users to Sharing", key=f"confirm_add_share_{dash_name}"):
-                        if share_with_new_users:
-                            newly_combined_shared_list = list(set(shared_with_list + share_with_new_users))
-                            if database.update_dashboard_sharing_in_db(current_user, dash_name, newly_combined_shared_list):
-                                st.success(f"Dashboard '{dash_name}' now also shared with: {', '.join(share_with_new_users)}.")
-                                database.log_app_action(current_user, "UPDATE_DASHBOARD_SHARING_SUCCESS", f"Added users {share_with_new_users} to sharing for {dash_name}", "SUCCESS")
-                                st.rerun()
-                            else:
-                                st.error("Failed to update sharing list.")
-                                database.log_app_action(current_user, "UPDATE_DASHBOARD_SHARING_FAILURE", f"Failed to add users {share_with_new_users} to sharing for {dash_name}", "FAILURE")
-                else:
-                    if not shared_with_list: # Check if there are no users to share with AND no users are currently shared with
-                        st.write("_No other users available in the system to share with._")
-                    # else: # This case means all other users are already shared or no other users exist
-                        # st.write("_All other users in the system are already shared with or there are no other users._")
+                    st.write("_All other users in the system are already shared with or there are no other users._")
+
             st.markdown("---")
 
     if st.button("Back to My Dashboard"):

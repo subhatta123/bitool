@@ -15,5 +15,7 @@ openai # Using OpenAI
 # For advanced visualizations if needed
 # matplotlib
 plotly # Using Plotly for interactive charts
+reportlab # For PDF export functionality
+kaleido # For rendering Plotly charts as static images for PDFs
 
 # plotly 
