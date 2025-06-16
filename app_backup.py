@@ -794,112 +794,136 @@ def handle_csv_connection():
             st.session_state.data = None
 
 def handle_db_connection(db_type):
-    """Handles the UI for database connection parameters (actual connection logic to be added)."""
+    """Handles the UI for database connection parameters and logic."""
     st.subheader(f"Connect to {db_type}")
 
-    if db_type == "SQL Server":
-        driver_input = st.text_input(f"ODBC Driver for SQL Server", value="ODBC Driver 17 for SQL Server", key=f"{db_type.lower()}_driver", help="Ensure this ODBC driver is installed on your system and this name matches exactly.")
-        host_input = st.text_input(f"{db_type} Server Name (e.g., localhost\\SQLEXPRESS or server.database.windows.net)", key=f"{db_type.lower()}_host")
-        port_input = st.text_input(f"{db_type} Port (Leave blank if default or not applicable, e.g., Azure SQL)", key=f"{db_type.lower()}_port") # Port is often part of server name or handled by driver
-        dbname_input = st.text_input(f"{db_type} Database Name", key=f"{db_type.lower()}_dbname")
-        user_input = st.text_input(f"{db_type} User (Leave blank for Windows Authentication)", key=f"{db_type.lower()}_user")
-        password_input = st.text_input(f"{db_type} Password", type="password", key=f"{db_type.lower()}_password")
-        encrypt_input = st.selectbox("Encrypt Connection", options=["yes", "no", "optional"], index=0, key=f"{db_type.lower()}_encrypt", help="For Azure SQL Database, 'yes' is often required.")
-        trust_cert_input = st.selectbox("Trust Server Certificate", options=["no", "yes"], index=0, key=f"{db_type.lower()}_trust_cert", help="Set to 'yes' if using a self-signed certificate or if encryption is enabled and you trust the server.")
+    # Generic inputs that are common to most databases
+    host_input_val = "localhost" if db_type in ["PostgreSQL", "Oracle"] else ""
+    port_input_val = {"PostgreSQL": "5432", "Oracle": "1521"}.get(db_type, "")
+    db_name_label = f"{db_type} Database Name"
+    if db_type == "Oracle":
+        db_name_label = f"{db_type} Service Name or SID"
 
-    else:
-        # Placeholder for other DB connection inputs
-        host_input = st.text_input(f"{db_type} Host", key=f"{db_type.lower()}_host")
-        port_input = st.text_input(f"{db_type} Port", key=f"{db_type.lower()}_port")
-        dbname_input = st.text_input(f"{db_type} Database Name", key=f"{db_type.lower()}_dbname")
-        user_input = st.text_input(f"{db_type} User", key=f"{db_type.lower()}_user")
-        password_input = st.text_input(f"{db_type} Password", type="password", key=f"{db_type.lower()}_password")
+    host_input = st.text_input(f"{db_type} Host", key=f"{db_type.lower()}_host", value=host_input_val)
+    port_input = st.text_input(f"{db_type} Port", key=f"{db_type.lower()}_port", value=port_input_val)
+    dbname_input = st.text_input(db_name_label, key=f"{db_type.lower()}_dbname")
+    user_input = st.text_input(f"{db_type} User", key=f"{db_type.lower()}_user")
+    password_input = st.text_input(f"{db_type} Password", type="password", key=f"{db_type.lower()}_password")
+
+    # --- DB-specific UI elements ---
+    driver_input, encrypt_input, trust_cert_input, oracle_conn_type = None, None, None, None
+
+    if db_type == "SQL Server":
+        st.info("For SQL Server, ensure the appropriate ODBC driver is installed on the system running Streamlit.")
+        driver_input = st.text_input(f"ODBC Driver for SQL Server", value="ODBC Driver 17 for SQL Server", key=f"{db_type.lower()}_driver")
+        encrypt_input = st.selectbox("Encrypt Connection", options=["yes", "no", "optional"], index=0, key=f"{db_type.lower()}_encrypt")
+        trust_cert_input = st.selectbox("Trust Server Certificate", options=["no", "yes"], index=0, key=f"{db_type.lower()}_trust_cert")
+        st.caption("For 'User', leave blank to use Windows Authentication (if applicable).")
+
+    elif db_type == "Oracle":
+        st.info("For Oracle, the recommended driver is 'oracledb'. Ensure it is installed (`pip install oracledb`).")
+        oracle_conn_type = st.selectbox("Connection Identifier Type", ["Service Name", "SID"], key="oracle_conn_type")
+
+    elif db_type == "PostgreSQL":
+        st.info("For PostgreSQL connection to work, ensure 'psycopg2-binary' is installed in your environment (`pip install psycopg2-binary`).")
 
 
     if st.button(f"Connect to {db_type}"):
-        if db_type == "SQL Server":
-            if not driver_input or not host_input or not dbname_input:
-                st.error("Driver, Server Name, and Database Name are required for SQL Server connection.")
-                return
-            try:
-                conn_str_parts = [
-                    f"DRIVER={{{driver_input.strip()}}}",
-                    f"SERVER={host_input.strip()}",
-                    f"DATABASE={dbname_input.strip()}",
-                    f"Encrypt={encrypt_input}",
-                    f"TrustServerCertificate={trust_cert_input}"
-                ]
-                current_server_val = host_input.strip()
-                if port_input.strip():
-                     current_server_val = f"{host_input.strip()},{port_input.strip()}"
-                conn_str_parts[1] = f"SERVER={current_server_val}"
+        engine = None
+        try:
+            if db_type == "SQL Server":
+                if not driver_input or not host_input or not dbname_input:
+                    st.error("Driver, Host, and Database Name are required for SQL Server connection.")
+                    return
 
+                params = {
+                    'DRIVER': f'{{{driver_input.strip()}}}',
+                    'SERVER': f'{host_input.strip()},{port_input.strip()}' if port_input.strip() else host_input.strip(),
+                    'DATABASE': dbname_input.strip(),
+                    'Encrypt': encrypt_input,
+                    'TrustServerCertificate': trust_cert_input
+                }
                 if user_input.strip():
-                    conn_str_parts.append(f"UID={user_input.strip()}")
-                    conn_str_parts.append(f"PWD={password_input}")
-                else: # Windows Authentication (Trusted Connection)
-                    conn_str_parts.append("Trusted_Connection=yes")
+                    params['UID'] = user_input.strip()
+                    params['PWD'] = password_input
+                else:
+                    params['Trusted_Connection'] = 'yes'
 
-                conn_str = ";".join(conn_str_parts)
-                st.info(f"Attempting to connect with: {conn_str.replace(password_input, '********') if password_input else conn_str}")
+                odbc_conn_str = ";".join([f"{k}={v}" for k, v in params.items()])
+                quoted_conn_str = urllib.parse.quote_plus(odbc_conn_str)
+                engine_url = f"mssql+pyodbc:///?odbc_connect={quoted_conn_str}"
+                st.info("Connecting to SQL Server via SQLAlchemy...")
+                engine = create_engine(engine_url, connect_args={'timeout': 5})
 
-                cnxn = pyodbc.connect(conn_str, timeout=5) # Added timeout
-                st.session_state.db_connection = cnxn
-                st.session_state.connected = True
-                st.session_state.data = None # Clear any previous CSV data
+            elif db_type == "PostgreSQL":
+                if not all([host_input, port_input, dbname_input, user_input, password_input]):
+                     st.error("All connection details are required for PostgreSQL.")
+                     return
+                engine_url = f"postgresql+psycopg2://{user_input}:{password_input}@{host_input}:{port_input}/{dbname_input}"
+                st.info("Connecting to PostgreSQL via SQLAlchemy...")
+                engine = create_engine(engine_url)
 
-                # Fetch and store schema for SQL Server
-                try:
-                    cursor = cnxn.cursor()
+            elif db_type == "Oracle":
+                if not all([host_input, port_input, dbname_input, user_input, password_input]):
+                    st.error("All connection details are required for Oracle.")
+                    return
+
+                # Construct the DSN for oracledb
+                if oracle_conn_type == "SID":
+                    dsn = f"{host_input}:{port_input}/{dbname_input}"
+                else: # Service Name is default
+                    dsn = f"{host_input}:{port_input}/{dbname_input}"
+                
+                engine_url = f"oracle+oracledb://{user_input}:{password_input}@{dsn}"
+                st.info("Connecting to Oracle via SQLAlchemy using 'oracledb' driver...")
+                engine = create_engine(engine_url)
+
+            if engine:
+                with st.spinner("Connecting to database and fetching schema..."):
+                    # The 'connect()' call will raise an error if connection fails.
+                    connection_test = engine.connect()
+                    connection_test.close() # Close test connection immediately
+
+                    st.session_state.db_engine = engine
+                    st.session_state.db_connection = None # Deprecate direct connection object
+                    st.session_state.connected = True
+                    st.session_state.data = None
+
+                    # Fetch schema using SQLAlchemy Inspector
+                    inspector = inspect(engine)
                     db_schema = {}
-                    # Get tables
-                    tables_query = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_CATALOG = ?"
-                    cursor.execute(tables_query, dbname_input.strip())
-                    tables = [row[0] for row in cursor.fetchall()]
-                    
+                    # For Oracle, you may need to specify the schema (which is often the username, in uppercase)
+                    schema_to_inspect = user_input.upper() if db_type == "Oracle" else None
+                    tables = inspector.get_table_names(schema=schema_to_inspect)
+
                     for table_name in tables:
                         db_schema[table_name] = {}
-                        # Get columns for each table
-                        columns_query = f"SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ? AND TABLE_CATALOG = ? ORDER BY ORDINAL_POSITION"
-                        cursor.execute(columns_query, table_name, dbname_input.strip())
-                        for row in cursor.fetchall():
-                            db_schema[table_name][row[0]] = row[1]
+                        columns = inspector.get_columns(table_name, schema=schema_to_inspect)
+                        for column in columns:
+                            db_schema[table_name][column['name']] = str(column['type'])
+
                     st.session_state.data_schema = db_schema
-                    try: # Log the schema
+                    try:
                         st.session_state.log_data_schema_str = json.dumps(st.session_state.data_schema, indent=2)
-                    except Exception as e:
-                        st.session_state.log_data_schema_str = f"Error formatting DB schema for logs: {e}"
+                    except Exception as e_json:
+                        st.session_state.log_data_schema_str = f"Error formatting DB schema for logs: {e_json}"
 
-                except pyodbc.Error as schema_ex:
-                    st.warning(f"Could not fetch schema details: {schema_ex}")
-                    st.session_state.data_schema = {"error": "Could not fetch schema"}
-                    st.session_state.log_data_schema_str = f"DB Schema Fetch Error: {schema_ex}"
-                except Exception as schema_e:
-                    st.warning(f"An error occurred while fetching schema: {schema_e}")
-                    st.session_state.data_schema = {"error": f"Could not fetch schema: {schema_e}"}
-                    st.session_state.log_data_schema_str = f"DB Schema Fetch Error: {schema_e}"
+                    st.success(f"Successfully connected to {db_type}!")
+                    st.rerun() # Rerun to move to query screen
 
-                st.success(f"Successfully connected to {db_type}!")
-                # We won't load data here, but we could fetch schema or table names
-                # For example, fetch table names:
-                # cursor = cnxn.cursor()
-                # tables = [row.table_name for row in cursor.tables(tableType='TABLE')]
-                # st.write("Available tables:", tables)
-
-            except pyodbc.Error as ex:
-                sqlstate = ex.args[0]
-                st.error(f"Error connecting to SQL Server: {sqlstate} - {ex}")
-                st.session_state.connected = False
-                st.session_state.db_connection = None
-            except Exception as e:
-                st.error(f"An unexpected error occurred: {e}")
-                st.session_state.connected = False
-                st.session_state.db_connection = None
-
-        else:
-            # --- Placeholder for actual database connection logic for other DBs ---
-            st.info(f"Connection logic for {db_type} is not yet implemented.")
+        except ImportError as e:
+            if 'psycopg2' in str(e).lower():
+                st.error("PostgreSQL driver not found. Please install it in your environment: pip install psycopg2-binary")
+            elif 'oracledb' in str(e).lower() or 'cx_oracle' in str(e).lower():
+                st.error("Oracle driver not found. Please install it (`pip install oracledb`). The old 'cx_Oracle' driver is no longer recommended.")
+            else:
+                st.error(f"A required library is missing: {e}")
             st.session_state.connected = False
+            st.session_state.db_engine = None
+        except Exception as e:
+            st.error(f"Error connecting to {db_type}: {e}")
+            st.session_state.connected = False
+            st.session_state.db_engine = None
 
 def show_query_screen():
     """Displays the UI for asking questions and viewing results."""

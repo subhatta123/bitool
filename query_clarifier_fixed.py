@@ -1,62 +1,14 @@
 import streamlit as st
 import openai # Assuming this is the OpenAI library being used
-import re # For regex processing
 
 # Markers to distinguish LLM response types
 SQL_MARKER = "SQL_QUERY:"
 CLARIFICATION_MARKER = "CLARIFICATION_QUESTION:"
 CANNOT_ANSWER_MARKER = "CANNOT_ANSWER:"
 
-def convert_postgresql_to_sqlite(sql_query):
-    """
-    Convert PostgreSQL-specific syntax to SQLite-compatible syntax.
-    
-    Args:
-        sql_query (str): The SQL query that might contain PostgreSQL syntax
-        
-    Returns:
-        str: SQLite-compatible SQL query
-    """
-    if not sql_query:
-        return sql_query
-    
-    # Convert ILIKE to case-insensitive LIKE using LOWER()
-    # Pattern: column ILIKE 'pattern' -> LOWER(column) LIKE LOWER('pattern')
-    def ilike_replacement(match):
-        column = match.group(1).strip()
-        pattern = match.group(2).strip()
-        return f"LOWER({column}) LIKE LOWER({pattern})"
-    
-    # Handle ILIKE with various whitespace patterns
-    sql_query = re.sub(r'(\w+|\"[^\"]+\"|\'[^\']+\')\s+ILIKE\s+(\'[^\']*\'|\$\d+|\?)', 
-                      ilike_replacement, sql_query, flags=re.IGNORECASE)
-    
-    # Convert REGEXP to LIKE (basic conversion, may not be perfect for all cases)
-    # Pattern: column ~ 'pattern' -> column LIKE '%pattern%'
-    def regexp_replacement(match):
-        column = match.group(1).strip()
-        pattern = match.group(2).strip()
-        # Remove regex anchors and convert to LIKE pattern
-        pattern_content = pattern.strip("'\"")
-        if pattern_content.startswith('^'):
-            pattern_content = pattern_content[1:]
-        if pattern_content.endswith('$'):
-            pattern_content = pattern_content[:-1]
-        return f"{column} LIKE '%{pattern_content}%'"
-    
-    sql_query = re.sub(r'(\w+|\"[^\"]+\")\s*~\s*(\'[^\']*\')', 
-                      regexp_replacement, sql_query, flags=re.IGNORECASE)
-    
-    # Remove PostgreSQL-specific functions that don't exist in SQLite
-    # Convert NULLS FIRST/LAST (already handled in app.py but adding here for completeness)
-    sql_query = re.sub(r'\bNULLS\s+(FIRST|LAST)\b', '', sql_query, flags=re.IGNORECASE)
-    
-    return sql_query.strip()
-
 def get_sql_or_clarification(natural_language_query, data_schema, db_type="sqlserver", target_table=None, conversation_history=None):
     """
     Contacts the LLM to get either an SQL query or a clarifying question.
-    Also handles specific query patterns like comparisons directly.
 
     Args:
         natural_language_query (str): The user's initial query.
@@ -69,42 +21,6 @@ def get_sql_or_clarification(natural_language_query, data_schema, db_type="sqlse
     Returns:
         dict: A dictionary with "type" (sql, clarification, cannot_answer, error) and "content".
     """
-    
-    # --- Template-based fix for comparison queries ---
-    query_lower = natural_language_query.lower()
-    if 'compare' in query_lower and ('vs' in query_lower or 'vs.' in query_lower or 'over' in query_lower):
-        # Potential comparison query detected, try to parse it
-        # This is a basic implementation, can be expanded with more robust parsing
-        
-        # Look for a metric (e.g., sales, profit, revenue)
-        metric_match = re.search(r'compare\s+(sales|profit|revenue|cost|orders)', query_lower)
-        if metric_match:
-            metric = metric_match.group(1)
-            
-            # Find years mentioned in the query
-            years = re.findall(r'\b(20\d{2})\b', query_lower)
-            
-            if len(years) >= 2:
-                years_str = "('" + "', '".join(years) + "')"
-                
-                # Check for a region or category
-                region_match = re.search(r'in\s+([a-zA-Z\s]+)', query_lower)
-                region_clause = ""
-                if region_match and 'south' in region_match.group(1).lower(): # Example for 'south'
-                    region_clause = "WHERE region = 'South' AND"
-                
-                # Construct the query from template
-                templated_sql = f"""
-                SELECT strftime('%Y', order_date) AS YEAR, SUM({metric}) AS total_{metric}
-                FROM integrated_data 
-                {region_clause} strftime('%Y', order_date) IN {years_str}
-                GROUP BY strftime('%Y', order_date)
-                ORDER BY YEAR
-                """
-                
-                print(f"[QueryClarifier] Applied template for comparison query: {templated_sql.strip()}")
-                return {"type": "sql_query", "query": templated_sql.strip()}
-
     client = st.session_state.get("llm_client_instance")
     if not client:
         return {"type": "error", "content": "LLM client is not initialized. Please configure it in LLM Settings."}
@@ -123,8 +39,6 @@ def get_sql_or_clarification(natural_language_query, data_schema, db_type="sqlse
         sql_dialect = "Transact-SQL (T-SQL) for SQL Server"
     elif db_type == "postgresql":
         sql_dialect = "PostgreSQL SQL"
-    elif db_type == "integrated":
-        sql_dialect = "PostgreSQL SQL (querying integrated data)"
     elif db_type == "oracle":
         sql_dialect = "Oracle SQL (PL/SQL)"
     elif db_type == "csv":
@@ -141,11 +55,8 @@ def get_sql_or_clarification(natural_language_query, data_schema, db_type="sqlse
                     schema_prompt_part += f"  - \"{col_name}\" ({col_type})\n"
                 else:
                     schema_prompt_part += f"  - {col_name} ({col_type})\n"
-    elif isinstance(data_schema, list): # For CSV and integrated data
-        if db_type == "integrated":
-            schema_prompt_part += f"Integrated Data Columns (query this as a table named 'integrated_data_temp'):\n"
-        else:
-            schema_prompt_part += f"CSV Columns (query this as a table named 'csv_data'):\n"
+    elif isinstance(data_schema, list): # For CSV
+        schema_prompt_part += f"CSV Columns (query this as a table named 'csv_data'):\n"
         for col_info in data_schema:
             col_name = col_info['name']
             col_type = col_info['type']
@@ -163,25 +74,6 @@ def get_sql_or_clarification(natural_language_query, data_schema, db_type="sqlse
 
     # System Prompt - Simplified for sqlcoder compatibility
     if "sqlcoder" in model_name_to_use.lower():
-        # Enhanced prompt for sqlcoder with explicit SQLite requirements for CSV
-        csv_specific_instructions = ""
-        if db_type == "csv":
-            csv_specific_instructions = """
-CRITICAL - For CSV data, you MUST use SQLite syntax only:
-- Use LIKE (case-sensitive) instead of ILIKE
-- For case-insensitive matching, use: LOWER(column) LIKE LOWER('%pattern%')  
-- No ILIKE, REGEXP, or PostgreSQL-specific functions
-- Column names with spaces MUST be in double quotes: "Customer ID"
-"""
-        elif db_type == "integrated":
-            csv_specific_instructions = """
-For integrated data, you can use full PostgreSQL syntax:
-- EXTRACT(YEAR FROM date_column) for date functions
-- ILIKE for case-insensitive pattern matching  
-- All PostgreSQL functions and features are supported
-- Column names with spaces MUST be in double quotes: "Customer ID"
-"""
-        
         # Use the original sqlcoder training format
         prompt_text = f"""### Instruction:
 Your task is to convert a question into a SQL query, given a database schema.
@@ -192,11 +84,11 @@ Adhere to these rules:
 - ALWAYS respond with valid SQL only, do not explain or list the schema
 - **IMPORTANT**: Column names with spaces MUST be enclosed in double quotes (e.g., "customer ID", "Order Date")
 - Use EXACT column names as shown in the schema - do not convert spaces to underscores
-{csv_specific_instructions}
+
 ### Input:
 {schema_prompt_part}
 
--- Using valid {sql_dialect}, answer the following questions for the tables provided above.
+-- Using valid SQL, answer the following questions for the tables provided above.
 
 -- {natural_language_query}
 
@@ -343,11 +235,6 @@ Question: {natural_language_query}
             
             # If it looks like SQL, return it
             if any(word in cleaned_response.upper() for word in ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER']):
-                # Apply PostgreSQL to SQLite conversion for CSV data only (not integrated data)
-                if db_type == "csv":
-                    cleaned_response = convert_postgresql_to_sqlite(cleaned_response)
-                    print(f"[QueryClarifier DEBUG] Applied PostgreSQL->SQLite conversion: {cleaned_response}")
-                
                 return {"type": "sql_query", "query": cleaned_response}
             else:
                 # If it doesn't look like SQL, treat as clarification
@@ -356,10 +243,6 @@ Question: {natural_language_query}
         # For other models, use the original marker-based parsing
         if SQL_MARKER in response_content:
             sql_query = response_content.split(SQL_MARKER, 1)[1].strip()
-            # Apply PostgreSQL to SQLite conversion for CSV data only (not integrated data)
-            if db_type == "csv":
-                sql_query = convert_postgresql_to_sqlite(sql_query)
-                print(f"[QueryClarifier DEBUG] Applied PostgreSQL->SQLite conversion (marker-based): {sql_query}")
             return {"type": "sql_query", "query": sql_query}
         
         elif CLARIFICATION_MARKER in response_content:
@@ -376,11 +259,6 @@ Question: {natural_language_query}
             
             # Try to salvage: if it looks like SQL, treat it as such
             if any(keyword in response_content.upper() for keyword in ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'FROM', 'WHERE']):
-                # Apply PostgreSQL to SQLite conversion for CSV data only (not integrated data)
-                if db_type == "csv":
-                    response_content = convert_postgresql_to_sqlite(response_content)
-                    print(f"[QueryClarifier DEBUG] Applied PostgreSQL->SQLite conversion (salvage): {response_content}")
-                
                 return {
                     "type": "sql_query", 
                     "query": response_content,

@@ -13,9 +13,16 @@ Werkzeug # For password hashing
 openai # Using OpenAI
 
 # For advanced visualizations if needed
-# matplotlib
+matplotlib # For alternative image generation on Windows
 plotly # Using Plotly for interactive charts
 reportlab # For PDF export functionality
 kaleido # For rendering Plotly charts as static images for PDFs
 
+# For dashboard image generation in email attachments
+playwright # For capturing dashboard screenshots
+
+# For data integration and ETL
+dataclasses # For Python < 3.7 compatibility (built-in for 3.7+)
+
 # plotly 
+pyinstaller 

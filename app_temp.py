@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import streamlit.components.v1 as st_components
 import pandas as pd
 import pyodbc # Added for SQL Server
@@ -49,7 +49,7 @@ def handle_kpi_label_change(item_idx):
         if 0 <= item_idx < len(st.session_state.dashboard_items):
             st.session_state.dashboard_items[item_idx]['params']['label'] = new_label_val.strip()
             save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
-            st.toast(f"KPI label updated to '{new_label_val.strip()}'", icon="📝")
+            st.toast(f"KPI label updated to '{new_label_val.strip()}'", icon="ðŸ“")
         else:
             st.warning(f"Could not update KPI label: Invalid item index {item_idx}.")
     else:
@@ -62,7 +62,7 @@ def handle_chart_title_change(item_abs_idx):
         if 0 <= item_abs_idx < len(st.session_state.dashboard_items):
             st.session_state.dashboard_items[item_abs_idx]['title'] = new_title_val.strip()
             save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
-            st.toast(f"Chart title updated to '{new_title_val.strip()}'", icon="📝")
+            st.toast(f"Chart title updated to '{new_title_val.strip()}'", icon="ðŸ“")
         else:
             st.warning(f"Could not update chart title: Invalid item index {item_abs_idx}.")
     else:
@@ -611,7 +611,7 @@ def ensure_session_stability():
             st.session_state.user_roles = []
             # Only show warning if this is not the first load
             if st.session_state.get('session_initialized', False):
-                st.warning("⚠️ Your session has expired or was lost. Please log in again.")
+                st.warning("âš ï¸ Your session has expired or was lost. Please log in again.")
     # Mark session as initialized
     st.session_state.session_initialized = True
     # Enhanced activity tracking
@@ -1506,7 +1506,7 @@ def show_query_screen():
         
         # Check if the "question" is actually SQL code that needs confirmation
         if any(sql_word in ai_question.upper() for sql_word in ['SELECT', 'FROM', 'WHERE', 'COUNT', 'SUM']):
-            st.markdown("**🤖 AI generated this query to answer your question:**")
+            st.markdown("**ðŸ¤– AI generated this query to answer your question:**")
             st.code(ai_question, language="sql")
             st.markdown("**Does this look correct for what you want to find?**")
             user_clarification_answer = st.selectbox(
@@ -1516,7 +1516,7 @@ def show_query_screen():
             )
         else:
             # It's a real clarification question
-            st.markdown(f"**🤖 AI asks:** *{ai_question}*")
+            st.markdown(f"**ðŸ¤– AI asks:** *{ai_question}*")
         user_clarification_answer = st.text_area("Your answer:", key="user_clarification_answer_input", height=75)
 
         col1_clarify, col2_clarify = st.columns(2)
@@ -1552,11 +1552,11 @@ def show_query_screen():
                                     # Enhanced error handling for column name issues
                                     error_msg = str(e_confirmed_sql)
                                     if "ILIKE" in error_msg or "near \"ILIKE\"" in error_msg:
-                                        friendly_error = f"❌ **SQL Syntax Error**: The query uses `ILIKE` which is PostgreSQL syntax, but CSV data uses SQLite.\n\n"
-                                        friendly_error += f"💡 **Fix**: Use `LIKE` for exact matches or `LOWER(column) LIKE LOWER('%pattern%')` for case-insensitive matches.\n\n"
-                                        friendly_error += f"🔧 **Example**: Instead of `WHERE Region ILIKE '%south%'`, use:\n"
-                                        friendly_error += f"   • `WHERE LOWER(Region) LIKE LOWER('%south%')` (case-insensitive)\n"
-                                        friendly_error += f"   • `WHERE Region LIKE '%South%'` (case-sensitive)\n\n"
+                                        friendly_error = f"âŒ **SQL Syntax Error**: The query uses `ILIKE` which is PostgreSQL syntax, but CSV data uses SQLite.\n\n"
+                                        friendly_error += f"ðŸ’¡ **Fix**: Use `LIKE` for exact matches or `LOWER(column) LIKE LOWER('%pattern%')` for case-insensitive matches.\n\n"
+                                        friendly_error += f"ðŸ”§ **Example**: Instead of `WHERE Region ILIKE '%south%'`, use:\n"
+                                        friendly_error += f"   â€¢ `WHERE LOWER(Region) LIKE LOWER('%south%')` (case-insensitive)\n"
+                                        friendly_error += f"   â€¢ `WHERE Region LIKE '%South%'` (case-sensitive)\n\n"
                                         friendly_error += f"Original error: {error_msg}"
                                         st.error(friendly_error)
                                     elif "no such column" in error_msg.lower():
@@ -1574,14 +1574,14 @@ def show_query_screen():
                                                 if missing_col.lower() in col_clean or col_clean in missing_col.lower():
                                                     similar_cols.append(col)
                                             
-                                            error_details = f"❌ **Column Error**: The query looks for `{missing_col}` but this column doesn't exist.\n\n"
-                                            error_details += f"📋 **Available columns in your data:**\n"
+                                            error_details = f"âŒ **Column Error**: The query looks for `{missing_col}` but this column doesn't exist.\n\n"
+                                            error_details += f"ðŸ“‹ **Available columns in your data:**\n"
                                             for i, col in enumerate(available_cols, 1):
                                                 error_details += f"   {i}. `{col}`\n"
                                             
                                             if similar_cols:
-                                                error_details += f"\n💡 **Did you mean:** `{similar_cols[0]}`?\n\n"
-                                                error_details += f"🔧 **Suggested fix**: Try rephrasing your question to use the exact column name `{similar_cols[0]}`"
+                                                error_details += f"\nðŸ’¡ **Did you mean:** `{similar_cols[0]}`?\n\n"
+                                                error_details += f"ðŸ”§ **Suggested fix**: Try rephrasing your question to use the exact column name `{similar_cols[0]}`"
                                             
                                             st.error(error_details)
                                         else:
@@ -1936,7 +1936,7 @@ def handle_llm_response(llm_response):
         
         # Show warning if LLM didn't use expected markers (for local LLMs)
         if llm_response.get("warning"):
-            st.warning(f"⚠️ LLM Response Issue: {llm_response['warning']}")
+            st.warning(f"âš ï¸ LLM Response Issue: {llm_response['warning']}")
         
         st.success("SQL Query Generated by AI:")
         st.code(generated_sql, language="sql")
@@ -1957,7 +1957,7 @@ def handle_llm_response(llm_response):
                     if generated_sql_converted != generated_sql:
                         print(f"[SQL CONVERSION] Original: {generated_sql}")
                         print(f"[SQL CONVERSION] Converted: {generated_sql_converted}")
-                        st.info("🔄 **Auto-converted PostgreSQL syntax to SQLite-compatible syntax**")
+                        st.info("ðŸ”„ **Auto-converted PostgreSQL syntax to SQLite-compatible syntax**")
                         st.code(f"Original: {generated_sql}\n\nConverted: {generated_sql_converted}", language="sql")
                     
                     query_result_df = pd.read_sql_query(generated_sql_converted, conn_sqlite)
@@ -1969,11 +1969,11 @@ def handle_llm_response(llm_response):
                     
                     # Enhanced error handling for common PostgreSQL->SQLite issues
                     if "ILIKE" in error_msg or "near \"ILIKE\"" in error_msg:
-                        friendly_error = f"❌ **SQL Syntax Error**: The query uses `ILIKE` which is PostgreSQL syntax, but CSV/API data uses SQLite.\n\n"
-                        friendly_error += f"💡 **Fix**: Use `LIKE` for exact matches or `LOWER(column) LIKE LOWER('%pattern%')` for case-insensitive matches.\n\n"
-                        friendly_error += f"🔧 **Example**: Instead of `WHERE Region ILIKE '%south%'`, use:\n"
-                        friendly_error += f"   • `WHERE LOWER(Region) LIKE LOWER('%south%')` (case-insensitive)\n"
-                        friendly_error += f"   • `WHERE Region LIKE '%South%'` (case-sensitive)\n\n"
+                        friendly_error = f"âŒ **SQL Syntax Error**: The query uses `ILIKE` which is PostgreSQL syntax, but CSV/API data uses SQLite.\n\n"
+                        friendly_error += f"ðŸ’¡ **Fix**: Use `LIKE` for exact matches or `LOWER(column) LIKE LOWER('%pattern%')` for case-insensitive matches.\n\n"
+                        friendly_error += f"ðŸ”§ **Example**: Instead of `WHERE Region ILIKE '%south%'`, use:\n"
+                        friendly_error += f"   â€¢ `WHERE LOWER(Region) LIKE LOWER('%south%')` (case-insensitive)\n"
+                        friendly_error += f"   â€¢ `WHERE Region LIKE '%South%'` (case-sensitive)\n\n"
                         friendly_error += f"Original error: {error_msg}"
                         st.error(friendly_error)
                     elif "no such column" in error_msg.lower():
@@ -1991,14 +1991,14 @@ def handle_llm_response(llm_response):
                                 if missing_col.lower() in col_clean or col_clean in missing_col.lower():
                                     similar_cols.append(col)
                             
-                            error_details = f"❌ **Column Error**: The query looks for `{missing_col}` but this column doesn't exist.\n\n"
-                            error_details += f"📋 **Available columns in your data:**\n"
+                            error_details = f"âŒ **Column Error**: The query looks for `{missing_col}` but this column doesn't exist.\n\n"
+                            error_details += f"ðŸ“‹ **Available columns in your data:**\n"
                             for i, col in enumerate(available_cols, 1):
                                 error_details += f"   {i}. `{col}`\n"
                             
                             if similar_cols:
-                                error_details += f"\n💡 **Did you mean:** `{similar_cols[0]}`?\n\n"
-                                error_details += f"🔧 **Suggested fix**: Try rephrasing your question to use the exact column name `{similar_cols[0]}`"
+                                error_details += f"\nðŸ’¡ **Did you mean:** `{similar_cols[0]}`?\n\n"
+                                error_details += f"ðŸ”§ **Suggested fix**: Try rephrasing your question to use the exact column name `{similar_cols[0]}`"
                             
                             st.error(error_details)
                         else:
@@ -2029,7 +2029,7 @@ def handle_llm_response(llm_response):
                     if generated_sql_converted != generated_sql:
                         print(f"[INTEGRATED DATA] Original: {generated_sql}")
                         print(f"[INTEGRATED DATA] Converted: {generated_sql_converted}")
-                        st.info("🔄 **Auto-converted PostgreSQL syntax to SQLite-compatible syntax**")
+                        st.info("ðŸ”„ **Auto-converted PostgreSQL syntax to SQLite-compatible syntax**")
                         st.code(f"Original: {generated_sql}\n\nConverted: {generated_sql_converted}", language="sql")
                     
                     # Use SQLite in-memory to query the DataFrame
@@ -2044,7 +2044,7 @@ def handle_llm_response(llm_response):
                         flags=re.IGNORECASE
                     )
                     
-                    st.success("🔄 **Using SQLite for integrated data** - Converted PostgreSQL syntax automatically!")
+                    st.success("ðŸ”„ **Using SQLite for integrated data** - Converted PostgreSQL syntax automatically!")
                     st.code(f"Executing: {generated_sql_final}", language="sql")
                     
                     query_result_df = pd.read_sql_query(generated_sql_final, conn_sqlite)
@@ -2071,14 +2071,14 @@ def handle_llm_response(llm_response):
                                 if missing_col.lower() in col_clean or col_clean in missing_col.lower():
                                     similar_cols.append(col)
                             
-                            error_details = f"❌ **Column Error**: The query looks for `{missing_col}` but this column doesn't exist.\n\n"
-                            error_details += f"📋 **Available columns in your integrated data:**\n"
+                            error_details = f"âŒ **Column Error**: The query looks for `{missing_col}` but this column doesn't exist.\n\n"
+                            error_details += f"ðŸ“‹ **Available columns in your integrated data:**\n"
                             for i, col in enumerate(available_cols, 1):
                                 error_details += f"   {i}. `{col}`\n"
                             
                             if similar_cols:
-                                error_details += f"\n💡 **Did you mean:** `{similar_cols[0]}`?\n\n"
-                                error_details += f"🔧 **Suggested fix**: Try rephrasing your question to use the exact column name `{similar_cols[0]}`"
+                                error_details += f"\nðŸ’¡ **Did you mean:** `{similar_cols[0]}`?\n\n"
+                                error_details += f"ðŸ”§ **Suggested fix**: Try rephrasing your question to use the exact column name `{similar_cols[0]}`"
                             
                             st.error(error_details)
                         else:
@@ -2133,17 +2133,17 @@ def handle_llm_response(llm_response):
     elif llm_response.get("type") == "error":
         # Enhanced error handling for LLM issues
         error_message = llm_response.get("content", "Unknown LLM error")
-        st.error(f"🤖 LLM Error: {error_message}")
+        st.error(f"ðŸ¤– LLM Error: {error_message}")
         
         # Show helpful suggestions based on the error type
         if "Connection Error" in error_message:
-            st.info("💡 **Suggestion**: Check if your local LLM (e.g., Ollama) is running and accessible at the configured Base URL.")
+            st.info("ðŸ’¡ **Suggestion**: Check if your local LLM (e.g., Ollama) is running and accessible at the configured Base URL.")
         elif "Authentication Error" in error_message:
-            st.info("💡 **Suggestion**: Verify your API key in LLM Settings.")
+            st.info("ðŸ’¡ **Suggestion**: Verify your API key in LLM Settings.")
         elif "empty response" in error_message.lower():
-            st.info("💡 **Suggestion**: Your local LLM might not be responding properly. Check the model name and Base URL in LLM Settings.")
+            st.info("ðŸ’¡ **Suggestion**: Your local LLM might not be responding properly. Check the model name and Base URL in LLM Settings.")
         elif "unexpected format" in error_message.lower():
-            st.info("💡 **Suggestion**: Your local LLM might need different prompting. Check the Debug Logs in the sidebar for the raw response.")
+            st.info("ðŸ’¡ **Suggestion**: Your local LLM might need different prompting. Check the Debug Logs in the sidebar for the raw response.")
         
         # Log the error for debugging
         st.session_state.log_query_execution_details_str = f"LLM Error: {error_message}"
@@ -2153,8 +2153,8 @@ def handle_llm_response(llm_response):
     elif llm_response.get("type") == "cannot_answer":
         # Handle cases where LLM cannot answer the question
         reason = llm_response.get("content", "No reason provided")
-        st.warning(f"🤖 Cannot Answer: {reason}")
-        st.info("💡 Try rephrasing your question or providing more specific details about what you're looking for.")
+        st.warning(f"ðŸ¤– Cannot Answer: {reason}")
+        st.info("ðŸ’¡ Try rephrasing your question or providing more specific details about what you're looking for.")
         st.session_state.clarification_question_pending = False # Reset clarification flow
         st.rerun()
     
@@ -2210,7 +2210,7 @@ def main():
                                     st.session_state.page = "db_config"
                                     st.rerun() # Rerun to go to db_config page
                         else:
-                            st.sidebar.error("❌ Only PostgreSQL databases are supported. Please configure PostgreSQL connection.")
+                            st.sidebar.error("âŒ Only PostgreSQL databases are supported. Please configure PostgreSQL connection.")
                             if st.session_state.page != "db_config":
                                 st.session_state.page = "db_config"
                                 st.rerun()
@@ -2220,7 +2220,7 @@ def main():
                             st.session_state.page = "db_config"
                             st.rerun()
                 else: # Secrets not found or connection failed
-                    st.sidebar.error("❌ PostgreSQL connection required. Please configure PostgreSQL in secrets or manually.")
+                    st.sidebar.error("âŒ PostgreSQL connection required. Please configure PostgreSQL in secrets or manually.")
                     if st.session_state.page != "db_config":
                         st.session_state.page = "db_config"
                         st.rerun() # Rerun to go to db_config page
@@ -2256,7 +2256,7 @@ def main():
         st.session_state.log_generated_sql_str or 
         st.session_state.log_query_execution_details_str
     ):
-        with st.sidebar.expander("🔍 View Debug Logs", expanded=False):
+        with st.sidebar.expander("ðŸ” View Debug Logs", expanded=False):
             if st.session_state.log_data_schema_str:
                 st.subheader("Data Schema Sent to LLM")
                 st.text(st.session_state.log_data_schema_str)
@@ -2776,7 +2776,7 @@ def show_admin_db_configuration_page():
     
     # Show current connection status
     if st.session_state.get('db_configured_successfully', False):
-        st.success("✅ Database is currently connected and configured.")
+        st.success("âœ… Database is currently connected and configured.")
         
         # Show current connection details if available
         try:
@@ -2790,21 +2790,21 @@ def show_admin_db_configuration_page():
                     st.info(f"**Database:** {current_params.get('dbname', 'Unknown')}")
                 with col2:
                     st.info(f"**User:** {current_params.get('user', 'Unknown')}")
-                    st.info("**Password:** ••••••••")
+                    st.info("**Password:** â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢")
                     # Test current connection
                     try:
                         test_conn = database.get_db_connection()
                         if test_conn:
                             test_conn.close()
-                            st.success("🔗 Connection test: **Active**")
+                            st.success("ðŸ”— Connection test: **Active**")
                         else:
-                            st.error("❌ Connection test: **Failed**")
+                            st.error("âŒ Connection test: **Failed**")
                     except Exception as e:
-                        st.error(f"❌ Connection test: **Failed** - {str(e)}")
+                        st.error(f"âŒ Connection test: **Failed** - {str(e)}")
         except Exception as e:
             st.warning(f"Could not retrieve current connection details: {e}")
     else:
-        st.warning("⚠️ Database is not properly configured.")
+        st.warning("âš ï¸ Database is not properly configured.")
     
     st.markdown("---")
     st.subheader("Update Database Configuration")
@@ -2827,11 +2827,11 @@ def show_admin_db_configuration_page():
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            test_connection = st.form_submit_button("🔍 Test Connection")
+            test_connection = st.form_submit_button("ðŸ” Test Connection")
         with col2:
-            save_config = st.form_submit_button("💾 Save Configuration")
+            save_config = st.form_submit_button("ðŸ’¾ Save Configuration")
         with col3:
-            reset_config = st.form_submit_button("🔄 Reset to Defaults")
+            reset_config = st.form_submit_button("ðŸ”„ Reset to Defaults")
 
         if test_connection or save_config:
             if not all([db_host, db_name, db_user]):
@@ -2860,7 +2860,7 @@ def show_admin_db_configuration_page():
                             cursor.execute("SELECT version()")
                             version_result = cursor.fetchone()
                             if version_result and 'PostgreSQL' in str(version_result[0]):
-                                st.success("✅ Successfully connected to PostgreSQL!")
+                                st.success("âœ… Successfully connected to PostgreSQL!")
                                 
                                 if save_config:
                                     # Test table initialization
@@ -2868,7 +2868,7 @@ def show_admin_db_configuration_page():
                                         init_success = database.init_db(conn)
                                     
                                     if init_success:
-                                        st.success("✅ Database tables verified/initialized successfully!")
+                                        st.success("âœ… Database tables verified/initialized successfully!")
                                         st.session_state.db_configured_successfully = True
                                         
                                         # Log the successful configuration
@@ -2878,20 +2878,20 @@ def show_admin_db_configuration_page():
                                             print(f"[ADMIN DB CONFIG] Failed to log action: {log_error}")
                                         
                                         st.balloons()
-                                        st.info("✨ Database configuration updated successfully! You can now use all application features.")
+                                        st.info("âœ¨ Database configuration updated successfully! You can now use all application features.")
                                     else:
-                                        st.error("❌ Failed to initialize database tables. Please check database permissions.")
+                                        st.error("âŒ Failed to initialize database tables. Please check database permissions.")
                                 elif test_connection:
-                                    st.info("🔍 Connection test successful! Click 'Save Configuration' to apply changes.")
+                                    st.info("ðŸ” Connection test successful! Click 'Save Configuration' to apply changes.")
                             else:
-                                st.error("❌ Connected database is not PostgreSQL. Only PostgreSQL is supported.")
+                                st.error("âŒ Connected database is not PostgreSQL. Only PostgreSQL is supported.")
                         except Exception as version_check_error:
-                            st.error(f"❌ Failed to verify PostgreSQL connection: {version_check_error}")
+                            st.error(f"âŒ Failed to verify PostgreSQL connection: {version_check_error}")
                     else:
-                        st.error("❌ Failed to connect to database with provided settings.")
+                        st.error("âŒ Failed to connect to database with provided settings.")
                         
                 except Exception as e_connect:
-                    st.error(f"❌ Database connection error: {str(e_connect)}")
+                    st.error(f"âŒ Database connection error: {str(e_connect)}")
                     # Log the failed configuration attempt
                     try:
                         database.log_app_action(st.session_state.logged_in_user, "ADMIN_DB_CONFIG_FAILURE", f"Failed to connect: {str(e_connect)}", "FAILURE")
@@ -2908,7 +2908,7 @@ def show_admin_db_configuration_page():
             st.session_state.db_configured_successfully = False
             if 'current_db_params' in st.session_state:
                 del st.session_state.current_db_params
-            st.success("🔄 Database configuration reset. Please reconfigure with new settings.")
+            st.success("ðŸ”„ Database configuration reset. Please reconfigure with new settings.")
             st.rerun()
 
 def show_db_configuration_page():
@@ -2980,2283 +2980,3 @@ password = "your_db_password"
                         st.error(f"Failed to connect to PostgreSQL with the provided details. Please verify the parameters and ensure the database server is accessible.")
                 except Exception as e_connect_init:
                     st.error(f"An unexpected error occurred during database setup: {e_connect_init}")
-
-def show_main_application():
-    """Main application interface with sidebar navigation and proper page routing"""
-    
-    # Initialize page state if not set
-    if 'app_page' not in st.session_state:
-        st.session_state.app_page = 'data_integration'
-    
-    # Sidebar Navigation
-    with st.sidebar:
-        st.markdown("### DBChat Navigation")
-        st.markdown(f"**Welcome, {st.session_state.logged_in_user}!**")
-        st.markdown("---")
-        
-        # Navigation buttons
-        if st.button("Data Integration & ETL", use_container_width=True):
-            st.session_state.app_page = 'data_integration'
-            st.rerun()
-            
-        if st.button("Ask Questions", use_container_width=True):
-            st.session_state.app_page = 'query'
-            st.rerun()
-            
-        if st.button("My Dashboard", use_container_width=True):
-            st.session_state.app_page = 'dashboard'
-            st.rerun()
-            
-        if st.button("Manage Dashboard Sharing", use_container_width=True):
-            st.session_state.app_page = 'dashboard_management'
-            st.rerun()
-            
-        # Admin-only features
-        user_roles = st.session_state.get('user_roles', [])
-        if isinstance(user_roles, str):
-            try:
-                import json
-                user_roles = json.loads(user_roles)
-            except:
-                user_roles = []
-        
-        is_admin = 'admin' in user_roles
-        
-        if is_admin:
-            st.markdown("---")
-            st.markdown("**Admin Features**")
-            
-            if st.button("Database Configuration", use_container_width=True):
-                st.session_state.app_page = 'db_config'
-                st.rerun()
-            
-            if st.button("User Management", use_container_width=True):
-                st.session_state.app_page = 'admin_users'
-                st.rerun()
-                
-            if st.button("LLM Settings", use_container_width=True):
-                st.session_state.app_page = 'llm_settings'
-                st.rerun()
-            
-            if st.button("Email Settings", use_container_width=True):
-                st.session_state.app_page = 'email_settings'
-                st.rerun()
-        
-        st.markdown("---")
-        
-        # Status indicators
-        st.markdown("**Status**")
-        
-        # LLM status
-        llm_status = st.session_state.get('sidebar_llm_status_message', 'LLM: Not configured')
-        if 'Connected' in llm_status:
-            st.success(f"✅ LLM Ready")
-        else:
-            st.info(f"🔧 LLM: Configure in Admin Settings")
-            
-        # Show data status if any data is loaded
-        if st.session_state.get('data') is not None:
-            st.success(f"📊 Data Loaded: {st.session_state.connection_type or 'Unknown'}")
-        else:
-            st.info("📥 Ready for Data Integration")
-        
-        st.markdown("---")
-        
-        # Logout button
-        if st.button("Logout", use_container_width=True):
-            logout()
-    
-    # Main content area based on selected page
-    if st.session_state.app_page == 'data_integration':
-        data_integration_ui.show_data_integration_page()
-    elif st.session_state.app_page == 'query':
-        show_query_screen()
-    elif st.session_state.app_page == 'dashboard':
-        show_dashboard_screen()
-    elif st.session_state.app_page == 'dashboard_management':
-        show_dashboard_management_page()
-    elif st.session_state.app_page == 'db_config' and is_admin:
-        show_admin_db_configuration_page()
-    elif st.session_state.app_page == 'admin_users' and is_admin:
-        show_admin_panel()
-    elif st.session_state.app_page == 'llm_settings' and is_admin:
-        show_llm_settings_page()
-    elif st.session_state.app_page == 'email_settings' and is_admin:
-        show_email_settings_page()
-    else:
-        # Default to data integration
-        data_integration_ui.show_data_integration_page()
-
-def show_dashboard_screen():
-    """Enhanced dashboard management interface with full visualization support and email sharing"""
-    st.title("My Dashboard")
-    
-    # Dashboard selection and management
-    dashboard_names = get_user_dashboard_names(st.session_state.logged_in_user)
-    
-    if not dashboard_names:
-        st.info("You don't have any dashboards yet. Create your first dashboard by adding charts from the 'Ask Questions' page.")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            new_dashboard_name = st.text_input("Create New Dashboard:", placeholder="Enter dashboard name")
-        with col2:
-            if st.button("Create Dashboard") and new_dashboard_name:
-                st.session_state.current_dashboard_name = new_dashboard_name
-                st.session_state.dashboard_items = []
-                save_user_dashboard(st.session_state.logged_in_user, new_dashboard_name, [])
-
-                st.success(f"Dashboard '{new_dashboard_name}' created!")
-                st.rerun()
-        return
-    
-    # Dashboard selection dropdown
-    current_dashboard = st.session_state.get('current_dashboard_name')
-    dashboard_options = [name for name, _, _ in dashboard_names]
-    
-    # Auto-select first dashboard if none selected or invalid
-    if current_dashboard not in dashboard_options:
-        current_dashboard = dashboard_options[0]
-        st.session_state.current_dashboard_name = current_dashboard
-        # Load dashboard items when auto-selecting
-        st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, current_dashboard)
-    
-    # Ensure dashboard items are loaded if they're missing (for session recovery)
-    elif not st.session_state.get('dashboard_items'):
-        print(f"[DASHBOARD] Loading missing dashboard items for '{current_dashboard}'")
-        st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, current_dashboard)
-    
-    selected_dashboard = st.selectbox(
-        "Select Dashboard:",
-        dashboard_options,
-        index=dashboard_options.index(current_dashboard) if current_dashboard in dashboard_options else 0
-    )
-    
-    # Load dashboard items when switching dashboards
-    if selected_dashboard != st.session_state.current_dashboard_name:
-        st.session_state.current_dashboard_name = selected_dashboard
-        st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, selected_dashboard)
-        print(f"[DASHBOARD] Switched to dashboard '{selected_dashboard}' with {len(st.session_state.dashboard_items)} items")
-        st.rerun()
-    
-    # Main dashboard display
-    if not st.session_state.current_dashboard_name:
-        st.info("Please create or select a dashboard to view or add items.")
-        return
-
-    if not st.session_state.dashboard_items:
-        st.info(f"Dashboard '{st.session_state.current_dashboard_name}' is currently empty. Go to the 'Ask Questions' page, generate a visualization, and click 'Add to My Dashboard'.")
-        
-        # Show debug info for troubleshooting
-        with st.expander("🔍 Debug Info", expanded=False):
-            st.write(f"**Current User:** {st.session_state.logged_in_user}")
-            st.write(f"**Current Dashboard:** {st.session_state.current_dashboard_name}")
-            st.write(f"**Dashboard Items Count:** {len(st.session_state.dashboard_items or [])}")
-            st.write(f"**Available Dashboards:** {len(dashboard_names)}")
-            if dashboard_names:
-                for name, _, owner in dashboard_names:
-                    st.write(f"  - {name} (owner: {owner})")
-        return
-
-    # Dashboard header with controls
-    st.markdown(f"### Dashboard: {selected_dashboard}")
-    
-    # Dashboard Management Controls
-    st.markdown("### ⚙️ Dashboard Management")
-    col1, col2, col3 = st.columns(3)
-    
-    # Rename Dashboard
-    with col1:
-        st.markdown("##### Rename Dashboard")
-        new_name = st.text_input("New Dashboard Name:", value=selected_dashboard, key="rename_dashboard_input")
-        if st.button("📝 Rename", key="rename_dashboard_btn"):
-            if new_name and new_name.strip() and new_name != selected_dashboard:
-                # Check if name already exists
-                existing_names = [name for name, _, owner in dashboard_names if owner == st.session_state.logged_in_user]
-                if new_name in existing_names:
-                    st.error(f"Dashboard '{new_name}' already exists. Please choose a different name.")
-                else:
-                    # Rename the dashboard
-                    try:
-                        if database.rename_dashboard_in_db(st.session_state.logged_in_user, selected_dashboard, new_name):
-                            st.session_state.current_dashboard_name = new_name
-                            st.success(f"Dashboard renamed from '{selected_dashboard}' to '{new_name}'!")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "RENAME_DASHBOARD_SUCCESS", f"Renamed '{selected_dashboard}' to '{new_name}'", "SUCCESS")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "RENAME_DASHBOARD_SUCCESS", f"Renamed '{selected_dashboard}' to '{new_name}'", "SUCCESS")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD] Failed to log rename action: {log_error}")
-                            st.rerun()
-                        else:
-                            st.error("Failed to rename dashboard. Please try again.")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "RENAME_DASHBOARD_FAILURE", f"Failed to rename '{selected_dashboard}' to '{new_name}'", "FAILURE")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "RENAME_DASHBOARD_FAILURE", f"Failed to rename '{selected_dashboard}' to '{new_name}'", "FAILURE")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD] Failed to log rename failure: {log_error}")
-                    except Exception as e:
-                        st.error(f"Error renaming dashboard: {e}")
-            elif new_name == selected_dashboard:
-                st.info("New name is the same as current name.")
-            else:
-                st.warning("Please enter a valid dashboard name.")
-    
-    # Create New Dashboard  
-    with col2:
-        st.markdown("##### Create New Dashboard")
-        create_name = st.text_input("Dashboard Name:", placeholder="Enter new dashboard name", key="create_dashboard_input")
-        if st.button("➕ Create", key="create_dashboard_btn"):
-            if create_name and create_name.strip():
-                # Check if name already exists
-                existing_names = [name for name, _, owner in dashboard_names if owner == st.session_state.logged_in_user]
-                if create_name in existing_names:
-                    st.error(f"Dashboard '{create_name}' already exists. Please choose a different name.")
-                else:
-                    # Create new dashboard
-                    try:
-                        if database.save_dashboard_to_db(st.session_state.logged_in_user, create_name, [], []):
-                            st.session_state.current_dashboard_name = create_name
-                            st.session_state.dashboard_items = []
-                            st.success(f"Dashboard '{create_name}' created successfully!")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "CREATE_DASHBOARD_SUCCESS", f"Created dashboard: {create_name}", "SUCCESS")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "CREATE_DASHBOARD_SUCCESS", f"Created dashboard: {create_name}", "SUCCESS")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD] Failed to log create action: {log_error}")
-                            st.rerun()
-                        else:
-                            st.error("Failed to create dashboard. Please try again.")
-                    except Exception as e:
-                        st.error(f"Error creating dashboard: {e}")
-            else:
-                st.warning("Please enter a valid dashboard name.")
-    
-    # Delete Dashboard
-    with col3:
-        st.markdown("##### Delete Dashboard")
-        st.warning("⚠️ This action cannot be undone!")
-        if st.button("🗑️ Delete Dashboard", key="delete_dashboard_btn", type="secondary"):
-            st.session_state.show_delete_confirmation = True
-            st.rerun()
-        
-        # Delete confirmation dialog
-        if st.session_state.get('show_delete_confirmation', False):
-            st.error(f"⚠️ **Confirm Deletion**: Are you sure you want to delete '{selected_dashboard}'?")
-            col_confirm, col_cancel = st.columns(2)
-            with col_confirm:
-                if st.button("✅ Yes, Delete", key="confirm_delete_btn", type="primary"):
-                    try:
-                        if database.delete_dashboard_from_db(st.session_state.logged_in_user, selected_dashboard):
-                            # Get remaining dashboards
-                            remaining_dashboards = get_user_dashboard_names(st.session_state.logged_in_user)
-                            if remaining_dashboards:
-                                # Switch to first remaining dashboard
-                                st.session_state.current_dashboard_name = remaining_dashboards[0][0]
-                                st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, remaining_dashboards[0][0])
-                            else:
-                                # No dashboards left
-                                st.session_state.current_dashboard_name = None
-                                st.session_state.dashboard_items = []
-                            
-                            st.session_state.show_delete_confirmation = False
-                            st.success(f"Dashboard '{selected_dashboard}' deleted successfully!")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "DELETE_DASHBOARD_SUCCESS", f"Deleted dashboard: {selected_dashboard}", "SUCCESS")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "DELETE_DASHBOARD_SUCCESS", f"Deleted dashboard: {selected_dashboard}", "SUCCESS")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD] Failed to log delete action: {log_error}")
-                            st.rerun()
-                        else:
-                            st.error("Failed to delete dashboard. Please try again.")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "DELETE_DASHBOARD_FAILURE", f"Failed to delete dashboard: {selected_dashboard}", "FAILURE")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "DELETE_DASHBOARD_FAILURE", f"Failed to delete dashboard: {selected_dashboard}", "FAILURE")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD] Failed to log delete failure: {log_error}")
-                    except Exception as e:
-                        st.error(f"Error deleting dashboard: {e}")
-            
-            with col_cancel:
-                if st.button("❌ Cancel", key="cancel_delete_btn"):
-                    st.session_state.show_delete_confirmation = False
-                    st.rerun()
-    
-    st.markdown("---")
-
-    # Separate KPIs from other chart types
-    kpi_items = [item for item in st.session_state.dashboard_items if item.get('chart_type') == "KPI"]
-    other_items = [item for item in st.session_state.dashboard_items if item.get('chart_type') != "KPI"]
-
-    # Render KPIs in a dedicated section
-    if kpi_items:
-        st.subheader("📊 Key Performance Indicators")
-        num_kpi_cols = min(len(kpi_items), 4)
-        if num_kpi_cols > 0:
-            kpi_cols = st.columns(num_kpi_cols)
-            for i, item in enumerate(kpi_items):
-                # Get the absolute index for callbacks
-                try:
-                    original_kpi_item_index = next(idx for idx, dash_item in enumerate(st.session_state.dashboard_items) if dash_item == item)
-                except StopIteration:
-                    st.error("Error finding KPI item. Please refresh.")
-                    continue
-
-                with kpi_cols[i % num_kpi_cols]:
-                    params = item['params']
-                    data_snapshot = item['data_snapshot']
-                    
-                    current_kpi_label = params.get('label', "KPI Value")
-                    if not current_kpi_label.strip():
-                        current_kpi_label = "KPI Value"
-
-                    # Editable KPI Label
-                    st.text_input(
-                        "KPI Label", 
-                        value=current_kpi_label,
-                        key=f"kpi_label_edit_{original_kpi_item_index}", 
-                        on_change=handle_kpi_label_change,
-                        args=(original_kpi_item_index,),
-                        label_visibility="collapsed"
-                    )
-
-                    value_col = params.get('value_col')
-                    delta_col = params.get('delta_col')
-                    kpi_value = None
-                    kpi_delta = None
-
-                    if not data_snapshot.empty and value_col in data_snapshot.columns:
-                        try:
-                            kpi_value = pd.to_numeric(data_snapshot[value_col].iloc[0])
-                        except (ValueError, TypeError):
-                            kpi_value = str(data_snapshot[value_col].iloc[0])
-                        
-                        if delta_col and delta_col in data_snapshot.columns:
-                            try:
-                                kpi_delta = pd.to_numeric(data_snapshot[delta_col].iloc[0])
-                            except (ValueError, TypeError):
-                                kpi_delta = str(data_snapshot[delta_col].iloc[0])
-                    
-                    # Display the KPI metric
-                    st.metric(
-                        label=" ", 
-                        value=kpi_value if kpi_value is not None else "N/A", 
-                        delta=kpi_delta if kpi_delta is not None else None, 
-                        label_visibility="collapsed"
-                    )
-
-                    # Remove button for KPI
-                    if st.button("🗑️ Remove", key=f"remove_kpi_{original_kpi_item_index}"):
-                        st.session_state.dashboard_items.pop(original_kpi_item_index)
-                        save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
-                        st.rerun()
-
-        st.markdown("---")
-
-    # Render Charts and Tables
-    if other_items:
-        st.subheader("📈 Charts & Tables")
-        
-        # Display items in a 2-column grid
-        num_cols = 2
-        
-        for i, item in enumerate(other_items):
-            # Get the absolute index in the full dashboard_items list
-            try:
-                current_item_absolute_index = st.session_state.dashboard_items.index(item)
-            except ValueError:
-                st.warning("Skipping an item as it could not be found in the main dashboard list.")
-                continue
-            
-            # Create columns for layout (every 2 items)
-            if i % num_cols == 0:
-                cols = st.columns(num_cols)
-            
-            with cols[i % num_cols]:
-                with st.container():
-                    # Editable Chart Title
-                    st.text_input(
-                        f"Chart Title", 
-                        value=item.get('title', item['chart_type']),
-                        key=f"chart_title_edit_{current_item_absolute_index}", 
-                        on_change=handle_chart_title_change,
-                        args=(current_item_absolute_index,),
-                        label_visibility="collapsed"
-                    )
-                    
-                    # Get chart data and parameters
-                    data_snapshot = item['data_snapshot']
-                    params = item['params']
-                    chart_type = item['chart_type']
-
-                    # Generate and display chart
-                    fig = None
-                    try:
-                        if chart_type == "Bar Chart":
-                            x_col, y_col = params.get('x'), params.get('y')
-                            if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                                fig = px.bar(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
-                                           title=item.get('title', chart_type))
-                            else:
-                                st.warning(f"Required columns for bar chart not found in data.")
-                        
-                        elif chart_type == "Line Chart":
-                            x_col, y_col = params.get('x'), params.get('y')
-                            if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                                fig = px.line(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
-                                            title=item.get('title', chart_type))
-                            else:
-                                st.warning(f"Required columns for line chart not found in data.")
-                        
-                        elif chart_type == "Scatter Plot":
-                            x_col, y_col = params.get('x'), params.get('y')
-                            if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                                fig = px.scatter(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
-                                               size=params.get('size'), title=item.get('title', chart_type))
-                            else:
-                                st.warning(f"Required columns for scatter plot not found in data.")
-                        
-                        elif chart_type == "Pie Chart":
-                            names_col, values_col = params.get('names'), params.get('values')
-                            if names_col in data_snapshot.columns and values_col in data_snapshot.columns:
-                                fig = px.pie(data_snapshot, names=names_col, values=values_col, 
-                                           title=item.get('title', f"Pie Chart of {values_col} by {names_col}"))
-                            else:
-                                st.warning("Required columns for pie chart not found in data.")
-                        
-                        elif chart_type == "Histogram":
-                            x_col = params.get('x')
-                            if x_col in data_snapshot.columns:
-                                fig = px.histogram(data_snapshot, x=x_col, title=item.get('title', chart_type))
-                            else:
-                                st.warning("Required column for histogram not found in data.")
-                        
-                        elif chart_type == "Table":
-                            selected_columns = params.get('columns', data_snapshot.columns.tolist())
-                            if not isinstance(selected_columns, list):
-                                selected_columns = data_snapshot.columns.tolist()
-                            
-                            display_columns = [col for col in selected_columns if col in data_snapshot.columns]
-                            
-                            if not display_columns and selected_columns:
-                                st.warning("Original columns for table not found. Showing available columns.")
-                                display_columns = data_snapshot.columns.tolist()
-                            
-                            if display_columns and not data_snapshot.empty:
-                                st.dataframe(data_snapshot[display_columns], use_container_width=True)
-                            elif not data_snapshot.empty:
-                                st.dataframe(data_snapshot, use_container_width=True)
-                            else:
-                                st.info("No data to display in table.")
-                        
-                        # Apply dark theme to plotly charts
-                        if fig:
-                            fig.update_layout(
-                                template="plotly_dark",
-                                paper_bgcolor='rgba(0,0,0,0)',
-                                plot_bgcolor='rgba(0,0,0,0)',
-                                font_color='#E0E0E0',
-                                title_font_color='#F1F5F9',
-                                legend_font_color='#CBD5E1',
-                                autosize=True,
-                                height=400  # Optimized height for dashboard
-                            )
-                            
-                            # Style axes
-                            axis_tick_label_color = '#CBD5E1'
-                            axis_title_color = '#94A3B8'   
-                            grid_color = '#334155'         
-                            line_color = '#4A5568'         
-
-                            fig.update_xaxes(
-                                showgrid=True, gridwidth=1, gridcolor=grid_color,
-                                zerolinecolor=grid_color, zerolinewidth=1,
-                                linecolor=line_color, showline=True,
-                                tickfont=dict(color=axis_tick_label_color),
-                                title_font=dict(color=axis_title_color)
-                            )
-                            fig.update_yaxes(
-                                showgrid=True, gridwidth=1, gridcolor=grid_color,
-                                zerolinecolor=grid_color, zerolinewidth=1,
-                                linecolor=line_color, showline=True,
-                                tickfont=dict(color=axis_tick_label_color),
-                                title_font=dict(color=axis_title_color)
-                            )
-                            
-                            if hasattr(fig.layout, 'legend'):
-                                fig.update_layout(legend=dict(font=dict(color='#CBD5E1'), bgcolor='rgba(0,0,0,0)'))
-
-                    except Exception as e:
-                        st.error(f"Error generating chart: {e}")
-                        fig = None
-                        
-                    # Display the chart
-                    if fig and chart_type != "Table":
-                        st.plotly_chart(fig, use_container_width=True)
-                    elif not fig and chart_type != "Table" and not data_snapshot.empty:
-                        st.warning(f"Could not display chart: {item.get('title', chart_type)}.")
-                    elif data_snapshot.empty and chart_type != "Table":
-                        st.info(f"No data available for '{item.get('title', chart_type)}'.")
-
-                    # Item controls - simplified to just remove button
-                    if st.button("🗑️ Remove", key=f"remove_item_{current_item_absolute_index}", use_container_width=True):
-                        st.session_state.dashboard_items.pop(current_item_absolute_index)
-                        save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
-                        st.rerun()
-    
-    elif not kpi_items:
-        st.info("This dashboard is empty. Add charts from the 'Ask Questions' page.")
-
-# Helper functions for dashboard HTML generation and download
-def generate_dashboard_html(dashboard_items):
-    """Generate HTML content for the entire dashboard with embedded Plotly charts"""
-    if not dashboard_items:
-        return "<html><body><h1>Empty Dashboard</h1><p>No items to display.</p></body></html>"
-    
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>DBChat Dashboard</title>
-        <script src='https://cdn.plot.ly/plotly-latest.min.js'></script>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
-            .dashboard-container { max-width: 1200px; margin: 0 auto; }
-            .kpi-section { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 30px; }
-            .kpi-item { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); min-width: 200px; text-align: center; }
-            .chart-section { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 20px; }
-            .chart-item { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-            .chart-title { font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #333; }
-            .kpi-label { font-size: 14px; color: #666; margin-bottom: 5px; }
-            .kpi-value { font-size: 28px; font-weight: bold; color: #333; }
-            .kpi-delta { font-size: 16px; color: #666; margin-top: 5px; }
-            h1 { color: #333; text-align: center; margin-bottom: 30px; }
-            .chart-container { width: 100%; height: 400px; margin: 10px 0; }
-            table { border-collapse: collapse; width: 100%; margin: 10px 0; }
-            table th, table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            table th { background-color: #f2f2f2; font-weight: bold; }
-            table tr:nth-child(even) { background-color: #f9f9f9; }
-            
-            /* Chart fallback styling */
-            .chart-fallback { 
-                margin-top: 15px; 
-                padding: 15px; 
-                background-color: #f8f9fa; 
-                border: 1px solid #e9ecef; 
-                border-radius: 4px; 
-            }
-            .chart-fallback p { 
-                margin: 10px 0; 
-                color: #666; 
-                font-style: italic; 
-            }
-            .chart-fallback table { 
-                margin-top: 10px; 
-                font-size: 12px; 
-            }
-            
-            /* Print media query for PDF generation */
-            @media print {
-                body { 
-                    background-color: white !important; 
-                    font-size: 12px; 
-                }
-                .chart-container { 
-                    height: auto !important; 
-                    min-height: 200px; 
-                }
-                .chart-fallback { 
-                    display: block !important; 
-                    page-break-inside: avoid; 
-                }
-                .chart-item { 
-                    page-break-inside: avoid; 
-                    margin-bottom: 20px; 
-                }
-                h1, .chart-title { 
-                    page-break-after: avoid; 
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="dashboard-container">
-            <h1>DBChat Dashboard</h1>
-    """
-    
-    # Separate KPIs and other items
-    kpi_items = [item for item in dashboard_items if item.get('chart_type') == 'KPI']
-    other_items = [item for item in dashboard_items if item.get('chart_type') != 'KPI']
-    
-    # Add KPI section
-    if kpi_items:
-        html_content += '<div class="kpi-section">'
-        for item in kpi_items:
-            params = item['params']
-            data_snapshot = item['data_snapshot']
-            label = params.get('label', 'KPI')
-            value_col = params.get('value_col')
-            delta_col = params.get('delta_col')
-            
-            value = "N/A"
-            delta = ""
-            
-            if not data_snapshot.empty and value_col in data_snapshot.columns:
-                try:
-                    value = pd.to_numeric(data_snapshot[value_col].iloc[0])
-                    if isinstance(value, float):
-                        value = f"{value:,.2f}"
-                    else:
-                        value = f"{value:,}"
-                except:
-                    value = str(data_snapshot[value_col].iloc[0])
-                
-                if delta_col and delta_col in data_snapshot.columns:
-                    try:
-                        delta_val = pd.to_numeric(data_snapshot[delta_col].iloc[0])
-                        delta = f"Δ {delta_val:+.2f}"
-                    except:
-                        delta = str(data_snapshot[delta_col].iloc[0])
-            
-            html_content += f"""
-            <div class="kpi-item">
-                <div class="kpi-label">{label}</div>
-                <div class="kpi-value">{value}</div>
-                {f'<div class="kpi-delta">{delta}</div>' if delta else ''}
-            </div>
-            """
-        html_content += '</div>'
-    
-    # Add charts section with JavaScript
-    javascript_code = ""
-    if other_items:
-        html_content += '<div class="chart-section">'
-        
-        for i, item in enumerate(other_items):
-            title = item.get('title', item['chart_type'])
-            chart_type = item['chart_type']
-            data_snapshot = item['data_snapshot']
-            params = item['params']
-            
-            html_content += f'<div class="chart-item"><div class="chart-title">{title}</div>'
-            
-            if chart_type == 'Table':
-                # Render table
-                selected_columns = params.get('columns', data_snapshot.columns.tolist())
-                
-                if not data_snapshot.empty:
-                    display_columns = [col for col in selected_columns if col in data_snapshot.columns]
-                    if display_columns:
-                        table_html = data_snapshot[display_columns].to_html(classes='table table-striped', escape=False)
-                        html_content += f'<div style="overflow-x: auto;">{table_html}</div>'
-                    else:
-                        html_content += '<p>No data to display</p>'
-                else:
-                    html_content += '<p>No data available</p>'
-            else:
-                # Create chart container
-                chart_div_id = f'chart_{i}'
-                html_content += f'<div id="{chart_div_id}" class="chart-container"></div>'
-                
-                # Generate Plotly figure and convert to JavaScript
-                try:
-                    fig = None
-                    if chart_type == "Bar Chart" and not data_snapshot.empty:
-                        x_col, y_col = params.get('x'), params.get('y')
-                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                            fig = px.bar(data_snapshot, x=x_col, y=y_col, color=params.get('color'), title=title)
-                    
-                    elif chart_type == "Line Chart" and not data_snapshot.empty:
-                        x_col, y_col = params.get('x'), params.get('y')
-                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                            fig = px.line(data_snapshot, x=x_col, y=y_col, color=params.get('color'), title=title)
-                    
-                    elif chart_type == "Scatter Plot" and not data_snapshot.empty:
-                        x_col, y_col = params.get('x'), params.get('y')
-                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                            fig = px.scatter(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
-                                           size=params.get('size'), title=title)
-                    
-                    elif chart_type == "Pie Chart" and not data_snapshot.empty:
-                        names_col, values_col = params.get('names'), params.get('values')
-                        if names_col in data_snapshot.columns and values_col in data_snapshot.columns:
-                            fig = px.pie(data_snapshot, names=names_col, values=values_col, title=title)
-                    
-                    elif chart_type == "Histogram" and not data_snapshot.empty:
-                        x_col = params.get('x')
-                        if x_col in data_snapshot.columns:
-                            fig = px.histogram(data_snapshot, x=x_col, title=title)
-                    
-                    if fig:
-                        # Apply consistent styling for PDF/print
-                        fig.update_layout(
-                            template="plotly_white",  # Better for PDF/print
-                            font=dict(size=12),
-                            title_font_size=14,
-                            width=500,
-                            height=400,
-                            margin=dict(l=50, r=50, t=50, b=50),
-                            showlegend=True,
-                            paper_bgcolor='white',
-                            plot_bgcolor='white'
-                        )
-                        
-                        # Convert figure to JSON and JavaScript
-                        try:
-                            import json
-                            # Get the figure data, layout, and config
-                            fig_dict = fig.to_dict()
-                            fig_json = json.dumps(fig_dict, default=str)  # Use default=str to handle any non-serializable objects
-                            
-                            # Add static fallback for PDF compatibility (shows when JavaScript is disabled)
-                            fallback_html = ""
-                            try:
-                                # Create a simple table representation as fallback
-                                if not data_snapshot.empty:
-                                    # For different chart types, create appropriate fallback
-                                    if chart_type in ["Bar Chart", "Line Chart", "Scatter Plot"]:
-                                        x_col, y_col = params.get('x'), params.get('y')
-                                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                                            # Show top 10 rows as table
-                                            fallback_data = data_snapshot[[x_col, y_col]].head(10)
-                                            fallback_html = f"""
-                                            <div class="chart-fallback" style="display: none;">
-                                                <p><em>Chart preview (static view for PDF):</em></p>
-                                                {fallback_data.to_html(classes='table table-striped', escape=False)}
-                                                {f'<p><small>Showing first 10 of {len(data_snapshot)} rows</small></p>' if len(data_snapshot) > 10 else ''}
-                                            </div>
-                                            """
-                                    elif chart_type == "Pie Chart":
-                                        names_col, values_col = params.get('names'), params.get('values')
-                                        if names_col in data_snapshot.columns and values_col in data_snapshot.columns:
-                                            fallback_data = data_snapshot[[names_col, values_col]].head(10)
-                                            fallback_html = f"""
-                                            <div class="chart-fallback" style="display: none;">
-                                                <p><em>Chart data (static view for PDF):</em></p>
-                                                {fallback_data.to_html(classes='table table-striped', escape=False)}
-                                            </div>
-                                            """
-                                    elif chart_type == "Histogram":
-                                        x_col = params.get('x')
-                                        if x_col in data_snapshot.columns:
-                                            # Show value distribution as table
-                                            try:
-                                                value_counts = data_snapshot[x_col].value_counts().head(10)
-                                                fallback_df = pd.DataFrame({x_col: value_counts.index, 'Count': value_counts.values})
-                                                fallback_html = f"""
-                                                <div class="chart-fallback" style="display: none;">
-                                                    <p><em>Value distribution (static view for PDF):</em></p>
-                                                    {fallback_df.to_html(classes='table table-striped', escape=False)}
-                                                </div>
-                                                """
-                                            except:
-                                                fallback_html = f"""
-                                                <div class="chart-fallback" style="display: none;">
-                                                    <p><em>Histogram data available but preview unavailable</em></p>
-                                                </div>
-                                                """
-                            except Exception as fallback_error:
-                                print(f"[HTML GENERATION] Fallback generation error: {fallback_error}")
-                                fallback_html = '<div class="chart-fallback" style="display: none;"><p><em>Chart data available</em></p></div>'
-                            
-                            # Add the fallback HTML
-                            html_content += fallback_html
-                            
-                            # Add JavaScript to render the chart
-                            javascript_code += f"""
-                            try {{
-                                var figData = {fig_json};
-                                Plotly.newPlot('{chart_div_id}', figData.data, figData.layout, {{
-                                    displayModeBar: false,
-                                    staticPlot: true,
-                                    responsive: true
-                                }}).then(function() {{
-                                    // Hide fallback when chart renders successfully
-                                    var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
-                                    if (fallback) fallback.style.display = 'none';
-                                }}).catch(function(err) {{
-                                    console.error('Error rendering chart {chart_div_id}:', err);
-                                    // Show fallback if chart fails to render
-                                    var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
-                                    if (fallback) {{
-                                        fallback.style.display = 'block';
-                                        fallback.style.marginTop = '10px';
-                                    }}
-                                    document.getElementById('{chart_div_id}').innerHTML = '<p style="color: #666; font-style: italic;">Interactive chart not available - see data table below</p>';
-                                }});
-                            }} catch(e) {{
-                                console.error('Error rendering chart {chart_div_id}:', e);
-                                // Show fallback if JavaScript fails
-                                var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
-                                if (fallback) {{
-                                    fallback.style.display = 'block';
-                                    fallback.style.marginTop = '10px';
-                                }}
-                                document.getElementById('{chart_div_id}').innerHTML = '<p style="color: #666; font-style: italic;">Interactive chart not available - see data table below</p>';
-                            }}
-                            """
-                        except Exception as json_error:
-                            print(f"[HTML GENERATION] JSON serialization error for chart {i}: {json_error}")
-                            # Create a simple data table as complete fallback
-                            try:
-                                if not data_snapshot.empty:
-                                    simple_table = data_snapshot.head(5).to_html(classes='table table-striped', escape=False)
-                                    html_content += f'<div style="margin-top: 10px;"><p><em>Chart data (top 5 rows):</em></p>{simple_table}</div>'
-                                else:
-                                    html_content += '<p>No data available for chart</p>'
-                            except:
-                                html_content += f'<p>Error serializing chart data: {str(json_error)}</p>'
-                    else:
-                        html_content += '<p>Chart could not be generated</p>'
-                        
-                except Exception as e:
-                    html_content += f'<p>Error generating chart: {str(e)}</p>'
-            
-            html_content += '</div>'
-        html_content += '</div>'
-    
-    # Add JavaScript code to render charts
-    if javascript_code:
-        html_content += f"""
-        <script>
-        document.addEventListener('DOMContentLoaded', function() {{
-            {javascript_code}
-        }});
-        </script>
-        """
-    
-    html_content += """
-        </div>
-    </body>
-    </html>
-    """
-    
-    return html_content
-
-def get_download_link_html(html_content, filename="dashboard.html"):
-    """Generate a download link for HTML content"""
-    import base64
-    
-    b64_content = base64.b64encode(html_content.encode()).decode()
-    href = f'<a href="data:text/html;base64,{b64_content}" download="{filename}">📥 Download Dashboard HTML</a>'
-    return href
-
-def show_dashboard_management_page():
-    """Dashboard sharing management page"""
-    st.title("Manage Dashboard Sharing")
-
-    if not st.session_state.logged_in_user:
-        st.error("Please log in to manage dashboard sharing.")
-        st.session_state.app_page = 'data_integration'
-        st.rerun()
-        return
-
-    current_user = st.session_state.logged_in_user
-    st.subheader(f"Dashboards Owned by You ({current_user})")
-
-    # Get dashboards owned by current user
-    dashboard_names = get_user_dashboard_names(current_user)
-    owned_dashboard_tuples = [d for d in dashboard_names if d[2] == current_user]
-
-    if not owned_dashboard_tuples:
-        st.info("You do not own any dashboards yet. Create one from the 'My Dashboard' page.")
-        if st.button("Go to My Dashboard", key="back_to_dash_from_empty_manage_sharing"):
-            st.session_state.app_page = "dashboard"
-            st.rerun()
-        return
-
-    for dash_name, display_name, owner_username in sorted(owned_dashboard_tuples, key=lambda x: x[0]):
-        with st.container():
-            st.markdown(f"#### {dash_name}")
-            
-            # Load the specific dashboard to get its current shared_with_users list
-            dashboard_details = database.load_dashboard_from_db(owner_username, dash_name)
-            shared_with_list = []
-            if dashboard_details and isinstance(dashboard_details.get('shared_with_users'), list):
-                shared_with_list = dashboard_details['shared_with_users']
-            
-            if not shared_with_list:
-                st.write("_Not currently shared with any other users._")
-            else:
-                st.write("Currently shared with:")
-                for shared_user_idx, shared_user in enumerate(shared_with_list):
-                    cols = st.columns([3, 1])
-                    cols[0].write(f"- {shared_user}")
-                    if cols[1].button(f"Revoke Access", key=f"revoke_{dash_name}_{shared_user_idx}_{shared_user}"):
-                        # Create a new list without the revoked user
-                        updated_shared_list = [u for i, u in enumerate(shared_with_list) if i != shared_user_idx]
-                        if database.update_dashboard_sharing_in_db(owner_username, dash_name, updated_shared_list):
-                            st.success(f"Access for '{shared_user}' to dashboard '{dash_name}' has been revoked.")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "REVOKE_DASHBOARD_ACCESS_SUCCESS", f"Revoked access for {shared_user} from {dash_name}", "SUCCESS")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "REVOKE_DASHBOARD_ACCESS_SUCCESS", f"Revoked access for {shared_user} from {dash_name}", "SUCCESS")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD MANAGEMENT] Failed to log revoke action: {log_error}")
-                            st.rerun()
-                        else:
-                            st.error(f"Failed to revoke access for '{shared_user}'.")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "REVOKE_DASHBOARD_ACCESS_FAILURE", f"Failed to revoke access for {shared_user} from {dash_name}", "FAILURE")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "REVOKE_DASHBOARD_ACCESS_FAILURE", f"Failed to revoke access for {shared_user} from {dash_name}", "FAILURE")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD MANAGEMENT] Failed to log revoke failure: {log_error}")
-            
-            # Get all other users to share with (excluding current user and already shared users)
-            try:
-                if is_sqlite_connection():
-                    # For SQLite, we'd need a similar function - for now, use a placeholder
-                    all_other_users_list = []
-                else:
-                    all_users = database.get_all_users_from_db()
-                    all_other_users_list = [u["username"] for u in all_users if u["username"] != current_user and u["username"] not in shared_with_list]
-            except Exception as e:
-                st.warning(f"Could not fetch user list: {e}")
-                all_other_users_list = []
-            
-            if all_other_users_list:
-                share_with_new_users = st.multiselect(
-                    "Share with additional users:", 
-                    options=all_other_users_list, 
-                    key=f"add_share_{dash_name}"
-                )
-                if st.button("Add Selected Users to Sharing", key=f"confirm_add_share_{dash_name}"):
-                    if share_with_new_users:
-                        newly_combined_shared_list = list(set(shared_with_list + share_with_new_users))
-                        if database.update_dashboard_sharing_in_db(owner_username, dash_name, newly_combined_shared_list):
-                            st.success(f"Dashboard '{dash_name}' now also shared with: {', '.join(share_with_new_users)}.")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "UPDATE_DASHBOARD_SHARING_SUCCESS", f"Added users {share_with_new_users} to sharing for {dash_name}", "SUCCESS")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "UPDATE_DASHBOARD_SHARING_SUCCESS", f"Added users {share_with_new_users} to sharing for {dash_name}", "SUCCESS")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD MANAGEMENT] Failed to log sharing update: {log_error}")
-                            st.rerun()
-                        else:
-                            st.error("Failed to update sharing list.")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "UPDATE_DASHBOARD_SHARING_FAILURE", f"Failed to add users {share_with_new_users} to sharing for {dash_name}", "FAILURE")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "UPDATE_DASHBOARD_SHARING_FAILURE", f"Failed to add users {share_with_new_users} to sharing for {dash_name}", "FAILURE")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD MANAGEMENT] Failed to log sharing failure: {log_error}")
-            else:
-                if not shared_with_list:
-                    st.write("_No other users available in the system to share with._")
-            st.markdown("---")
-
-    if st.button("Back to My Dashboard", key="back_to_dash_from_manage_sharing_main"):
-        st.session_state.app_page = "dashboard"
-        st.rerun()
-
-    # Download and Email sharing controls
-    col1, col2 = st.columns(2)
-    
-    # Generate dashboard HTML for download and email
-    dashboard_html_content = generate_dashboard_html(st.session_state.dashboard_items)
-    current_dashboard_name_for_email = st.session_state.current_dashboard_name
-    
-    with col1:
-        safe_dashboard_name = (current_dashboard_name_for_email or "dashboard").replace(' ','_')
-        st.markdown(get_download_link_html(dashboard_html_content, f"{safe_dashboard_name}_dashboard.html"), unsafe_allow_html=True)
-    
-    with col2:
-        if st.button("Share Dashboard via Email", key="share_dashboard_email_button"):
-            st.session_state.show_email_form = True
-            st.rerun()
-    
-    # Email form modal
-    if st.session_state.get('show_email_form', False):
-        with st.expander("📧 Send Dashboard Email", expanded=True):
-            # Get all accessible dashboards for selection
-            all_user_dashboards = get_user_dashboard_names(st.session_state.logged_in_user)
-            
-            send_email.show_send_email_ui(
-                dashboard_html_content=dashboard_html_content, 
-                dashboard_name=current_dashboard_name_for_email,
-                all_dashboards=all_user_dashboards
-            )
-            if st.button("Close Email Form", key="close_email_form_button"):
-                st.session_state.show_email_form = False
-                st.rerun()
-    
-    st.markdown("---")
-
-def show_admin_panel():
-    """Admin panel for user management"""
-    st.title("User Management")
-    
-    # Initialize session state for editing
-    if 'editing_user' not in st.session_state:
-        st.session_state.editing_user = None
-    if 'delete_confirm' not in st.session_state:
-        st.session_state.delete_confirm = {}
-    
-    # Get all users
-    if is_sqlite_connection():
-        st.info("User management for SQLite is not fully implemented yet.")
-        return
-    else:
-        users = database.get_all_users_from_db()
-    
-    # Display users
-    if users:
-        st.subheader("Existing Users")
-        
-        for user in users:
-            # Check if this user is being edited
-            if st.session_state.editing_user == user['username']:
-                # Edit mode
-                st.markdown(f"### Editing User: {user['username']}")
-                
-                with st.form(f"edit_user_form_{user['username']}"):
-                    st.write(f"**Username**: {user['username']} (cannot be changed)")
-                    
-                    # Parse roles if they're in string format
-                    current_roles = user['roles']
-                    if isinstance(current_roles, str):
-                        try:
-                            import json
-                            current_roles = json.loads(current_roles)
-                        except:
-                            current_roles = []
-                    
-                    new_password = st.text_input(
-                        "New Password (leave blank to keep current)", 
-                        type="password", 
-                        key=f"edit_password_{user['username']}"
-                    )
-                    new_roles = st.multiselect(
-                        "Roles", 
-                        ["admin", "user", "query_user", "superuser"], 
-                        default=current_roles,
-                        key=f"edit_roles_{user['username']}"
-                    )
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.form_submit_button("Save Changes"):
-                            try:
-                                # Prepare password (hash if new password provided)
-                                if new_password.strip():
-                                    hashed_password = hash_password(new_password)
-                                else:
-                                    # Keep existing password - we need to get it
-                                    hashed_password = user.get('hashed_password', '')
-                                
-                                # Update user
-                                success = database.update_user_in_db(user['username'], hashed_password, new_roles)
-                                
-                                if success:
-                                    st.success(f"User '{user['username']}' updated successfully!")
-                                    st.session_state.editing_user = None
-                                    time.sleep(1)
-                                    st.rerun()
-                                else:
-                                    st.error(f"Failed to update user '{user['username']}'")
-                            except Exception as e:
-                                st.error(f"Error updating user: {e}")
-                    
-                    with col2:
-                        if st.form_submit_button("Cancel"):
-                            st.session_state.editing_user = None
-                            st.rerun()
-            
-            else:
-                # Display mode
-                with st.expander(f"User: {user['username']}"):
-                    # Parse roles for display
-                    display_roles = user['roles']
-                    if isinstance(display_roles, str):
-                        try:
-                            import json
-                            display_roles = json.loads(display_roles)
-                        except:
-                            display_roles = display_roles
-                    
-                    st.write(f"**Roles**: {', '.join(display_roles) if isinstance(display_roles, list) else display_roles}")
-                    st.write(f"**Created**: {user.get('created_at', 'Unknown')}")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        if st.button(f"Edit", key=f"edit_btn_{user['username']}"):
-                            st.session_state.editing_user = user['username']
-                            st.rerun()
-                    
-                    with col2:
-                        # Prevent deletion of current admin user
-                        if user['username'] == st.session_state.logged_in_user:
-                            st.button("Delete", disabled=True, help="Cannot delete your own account", key=f"delete_disabled_{user['username']}")
-                        else:
-                            if user['username'] not in st.session_state.delete_confirm:
-                                if st.button(f"Delete", key=f"delete_btn_{user['username']}", type="secondary"):
-                                    st.session_state.delete_confirm[user['username']] = True
-                                    st.rerun()
-                            else:
-                                if st.button(f"Confirm Delete", key=f"confirm_delete_{user['username']}", type="primary"):
-                                    try:
-                                        success = database.delete_user_from_db(user['username'])
-                                        if success:
-                                            st.success(f"User '{user['username']}' deleted successfully!")
-                                            if user['username'] in st.session_state.delete_confirm:
-                                                del st.session_state.delete_confirm[user['username']]
-                                            time.sleep(1)
-                                            st.rerun()
-                                        else:
-                                            st.error(f"Failed to delete user '{user['username']}'")
-                                    except Exception as e:
-                                        st.error(f"Error deleting user: {e}")
-                    
-                    with col3:
-                        if user['username'] in st.session_state.delete_confirm:
-                            if st.button(f"Cancel", key=f"cancel_delete_{user['username']}"):
-                                del st.session_state.delete_confirm[user['username']]
-                                st.rerun()
-        
-        st.markdown("---")
-    
-    # Add new user form
-    st.subheader("Add New User")
-    with st.form("add_user_form"):
-        new_username = st.text_input("Username")
-        new_password = st.text_input("Password", type="password")
-        new_roles = st.multiselect("Roles", ["admin", "user", "query_user", "superuser"], default=["user"])
-        
-        if st.form_submit_button("Create User"):
-            if new_username and new_password:
-                try:
-                    hashed_password = hash_password(new_password)
-                    
-                    if is_sqlite_connection():
-                        success = create_user_sqlite(new_username, hashed_password, new_roles)
-                    else:
-                        success = database.create_user_in_db(new_username, hashed_password, new_roles)
-                    
-                    if success:
-                        st.success(f"User '{new_username}' created successfully!")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to create user '{new_username}'. Username might already exist.")
-                except Exception as e:
-                    st.error(f"Error creating user: {e}")
-            else:
-                st.error("Username and password are required")
-
-def show_llm_settings_page():
-    """LLM configuration settings page"""
-    st.title("LLM Configuration Settings")
-    st.markdown("Configure the Large Language Model provider and credentials.")
-    
-    # For now, show a simple interface
-    st.info("LLM settings interface can be implemented here based on your database structure.")
-    
-    providers = ["OpenAI", "Local LLM (OpenAI-Compatible API)"]
-    selected_provider = st.selectbox("LLM Provider", providers)
-    
-    api_key = st.text_input("API Key", type="password", help="Required for OpenAI")
-    
-    if selected_provider == "Local LLM (OpenAI-Compatible API)":
-        base_url = st.text_input("Base URL", placeholder="http://localhost:1234/v1")
-        model_name = st.text_input("Model Name", placeholder="e.g., llama2")
-    
-    if st.button("Save LLM Settings"):
-        st.info("LLM settings save functionality needs to be connected to your database")
-
-def show_email_settings_page():
-    """Displays the email settings configuration page in the admin panel."""
-    st.header("Email Settings")
-    st.info("Configure SMTP settings for sending dashboard exports and notifications.")
-
-    # Get current email settings from database
-    conn = database.get_db_connection()
-    if not conn:
-        st.error("Could not connect to database. Please check your database configuration.")
-        return
-
-    try:
-        cursor = conn.cursor()
-        
-        # Check if we're using SQLite or PostgreSQL and create table accordingly
-        if is_sqlite_connection():
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS email_settings (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    smtp_server TEXT NOT NULL,
-                    smtp_port INTEGER NOT NULL,
-                    smtp_username TEXT NOT NULL,
-                    smtp_password TEXT NOT NULL,
-                    use_tls BOOLEAN NOT NULL DEFAULT 1,
-                    from_email TEXT NOT NULL,
-                    is_active BOOLEAN NOT NULL DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-        else:
-            # PostgreSQL syntax
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS email_settings (
-                    id SERIAL PRIMARY KEY,
-                    smtp_server TEXT NOT NULL,
-                    smtp_port INTEGER NOT NULL,
-                    smtp_username TEXT NOT NULL,
-                    smtp_password TEXT NOT NULL,
-                    use_tls BOOLEAN NOT NULL DEFAULT TRUE,
-                    from_email TEXT NOT NULL,
-                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-        conn.commit()
-
-        # Get current settings
-        cursor.execute("SELECT id, smtp_server, smtp_port, smtp_username, smtp_password, use_tls, from_email FROM email_settings WHERE is_active = TRUE ORDER BY id DESC LIMIT 1")
-        current_settings = cursor.fetchone()
-
-        # Initialize form with current settings or defaults
-        with st.form("email_settings_form"):
-            smtp_server = st.text_input(
-                "SMTP Server",
-                value=current_settings[1] if current_settings else "smtp.gmail.com",
-                help="e.g., smtp.gmail.com, smtp.outlook.com"
-            )
-            smtp_port = int(st.number_input(
-                "SMTP Port",
-                value=current_settings[2] if current_settings else 587,
-                min_value=1,
-                max_value=65535,
-                help="Common ports: 587 (TLS), 465 (SSL), 25 (plain)"
-            ))
-            smtp_username = st.text_input(
-                "SMTP Username",
-                value=current_settings[3] if current_settings else "",
-                help="Usually your email address"
-            )
-            smtp_password = st.text_input(
-                "SMTP Password",
-                value="",  # Always empty for security
-                type="password",
-                help="For Gmail, use an App Password if 2FA is enabled"
-            )
-            use_tls = st.checkbox(
-                "Use TLS",
-                value=current_settings[5] if current_settings else True,
-                help="Enable TLS encryption (recommended)"
-            )
-            from_email = st.text_input(
-                "From Email Address",
-                value=current_settings[6] if current_settings else "",
-                help="The email address that will appear as sender"
-            )
-
-            col1, col2 = st.columns(2)
-            with col1:
-                save_button = st.form_submit_button("Save Settings")
-            with col2:
-                test_button = st.form_submit_button("Send Test Email")
-
-            if save_button:
-                if not all([smtp_server, smtp_port, smtp_username, smtp_password, from_email]):
-                    st.error("All fields are required to save email settings.")
-                else:
-                    try:
-                        # Deactivate old settings first
-                        if is_sqlite_connection():
-                            cursor.execute("UPDATE email_settings SET is_active = 0")
-                        else:
-                            cursor.execute("UPDATE email_settings SET is_active = FALSE")
-                        
-                        # Save new settings
-                        if is_sqlite_connection():
-                            cursor.execute("""
-                                INSERT INTO email_settings (
-                                    smtp_server, smtp_port, smtp_username, smtp_password,
-                                    use_tls, from_email, is_active
-                                ) VALUES (?, ?, ?, ?, ?, ?, 1)
-                            """, (
-                                smtp_server, smtp_port, smtp_username, smtp_password,
-                                use_tls, from_email
-                            ))
-                        else:
-                            cursor.execute("""
-                                INSERT INTO email_settings (
-                                    smtp_server, smtp_port, smtp_username, smtp_password,
-                                    use_tls, from_email, is_active
-                                ) VALUES (%s, %s, %s, %s, %s, %s, TRUE)
-                            """, (
-                                smtp_server, smtp_port, smtp_username, smtp_password,
-                                use_tls, from_email
-                            ))
-                        conn.commit()
-                        st.success("Email settings saved successfully!")
-                        
-                        # Clear any stale email configuration from session state
-                        if 'email_config' in st.session_state:
-                            del st.session_state.email_config
-                            print("[EMAIL SETTINGS] Cleared stale email_config from session state")
-                        
-                        # Log the action
-                        try:
-                            if is_sqlite_connection():
-                                log_app_action_sqlite(st.session_state.logged_in_user, "EMAIL_SETTINGS_SAVED", f"Updated SMTP settings for {smtp_server}", "SUCCESS")
-                            else:
-                                database.log_app_action(st.session_state.logged_in_user, "EMAIL_SETTINGS_SAVED", f"Updated SMTP settings for {smtp_server}", "SUCCESS")
-                        except Exception as log_error:
-                            print(f"[EMAIL SETTINGS] Failed to log action: {log_error}")
-                            
-                    except Exception as e:
-                        st.error(f"Error saving email settings: {str(e)}")
-
-            if test_button:
-                if not all([smtp_server, smtp_port, smtp_username, smtp_password, from_email]):
-                    st.error("Please fill in all fields before testing email.")
-                else:
-                    try:
-                        # Create test message
-                        msg = MIMEMultipart()
-                        msg['From'] = from_email
-                        msg['To'] = smtp_username  # Send test to the configured email
-                        msg['Subject'] = "Test Email from DBChat"
-                        body = "This is a test email from your DBChat application. If you received this, your email settings are working correctly!"
-                        msg.attach(MIMEText(body, 'plain'))
-
-                        # Connect to SMTP server
-                        with st.spinner("Sending test email..."):
-                            server = smtplib.SMTP(smtp_server, int(smtp_port))
-                            if use_tls:
-                                server.starttls()
-                            server.login(smtp_username, smtp_password)
-                            server.send_message(msg)
-                            server.quit()
-
-                        st.success(f"Test email sent successfully to {smtp_username}!")
-                        
-                        # Log the test
-                        try:
-                            if is_sqlite_connection():
-                                log_app_action_sqlite(st.session_state.logged_in_user, "EMAIL_TEST_SENT", f"Test email sent to {smtp_username}", "SUCCESS")
-                            else:
-                                database.log_app_action(st.session_state.logged_in_user, "EMAIL_TEST_SENT", f"Test email sent to {smtp_username}", "SUCCESS")
-                        except Exception as log_error:
-                            print(f"[EMAIL SETTINGS] Failed to log test action: {log_error}")
-                            
-                    except smtplib.SMTPAuthenticationError as e:
-                        st.error(f"Authentication failed: {str(e)}\n\nFor Gmail, make sure you're using an App Password if 2FA is enabled.")
-                    except smtplib.SMTPConnectError as e:
-                        st.error(f"Could not connect to SMTP server: {str(e)}\n\nCheck the server address and port.")
-                    except smtplib.SMTPServerDisconnected as e:
-                        st.error(f"SMTP server disconnected: {str(e)}")
-                    except Exception as e:
-                        st.error(f"Error sending test email: {str(e)}")
-
-        # Display current configuration status
-        if current_settings:
-            st.markdown("---")
-            st.subheader("Current Configuration")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.info(f"**SMTP Server:** {current_settings[1]}")
-                st.info(f"**Port:** {current_settings[2]}")
-                st.info(f"**Username:** {current_settings[3]}")
-            with col2:
-                st.info(f"**From Email:** {current_settings[6]}")
-                st.info(f"**TLS Enabled:** {'Yes' if current_settings[5] else 'No'}")
-                st.info("**Status:** Active")
-
-    except Exception as e:
-        st.error(f"Error accessing email settings: {str(e)}")
-        # Log the error
-        try:
-            if is_sqlite_connection():
-                log_app_action_sqlite(st.session_state.logged_in_user, "EMAIL_SETTINGS_ERROR", f"Error accessing email settings: {str(e)}", "ERROR")
-            else:
-                database.log_app_action(st.session_state.logged_in_user, "EMAIL_SETTINGS_ERROR", f"Error accessing email settings: {str(e)}", "ERROR")
-        except Exception as log_error:
-            print(f"[EMAIL SETTINGS] Failed to log error: {log_error}")
-    finally:
-        if conn:
-            conn.close()
-
-def send_smtp_email(to_email, subject, body, attachment_path=None):
-    """
-    Sends an email using the configured SMTP settings from the database.
-    Returns True if successful, False otherwise.
-    This is a legacy function - consider using send_email module instead.
-    """
-    try:
-        # Get email settings from database
-        conn = database.get_db_connection()
-        if not conn:
-            print("[EMAIL] Could not connect to database")
-            return False
-
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM email_settings WHERE is_active = 1 ORDER BY id DESC LIMIT 1")
-        settings = cursor.fetchone()
-        conn.close()
-
-        if not settings:
-            print("[EMAIL] No active email settings found")
-            return False
-
-        # Create email message
-        msg = MIMEMultipart()
-        msg['From'] = settings[6]  # from_email
-        msg['To'] = to_email
-        msg['Subject'] = subject
-
-        # Add body
-        msg.attach(MIMEText(body, 'plain'))
-
-        # Add attachment if provided
-        if attachment_path and os.path.exists(attachment_path):
-            with open(attachment_path, 'rb') as f:
-                attachment = MIMEApplication(f.read(), _subtype='pdf')
-                attachment.add_header('Content-Disposition', 'attachment', filename=os.path.basename(attachment_path))
-                msg.attach(attachment)
-
-        # Send email
-        server = smtplib.SMTP(settings[1], int(settings[2]))  # smtp_server, smtp_port
-        if settings[5]:  # use_tls
-            server.starttls()
-        server.login(settings[3], settings[4])  # smtp_username, smtp_password
-        server.send_message(msg)
-        server.quit()
-
-        return True
-
-    except Exception as e:
-        print(f"[EMAIL] Error sending email: {str(e)}")
-        return False
-
-# --- Main Application Logic ---
-def main():
-    # Section 0: Ensure Session Stability (MUST BE FIRST)
-    ensure_session_stability()
-    
-    # Section 1: Handle Database Configuration Process
-    # This section ensures that if the DB isn't marked as configured,
-    # we attempt to configure it via secrets or guide the user to the manual config page.
-    # Database configuration is GLOBAL - once configured by admin, it works for all users
-    if not st.session_state.get('db_configured_successfully', False):
-        if not st.session_state.attempted_secrets_db_init:
-            st.session_state.attempted_secrets_db_init = True
-            conn_secrets = None
-            try:
-                with st.spinner("Checking database configuration from secrets..."):
-                    conn_secrets = database.get_db_connection()
-                if conn_secrets:
-                    # Verify this is a PostgreSQL connection
-                    try:
-                        cursor = conn_secrets.cursor()
-                        cursor.execute("SELECT version()")
-                        version_result = cursor.fetchone()
-                        if version_result and 'PostgreSQL' in str(version_result[0]):
-                            init_secrets_success = database.init_db(conn_secrets)
-                            if init_secrets_success:
-                                st.session_state.db_configured_successfully = True
-                                initialize_app_defaults()
-                                st.sidebar.success("PostgreSQL DB auto-configured from secrets.")
-                                if st.session_state.page == "db_config": # If we were on db_config, move to login
-                                    st.session_state.page = "login"
-                                # No st.rerun() here; let it flow to LLM init and page rendering in this same run
-                            else:
-                                st.sidebar.error("PostgreSQL connection OK, but table init failed. Please check permissions.")
-                                if st.session_state.page != "db_config":
-                                    st.session_state.page = "db_config"
-                                    st.rerun() # Rerun to go to db_config page
-                        else:
-                            st.sidebar.error("❌ Only PostgreSQL databases are supported. Please configure PostgreSQL connection.")
-                            if st.session_state.page != "db_config":
-                                st.session_state.page = "db_config"
-                                st.rerun()
-                    except Exception as version_check_error:
-                        st.sidebar.error(f"Failed to verify PostgreSQL connection: {version_check_error}")
-                        if st.session_state.page != "db_config":
-                            st.session_state.page = "db_config"
-                            st.rerun()
-                else: # Secrets not found or connection failed
-                    st.sidebar.error("❌ PostgreSQL connection required. Please configure PostgreSQL in secrets or manually.")
-                    if st.session_state.page != "db_config":
-                        st.session_state.page = "db_config"
-                        st.rerun() # Rerun to go to db_config page
-            except Exception as e_secrets_init:
-                print(f"[SECRETS DEBUG] Database init failed: {e_secrets_init}")
-                if st.session_state.page != "login":
-                    st.sidebar.error(f"Error during secrets-based DB init: {e_secrets_init}")
-                if st.session_state.page != "db_config":
-                    st.session_state.page = "db_config"
-                    st.rerun() # Rerun to go to db_config page
-
-    # Section 2: Initialize LLM Client (only if database is configured)
-    if st.session_state.db_configured_successfully:
-        get_llm_client() # This will set up the LLM client and status messages
-
-    # Section 3: Page Routing and UI Display
-    if st.session_state.db_configured_successfully:
-        # Database is configured, proceed with normal app flow
-        if not st.session_state.logged_in_user:
-            # User is not logged in, show login page
-            show_login_page()
-        else:
-            # User is logged in, show main application with sidebar navigation
-            show_main_application()
-    else:
-        # Database is not configured, show configuration page
-        show_db_configuration_page()
-
-    # --- Debug Logs Panel --- (Added to sidebar when user is logged in and logs exist)
-    if st.session_state.logged_in_user and (
-        st.session_state.log_data_schema_str or 
-        st.session_state.log_openai_prompt_str or 
-        st.session_state.log_generated_sql_str or 
-        st.session_state.log_query_execution_details_str
-    ):
-        with st.sidebar.expander("🔍 View Debug Logs", expanded=False):
-            if st.session_state.log_data_schema_str:
-                st.subheader("Data Schema Sent to LLM")
-                st.text(st.session_state.log_data_schema_str)
-            if st.session_state.log_openai_prompt_str:
-                st.subheader("LLM Prompt")
-                st.text(st.session_state.log_openai_prompt_str)
-            if st.session_state.log_generated_sql_str:
-                st.subheader("Last Generated SQL")
-                st.code(st.session_state.log_generated_sql_str, language="sql")
-            if st.session_state.log_query_execution_details_str:
-                st.subheader("Last Query Execution Details")
-                st.text(st.session_state.log_query_execution_details_str)
-
-def show_login_page():
-    # Add login-page class to hide sidebar
-    st.markdown("""
-    <script>
-    document.body.classList.add('login-page');
-    </script>
-    """, unsafe_allow_html=True)
-    
-    # Inject CSS directly for this page to ensure purple gradient background
-    st.markdown(""" 
-    <style>
-        body {
-            background: linear-gradient(135deg, #6200ea 0%, #200079 100%) !important;
-            min-height: 100vh !important; 
-            display: flex !important; 
-            align-items: center !important; 
-            justify-content: center !important; 
-        }
-        .stApp {
-            background-color: transparent !important; 
-            display: flex !important; 
-            align-items: center !important; 
-            justify-content: center !important; 
-            min-height: 100vh !important; 
-        }
-        .main .block-container {
-            background-color: rgba(255, 255, 255, 0.95) !important;
-            border-radius: 15px !important;
-            padding: 2rem !important;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
-            max-width: 400px !important;
-            width: 100% !important;
-            margin: 0 auto !important;
-        }
-        /* More specific selectors for login form inputs */
-        .login-page .stTextInput > div > div > input,
-        .stTextInput > div > div > input[type="text"],
-        .stTextInput > div > div > input[type="password"] {
-            border-radius: 8px !important;
-            border: 2px solid #d1d5db !important;
-            padding: 0.75rem 1rem !important;
-            font-size: 1rem !important;
-            color: #1f2937 !important;
-            background-color: #ffffff !important;
-            transition: all 0.3s ease !important;
-            font-weight: 500 !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
-        }
-        .login-page .stTextInput > div > div > input:focus,
-        .stTextInput > div > div > input[type="text"]:focus,
-        .stTextInput > div > div > input[type="password"]:focus {
-            border-color: #6200ea !important;
-            box-shadow: 0 0 0 3px rgba(98, 0, 234, 0.15), 0 2px 4px rgba(0,0,0,0.1) !important;
-            outline: none !important;
-            background-color: #ffffff !important;
-            color: #1f2937 !important;
-        }
-        .login-page .stTextInput > div > div > input::placeholder,
-        .stTextInput > div > div > input[type="text"]::placeholder,
-        .stTextInput > div > div > input[type="password"]::placeholder {
-            color: #9ca3af !important;
-            font-weight: 400 !important;
-        }
-        .login-page .stTextInput > label,
-        .stTextInput > label {
-            color: #1a237e !important;
-            font-weight: 600 !important;
-            font-size: 0.95rem !important;
-            margin-bottom: 0.5rem !important;
-            display: block !important;
-        }
-        /* Force override any conflicting styles */
-        div[data-testid="stForm"] .stTextInput input {
-            color: #1f2937 !important;
-            background-color: #ffffff !important;
-            border: 2px solid #d1d5db !important;
-        }
-        .stButton > button {
-            border-radius: 8px !important;
-            padding: 0.75rem 1.5rem !important;
-            font-size: 1rem !important;
-            font-weight: 600 !important;
-            background: linear-gradient(135deg, #6200ea 0%, #200079 100%) !important;
-            border: none !important;
-            color: white !important;
-            width: 100% !important;
-            margin-top: 1rem !important;
-        }
-        .stButton > button:hover {
-            background: linear-gradient(135deg, #7c4dff 0%, #3d1cb3 100%) !important;
-            box-shadow: 0 4px 12px rgba(98, 0, 234, 0.2) !important;
-        }
-        .stMarkdown h1 {
-            color: #1a237e !important;
-            font-size: 2rem !important;
-            font-weight: 700 !important;
-            margin-bottom: 1.5rem !important;
-            text-align: center !important;
-        }
-        .stMarkdown p {
-            color: #424242 !important;
-            font-size: 1rem !important;
-            text-align: center !important;
-            margin-bottom: 1.5rem !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Center the login form
-    st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-    st.title("Welcome to DBChat")
-    st.markdown("Please log in to continue")
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Login form
-    with st.form("login_form"):
-        username = st.text_input("Username", placeholder="Enter your username")
-        password = st.text_input("Password", type="password", placeholder="Enter your password")
-        submit = st.form_submit_button("Login")
-        
-        # Additional inline styling to ensure changes take effect
-        st.markdown("""
-        <style>
-        /* Force input styling with timestamp cache buster */
-        .stTextInput input {
-            color: #1f2937 !important;
-            background-color: #ffffff !important;
-            border: 2px solid #d1d5db !important;
-            border-radius: 8px !important;
-            padding: 0.75rem 1rem !important;
-            font-weight: 500 !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-        }
-        .stTextInput input:focus {
-            border-color: #6200ea !important;
-            box-shadow: 0 0 0 3px rgba(98, 0, 234, 0.15) !important;
-            color: #1f2937 !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        if submit:
-            if not username or not password:
-                st.error("Please enter both username and password")
-            else:
-                # Get user from database using the appropriate database function
-                if is_sqlite_connection():
-                    user_data = get_user_by_username_sqlite(username)
-                    log_func = log_app_action_sqlite
-                else:
-                    user_data = database.get_user_by_username_from_db(username)
-                    log_func = database.log_app_action
-                
-                if user_data and check_password(user_data["hashed_password"], password):
-                    st.session_state.logged_in_user = username
-                    st.session_state.user_roles = user_data.get("roles", [])
-                    st.session_state.app_page = 'data_integration'
-                    log_func(username, "LOGIN_SUCCESS", "User logged in successfully", "SUCCESS")
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password")
-                    log_func(username, "LOGIN_FAILURE", "Invalid login attempt", "FAILURE")
-
-def logout():
-    """Logs out the current user and redirects to login page."""
-    if st.session_state.logged_in_user:
-        try:
-            if is_sqlite_connection():
-                log_app_action_sqlite(st.session_state.logged_in_user, "LOGOUT", "User logged out", "SUCCESS")
-            else:
-                database.log_app_action(st.session_state.logged_in_user, "LOGOUT", "User logged out", "SUCCESS")
-        except Exception as e:
-            print(f"[LOGOUT] Failed to log logout action: {e}")
-    
-
-    # Clear user-specific session state while preserving global app settings
-    # Note: Database configuration should persist across users as it's a global app setting
-    user_specific_keys = [
-        'logged_in_user', 'user_roles', 'dashboard_items', 'current_dashboard_name', 
-        'results_df', 'chat_history', 'conversation_log_for_query', 'original_query_for_clarification',
-        'clarification_question_pending', 'llm_clarification_question', 'connected', 'connection_type',
-        'data', 'data_schema', 'db_connection', 'db_engine', 'selected_table'
-    ]
-    
-    # Global settings that should persist across user sessions (DON'T clear these):
-    # - 'db_configured_successfully': Database config is global, not user-specific
-    # - 'attempted_secrets_db_init': Prevents re-initialization on every login
-    # - 'current_db_params': Database connection parameters are global
-    
-    for key in user_specific_keys:
-        if key in st.session_state:
-            if key in ['user_roles', 'dashboard_items', 'chat_history', 'conversation_log_for_query']:
-                st.session_state[key] = []  # Reset to empty list
-            elif key in ['connected', 'clarification_question_pending']:
-                st.session_state[key] = False  # Reset to False
-            elif key == 'selected_table':
-                st.session_state[key] = "All Tables / Auto-detect"  # Reset to default
-            else:
-                st.session_state[key] = None  # Reset to None
-    
-    # Reset page navigation
-    st.session_state.page = "login"
-    st.session_state.app_page = 'data_integration'
-    
-    # Update activity timestamp
-    st.session_state.last_activity_timestamp = time.time()
-    
-    st.rerun()
-
-# Add these after imports
-openai_api_key = st.secrets.get("OPENAI_API_KEY", None)
-local_llm_secret_base_url = st.secrets.get("LOCAL_LLM_BASE_URL", None)
-
-def clear_logs():
-    pass
-
-def convert_postgresql_to_sqlite(sql_query):
-    """
-    Convert common PostgreSQL syntax to SQLite-compatible syntax.
-    Handles ILIKE, EXTRACT, NULLS FIRST/LAST, and other PostgreSQL-specific patterns.
-    Also attempts to fix common SQL syntax errors.
-    """
-    import re
-    
-    # First, apply the dedicated SQLCoder filter WHERE fix
-    sql_query = sql_fixer.fix_sqlcoder_filter_where_error(sql_query)
-    
-    # Then attempt to fix other common SQL syntax errors
-    def fix_sql_syntax_errors(query):
-        """Fix common SQL syntax errors that might come from LLM"""
-        
-        # Fix SQLCoder's invalid "filter WHERE" syntax
-        # Pattern: SUM(column) filter WHERE conditions AS alias
-        # Should be: SUM(column) AS alias (and move conditions to WHERE clause)
-        import re
-        
-        print(f"[SQL FIX] Original query: {query}")
-        
-        # Direct fix for the specific SQLCoder "filter WHERE" error
-        if 'filter WHERE' in query:
-            print(f"[SQL FIX] Detected filter WHERE pattern, applying direct fix")
-            # For profit comparison queries about South region, use a template
-            if 'profit' in query.lower() and 'south' in query.lower() and ('2015' in query or '2016' in query):
-                query = """
-                SELECT strftime('%Y', order_date) AS YEAR, SUM(profit) AS total_profit
-                FROM integrated_data 
-                WHERE region = 'South' AND strftime('%Y', order_date) IN ('2015', '2016')
-                GROUP BY strftime('%Y', order_date)
-                ORDER BY YEAR
-                """
-                print(f"[SQL FIX] Applied template fix for South profit comparison")
-                return query
-            else:
-                # Generic fix: remove filter WHERE and fix syntax
-                query = re.sub(r'SUM\s*\([^)]+\)\s+filter\s+WHERE[^A]+AS\s+(\w+)', r'SUM(profit) AS \1', query, flags=re.IGNORECASE)
-                # Add basic WHERE clause
-                if 'WHERE' not in query.upper() and 'FROM integrated_data' in query:
-                    query = query.replace('FROM integrated_data', 'FROM integrated_data WHERE 1=1')
-                print(f"[SQL FIX] Applied generic filter WHERE fix")
-        
-        # Look for the specific problematic pattern from the error
-        filter_where_pattern = r'SUM\s*\(\s*([^)]+)\s*\)\s+filter\s+WHERE\s+([^A][^S]*?)\s+AS\s+(\w+)'
-        
-        if re.search(filter_where_pattern, query, re.IGNORECASE):
-            print(f"[SQL FIX] Detected invalid 'filter WHERE' syntax")
-            
-            match = re.search(filter_where_pattern, query, re.IGNORECASE)
-            if match:
-                column = match.group(1).strip()
-                conditions = match.group(2).strip()
-                alias = match.group(3).strip()
-                
-                print(f"[SQL FIX] Extracted - column: {column}, conditions: {conditions}, alias: {alias}")
-                
-                # Replace the malformed part with correct SUM syntax
-                corrected_sum = f'SUM({column}) AS {alias}'
-                query = re.sub(filter_where_pattern, corrected_sum, query, flags=re.IGNORECASE)
-                
-                # Now add the WHERE clause properly
-                if 'WHERE' not in query.upper():
-                    # Add WHERE clause before GROUP BY
-                    if 'GROUP BY' in query.upper():
-                        query = re.sub(r'(\s+FROM\s+[^\s]+)', f'\\1 WHERE {conditions}', query, flags=re.IGNORECASE)
-                    else:
-                        # Add WHERE before any potential ORDER BY or at the end
-                        query = query.rstrip(';') + f' WHERE {conditions}'
-                else:
-                    # Append to existing WHERE with AND
-                    query = re.sub(r'(WHERE\s+)', f'\\1{conditions} AND ', query, flags=re.IGNORECASE)
-                
-                print(f"[SQL FIX] Fixed query: {query}")
-        
-        # Handle the specific case from the error more directly
-        if 'filter WHERE' in query:
-            print(f"[SQL FIX] Direct filter WHERE fix needed")
-            
-            # Simple pattern replacement for the specific SQLCoder error
-            # Replace: SUM(column) filter WHERE conditions AS alias
-            # With: SUM(column) AS alias and move conditions to WHERE clause
-            
-            # Use a simpler regex to catch the exact pattern from the error
-            filter_pattern = r'SUM\s*\([^)]+\)\s+filter\s+WHERE\s+[^A]+AS\s+\w+'
-            if re.search(filter_pattern, query, re.IGNORECASE):
-                # Extract the key parts
-                column_match = re.search(r'SUM\s*\(([^)]+)\)', query, re.IGNORECASE)
-                alias_match = re.search(r'AS\s+(\w+)', query, re.IGNORECASE)
-                
-                if column_match and alias_match:
-                    column = column_match.group(1)
-                    alias = alias_match.group(1)
-                    
-                    # For profit comparison queries, create a proper query
-                    if 'profit' in column.lower() and ('south' in query.lower() or 'region' in query.lower()):
-                        query = f"""
-                        SELECT strftime('%Y', order_date) AS YEAR, SUM({column}) AS {alias}
-                        FROM integrated_data 
-                        WHERE region = 'South' AND strftime('%Y', order_date) IN ('2015', '2016')
-                        GROUP BY strftime('%Y', order_date)
-                        ORDER BY YEAR
-                        """
-                        print(f"[SQL FIX] Applied specific fix for profit comparison query")
-                    else:
-                        # Generic fix - remove the filter WHERE part and create proper syntax
-                        # Replace the entire malformed expression
-                        corrected_sum = f'SUM({column}) AS {alias}'
-                        query = re.sub(filter_pattern, corrected_sum, query, flags=re.IGNORECASE)
-                        
-                        # Add basic WHERE clause if missing
-                        if 'WHERE' not in query.upper():
-                            query = query.replace('FROM integrated_data', 'FROM integrated_data WHERE 1=1')
-                        
-                        print(f"[SQL FIX] Applied generic filter WHERE fix")
-            
-            # Additional fallback - if still contains filter WHERE, do a direct replacement
-            if 'filter WHERE' in query:
-                # Last resort: remove the filter WHERE entirely and create basic syntax
-                query = re.sub(r'\s+filter\s+WHERE[^A]+AS\s+', ' AS ', query, flags=re.IGNORECASE)
-                print(f"[SQL FIX] Applied fallback filter WHERE removal")
-        
-        # Direct string replacement for common malformed patterns
-        malformed_patterns = [
-            ('LOWER("customer_name", SUM(sales) AS total_sales', 'LOWER("customer_name"), SUM(sales) AS total_sales'),
-            ('LOWER("customer_name", SUM(profit) AS total_profit', 'LOWER("customer_name"), SUM(profit) AS total_profit'),
-            ('LOWER("customer_name", SUM(revenue) AS total_revenue', 'LOWER("customer_name"), SUM(revenue) AS total_revenue'),
-        ]
-        
-        for malformed, fixed in malformed_patterns:
-            if malformed in query:
-                query = query.replace(malformed, fixed)
-        
-        # More general pattern: LOWER("column", SUM(column) AS alias
-        pattern = r'LOWER\s*\(\s*"([^"]+)",\s*SUM\s*\(\s*([^)]+)\s*\)\s+AS\s+(\w+)'
-        replacement = r'LOWER("\1"), SUM(\2) AS \3'
-        query = re.sub(pattern, replacement, query, flags=re.IGNORECASE)
-        
-        # Also handle case without quotes around column names
-        pattern2 = r'LOWER\s*\(\s*([^,\s]+),\s*SUM\s*\(\s*([^)]+)\s*\)\s+AS\s+(\w+)'
-        replacement2 = r'LOWER(\1), SUM(\2) AS \3'
-        query = re.sub(pattern2, replacement2, query, flags=re.IGNORECASE)
-        
-        # Fix WHERE clause with extra closing parenthesis
-        query = re.sub(r'WHERE\s+"([^"]+)"\)\s+LIKE', r'WHERE "\1" LIKE', query, flags=re.IGNORECASE)
-        
-        # Also try to add LOWER to WHERE clause for case-insensitive comparison
-        query = re.sub(r'WHERE\s+"([^"]+)"\s+LIKE', r'WHERE LOWER("\1") LIKE', query, flags=re.IGNORECASE)
-        
-        # Fix quotes around years in IN clause for SQLite compatibility
-        query = re.sub(r"IN\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)", r"IN ('\1', '\2')", query, flags=re.IGNORECASE)
-        
-        return query
-    
-    # Apply syntax fixes first (only for real errors, not conversion artifacts)
-    sql_query = fix_sql_syntax_errors(sql_query)
-    
-    # Remove NULLS FIRST/LAST (not supported in SQLite)
-    sql_query = re.sub(r'\s+NULLS\s+(FIRST|LAST)\b', '', sql_query, flags=re.IGNORECASE)
-    
-    # Convert ILIKE to case-insensitive LIKE using LOWER()
-    # Use a much simpler and more reliable approach
-    
-    # Pattern 1: Handle quoted column names: "column" ILIKE 'pattern'
-    sql_query = re.sub(
-        r'"([^"]+)"\s+ILIKE\s+(\'[^\']*\')', 
-        r'LOWER("\1") LIKE LOWER(\2)', 
-        sql_query, 
-        flags=re.IGNORECASE
-    )
-    
-    # Pattern 2: Handle unquoted column names: column ILIKE 'pattern'  
-    sql_query = re.sub(
-        r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s+ILIKE\s+(\'[^\']*\')', 
-        r'LOWER(\1) LIKE LOWER(\2)', 
-        sql_query, 
-        flags=re.IGNORECASE
-    )
-    
-    # Convert EXTRACT functions to SQLite equivalents
-    def extract_replacement(match):
-        extract_part = match.group(1).upper()
-        column = match.group(2).strip()
-        
-        if extract_part == 'YEAR':
-            return f"strftime('%Y', {column})"
-        elif extract_part == 'MONTH':
-            return f"strftime('%m', {column})"
-        elif extract_part == 'DAY':
-            return f"strftime('%d', {column})"
-        elif extract_part == 'HOUR':
-            return f"strftime('%H', {column})"
-        elif extract_part == 'MINUTE':
-            return f"strftime('%M', {column})"
-        elif extract_part == 'SECOND':
-            return f"strftime('%S', {column})"
-        else:
-            # For invalid EXTRACT usage like EXTRACT(STATE FROM column), just return the column
-            # This handles the weird EXTRACT(STATE FROM integrated_data.state) case
-            return column
-    
-    # Handle EXTRACT(part FROM column) patterns
-    sql_query = re.sub(r'EXTRACT\s*\(\s*(\w+)\s+FROM\s+([^)]+)\)', extract_replacement, sql_query, flags=re.IGNORECASE)
-    
-    # Fix column alias references in the same SELECT statement
-    # SQLite doesn't allow using column aliases in the same SELECT's WHERE or other clauses
-    # We need to replace the alias references with the original expressions
-    def fix_alias_references(query):
-        # Extract all column aliases and their expressions from the SELECT clause
-        select_aliases = {}
-        
-        # Find the SELECT clause (everything between SELECT and FROM)
-        select_match = re.search(r'SELECT\s+(.*?)\s+FROM', query, re.IGNORECASE | re.DOTALL)
-        if not select_match:
-            return query
-            
-        select_clause = select_match.group(1)
-        
-        # Split by commas, but be careful of commas inside functions
-        select_items = []
-        paren_depth = 0
-        current_item = ""
-        
-        for char in select_clause:
-            if char == '(':
-                paren_depth += 1
-            elif char == ')':
-                paren_depth -= 1
-            elif char == ',' and paren_depth == 0:
-                select_items.append(current_item.strip())
-                current_item = ""
-                continue
-            current_item += char
-            
-        if current_item.strip():
-            select_items.append(current_item.strip())
-        
-        # Extract aliases from each select item
-        for item in select_items:
-            # Look for "expression AS alias" pattern
-            as_match = re.search(r'^(.+?)\s+AS\s+(\w+)$', item.strip(), re.IGNORECASE)
-            if as_match:
-                expression = as_match.group(1).strip()
-                alias = as_match.group(2).strip()
-                select_aliases[alias] = expression
-        
-        # Replace alias references with original expressions in the SELECT clause only
-        # Look for alias references in later select items
-        for alias, expression in select_aliases.items():
-            # Create a pattern that matches the alias but not when it's being defined
-            alias_pattern = rf'\b{re.escape(alias)}\b'
-            
-            # Only replace in select items that come after the alias definition
-            # and not in the alias definition itself
-            modified_query = query
-            for other_alias, other_expr in select_aliases.items():
-                if other_alias != alias and alias in other_expr:
-                    # Replace the alias in this other expression
-                    new_expr = re.sub(alias_pattern, f'({expression})', other_expr)
-                    # Update the query
-                    old_item = f"{other_expr} AS {other_alias}"
-                    new_item = f"{new_expr} AS {other_alias}"
-                    modified_query = modified_query.replace(old_item, new_item)
-            
-            query = modified_query
-        
-        return query
-    
-    sql_query = fix_alias_references(sql_query)
-    
-    # Convert PostgreSQL boolean literals
-    sql_query = re.sub(r'\bTRUE\b', '1', sql_query, flags=re.IGNORECASE)
-    sql_query = re.sub(r'\bFALSE\b', '0', sql_query, flags=re.IGNORECASE)
-    
-    # Final cleanup - remove extra spaces
-    sql_query = re.sub(r'\s+', ' ', sql_query).strip()
-    
-    return sql_query
-
-# --- Database Configuration Page ---
-def show_admin_db_configuration_page():
-    """Admin-accessible database configuration page for reconfiguring database settings"""
-    st.title("Database Configuration")
-    st.info("Configure or reconfigure the PostgreSQL database connection for the application.")
-    
-    # Show current connection status
-    if st.session_state.get('db_configured_successfully', False):
-        st.success("✅ Database is currently connected and configured.")
-        
-        # Show current connection details if available
-        try:
-            current_params = database.get_db_connection_params_for_display()
-            if current_params:
-                st.subheader("Current Database Configuration")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.info(f"**Host:** {current_params.get('host', 'Unknown')}")
-                    st.info(f"**Port:** {current_params.get('port', 'Unknown')}")
-                    st.info(f"**Database:** {current_params.get('dbname', 'Unknown')}")
-                with col2:
-                    st.info(f"**User:** {current_params.get('user', 'Unknown')}")
-                    st.info("**Password:** ••••••••")
-                    # Test current connection
-                    try:
-                        test_conn = database.get_db_connection()
-                        if test_conn:
-                            test_conn.close()
-                            st.success("🔗 Connection test: **Active**")
-                        else:
-                            st.error("❌ Connection test: **Failed**")
-                    except Exception as e:
-                        st.error(f"❌ Connection test: **Failed** - {str(e)}")
-        except Exception as e:
-            st.warning(f"Could not retrieve current connection details: {e}")
-    else:
-        st.warning("⚠️ Database is not properly configured.")
-    
-    st.markdown("---")
-    st.subheader("Update Database Configuration")
-    st.markdown("Enter new connection details below. These settings will be used for the current session.")
-    
-    # Get existing settings for defaults
-    try:
-        existing_settings = database.get_db_connection_params_for_display()
-        if existing_settings is None: 
-            existing_settings = {}
-    except:
-        existing_settings = {}
-
-    with st.form("admin_db_config_form"):
-        db_host = st.text_input("Host", value=existing_settings.get("host", "localhost"))
-        db_port = st.number_input("Port", value=int(existing_settings.get("port", 5432)), min_value=1, max_value=65535)
-        db_name = st.text_input("Database Name", value=existing_settings.get("dbname", ""))
-        db_user = st.text_input("User", value=existing_settings.get("user", ""))
-        db_password = st.text_input("Password", type="password", help="Leave blank to keep current password")
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            test_connection = st.form_submit_button("🔍 Test Connection")
-        with col2:
-            save_config = st.form_submit_button("💾 Save Configuration")
-        with col3:
-            reset_config = st.form_submit_button("🔄 Reset to Defaults")
-
-        if test_connection or save_config:
-            if not all([db_host, db_name, db_user]):
-                st.error("Host, Database Name, and User are required.")
-            else:
-                # Use current password if new one not provided
-                password_to_use = db_password if db_password else existing_settings.get("password", "")
-                
-                provided_params = {
-                    "host": db_host,
-                    "port": int(db_port),
-                    "dbname": db_name,
-                    "user": db_user,
-                    "password": password_to_use
-                }
-                
-                conn = None
-                try:
-                    with st.spinner("Testing database connection..."):
-                        conn = database.get_db_connection(provided_params=provided_params)
-                    
-                    if conn:
-                        # Verify it's PostgreSQL
-                        try:
-                            cursor = conn.cursor()
-                            cursor.execute("SELECT version()")
-                            version_result = cursor.fetchone()
-                            if version_result and 'PostgreSQL' in str(version_result[0]):
-                                st.success("✅ Successfully connected to PostgreSQL!")
-                                
-                                if save_config:
-                                    # Test table initialization
-                                    with st.spinner("Verifying database tables..."):
-                                        init_success = database.init_db(conn)
-                                    
-                                    if init_success:
-                                        st.success("✅ Database tables verified/initialized successfully!")
-                                        st.session_state.db_configured_successfully = True
-                                        
-                                        # Log the successful configuration
-                                        try:
-                                            database.log_app_action(st.session_state.logged_in_user, "ADMIN_DB_CONFIG_SUCCESS", f"Database reconfigured: {db_host}:{db_port}/{db_name}", "SUCCESS")
-                                        except Exception as log_error:
-                                            print(f"[ADMIN DB CONFIG] Failed to log action: {log_error}")
-                                        
-                                        st.balloons()
-                                        st.info("✨ Database configuration updated successfully! You can now use all application features.")
-                                    else:
-                                        st.error("❌ Failed to initialize database tables. Please check database permissions.")
-                                elif test_connection:
-                                    st.info("🔍 Connection test successful! Click 'Save Configuration' to apply changes.")
-                            else:
-                                st.error("❌ Connected database is not PostgreSQL. Only PostgreSQL is supported.")
-                        except Exception as version_check_error:
-                            st.error(f"❌ Failed to verify PostgreSQL connection: {version_check_error}")
-                    else:
-                        st.error("❌ Failed to connect to database with provided settings.")
-                        
-                except Exception as e_connect:
-                    st.error(f"❌ Database connection error: {str(e_connect)}")
-                    # Log the failed configuration attempt
-                    try:
-                        database.log_app_action(st.session_state.logged_in_user, "ADMIN_DB_CONFIG_FAILURE", f"Failed to connect: {str(e_connect)}", "FAILURE")
-                    except Exception as log_error:
-                        print(f"[ADMIN DB CONFIG] Failed to log failure: {log_error}")
-                finally:
-                    if conn:
-                        try:
-                            conn.close()
-                        except Exception:
-                            pass
-
-        if reset_config:
-            st.session_state.db_configured_successfully = False
-            if 'current_db_params' in st.session_state:
-                del st.session_state.current_db_params
-            st.success("🔄 Database configuration reset. Please reconfigure with new settings.")
-            st.rerun()
-
-def show_db_configuration_page():
-    st.header("Database Configuration")
-    st.warning("The application requires a PostgreSQL database connection to function.")
-    st.markdown("Please provide the connection details below. These settings will be used for the current session. To make them permanent, you'll need to create or update a `secrets.toml` file in the `.streamlit` directory of your application with a `[postgres]` section.")
-    st.markdown("Example `secrets.toml`:")
-    st.code("""
-[postgres]
-host = "your_db_host" "your_db_name"
-user = "your_db_user"
-password = "your_db_password"
-""", language="toml")
-
-    st.markdown("---")
-    st.subheader("Enter Connection Details")
-
-    # Try to get existing secrets for placeholder/hint text
-    try:
-        existing_secrets = database.get_db_connection_params_for_display()
-        if existing_secrets is None: 
-            existing_secrets = {}
-    except:
-        existing_secrets = {}
-
-    with st.form("db_config_form"): # Use a form for batch input
-        db_host = st.text_input("Host", value=existing_secrets.get("host", "localhost"))
-        db_port = st.number_input("Port", value=existing_secrets.get("port", 5432), min_value=1, max_value=65535)
-        db_name = st.text_input("Database Name", value=existing_secrets.get("dbname", ""))
-        db_user = st.text_input("User", value=existing_secrets.get("user", ""))
-        db_password = st.text_input("Password", type="password", value=existing_secrets.get("password", ""))
-
-        submitted = st.form_submit_button("Connect and Initialize Database")
-
-        if submitted:
-            if not all([db_host, db_name, db_user]):
-                st.error("Host, Database Name, and User are required.")
-            else:
-                provided_params = {
-                    "host": db_host,
-                    "port": db_port,
-                    "dbname": db_name,
-                    "user": db_user,
-                    "password": db_password
-                }
-                conn = None
-                try:
-                    with st.spinner("Attempting to connect to the database..."):
-                        conn = database.get_db_connection(provided_params=provided_params)
-                    
-                    if conn:
-                        st.success("Successfully connected to the database!")
-                        with st.spinner("Initializing database tables (this may take a moment)..."):
-                            init_success = database.init_db(conn)
-                        
-                        if init_success:
-                            st.success("Database tables initialized successfully.")
-                            st.session_state.db_configured_successfully = True
-                            initialize_app_defaults() 
-                            st.info("Configuration successful for this session. Proceeding to login.")
-                            st.balloons()
-                            import time
-                            time.sleep(2)
-                            st.session_state.page = "login"
-                            st.rerun()
-                        else:
-                            st.error("Failed to initialize database tables. Please check console logs and database permissions.")
-                    else:
-                        st.error(f"Failed to connect to PostgreSQL with the provided details. Please verify the parameters and ensure the database server is accessible.")
-                except Exception as e_connect_init:
-                    st.error(f"An unexpected error occurred during database setup: {e_connect_init}")
-
-# --- Enhanced CSS with Purple Gradient Theme ---
-
-if __name__ == "__main__":
-    load_custom_css()
-    main()
- 

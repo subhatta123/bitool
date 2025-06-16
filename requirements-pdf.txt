@@ -1,0 +1,13 @@
+# Optional dependencies for PDF generation in DBChat email functionality
+# Install with: pip install -r requirements-pdf.txt
+
+# WeasyPrint - Recommended PDF generator (pure Python)
+weasyprint>=60.0
+
+# Alternative: pdfkit + wkhtmltopdf
+# Uncomment if you prefer pdfkit (requires separate wkhtmltopdf installation)
+# pdfkit>=1.0.0
+
+# Additional dependencies for better PDF rendering
+Pillow>=9.0.0  # Image processing
+fonttools>=4.0.0  # Font handling 

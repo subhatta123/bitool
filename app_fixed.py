@@ -1378,7 +1378,7 @@ def main():
                 st.text(st.session_state.log_query_execution_details_str)
 
 # --- New Page Functions (Login, Admin Panel) ---
-def show_login_page():
+
 def show_login_page():
     # Use a container and apply custom class for centering and styling
     st.markdown("<div class='login-container'>", unsafe_allow_html=True)
