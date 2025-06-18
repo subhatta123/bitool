@@ -68,6 +68,27 @@ def handle_chart_title_change(item_abs_idx):
     else:
         st.warning("Chart title cannot be empty.")
 
+def handle_item_move(item_idx, direction):
+    """Callback to handle moving a dashboard item up or down."""
+    items = st.session_state.dashboard_items
+    
+    if direction == "up" and item_idx > 0:
+        new_idx = item_idx - 1
+    elif direction == "down" and item_idx < len(items) - 1:
+        new_idx = item_idx + 1
+    else:
+        return # Invalid move, do nothing.
+
+    # Swap items
+    items[item_idx], items[new_idx] = items[new_idx], items[item_idx]
+    
+    # Update session state
+    st.session_state.dashboard_items = items
+    
+    # Save to DB
+    save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
+    st.toast("Layout saved!", icon="✨")
+
 # --- Page Setup (MUST BE THE FIRST STREAMLIT COMMAND) ---
 st.set_page_config(
     layout="wide", 
@@ -463,6 +484,7 @@ def initialize_session_state():
         'dashboard_items': [],
         'current_dashboard_name': None,
         'show_delete_confirmation': False,
+        'dashboard_manage_mode': False,
         
         # Logging state
         'log_data_schema_str': None,
@@ -1010,20 +1032,23 @@ def load_user_dashboard(username, dashboard_name, version_index=0):
                     # Convert back to DataFrame from records
                     df_from_records = pd.DataFrame.from_records(item["data_snapshot"])
                     
-                    # Handle None values that were stored instead of NaN
-                    # Convert None back to NaN for numerical columns where appropriate
-                    for col in df_from_records.columns:
-                        if df_from_records[col].dtype == 'object':
-                            # For object columns, check if they should be numeric
-                            try:
-                                # Try to convert to numeric, which will turn None to NaN
-                                numeric_series = pd.to_numeric(df_from_records[col], errors='coerce')
-                                # If conversion resulted in a numeric type, use it
-                                if pd.api.types.is_numeric_dtype(numeric_series):
-                                    df_from_records[col] = numeric_series
-                            except:
-                                pass  # Keep as object type if conversion fails
+                    # Handle None values and data types
+                    for col_name in df_from_records.columns:
+                        col = df_from_records[col_name]
+                        # If column is object type, it might contain text or mixed types
+                        if col.dtype == 'object':
+                            # Fill any python None or numpy NaT with a string placeholder
+                            if col.hasnans:
+                                 df_from_records[col_name] = col.fillna("Not Specified")
+
+                            # After filling, try to convert to a more specific type if possible without forcing errors
+                            # For example, a column of ['1', '2', None] becomes ['1', '2', 'Not Specified']
+                            # We don't want to convert that to numeric. A column of ['1', '2', '3'] should be numeric.
+                            # `convert_dtypes` is good at this.
                     
+                    # Use pandas' built-in function to infer best possible dtypes
+                    df_from_records = df_from_records.convert_dtypes()
+
                     item["data_snapshot"] = df_from_records
                     print(f"[DASHBOARD LOAD] Loaded DataFrame for {item.get('title', 'Untitled')}: {len(df_from_records)} rows")
                     
@@ -2693,6 +2718,23 @@ def convert_postgresql_to_sqlite(sql_query):
     # Handle EXTRACT(part FROM column) patterns
     sql_query = re.sub(r'EXTRACT\s*\(\s*(\w+)\s+FROM\s+([^)]+)\)', extract_replacement, sql_query, flags=re.IGNORECASE)
     
+    # Handle YEAR(column) function (from MySQL/SQL Server)
+    sql_query = re.sub(r'\bYEAR\s*\(([^)]+)\)', r"strftime('%Y', \1)", sql_query, flags=re.IGNORECASE)
+
+    # Make year comparisons with strftime more robust by quoting the year
+    # e.g., WHERE strftime('%Y', "Order Date") = 2016 -> WHERE strftime('%Y', "Order Date") = '2016'
+    sql_query = re.sub(r"(strftime\s*\(\s*'\%Y'[^)]+\)\s*=\s*)(\d{4})\b", r"\1'\2'", sql_query, flags=re.IGNORECASE)
+
+    # Also handle IN clauses with unquoted years
+    def quote_years_in_in_clause(match):
+        # Find all 4-digit numbers (years) in the IN clause content
+        years = re.findall(r'\b\d{4}\b', match.group(2))
+        # Quote each year
+        quoted_years = ", ".join([f"'{year}'" for year in years])
+        return f"{match.group(1)}{quoted_years})"
+
+    sql_query = re.sub(r"(strftime\s*\(\s*'\%Y'[^)]+\)\s+IN\s*\()([^)]+)\)", quote_years_in_in_clause, sql_query, flags=re.IGNORECASE)
+
     # Fix column alias references in the same SELECT statement
     # SQLite doesn't allow using column aliases in the same SELECT's WHERE or other clauses
     # We need to replace the alias references with the original expressions
@@ -2918,7 +2960,8 @@ def show_db_configuration_page():
     st.markdown("Example `secrets.toml`:")
     st.code("""
 [postgres]
-host = "your_db_host" "your_db_name"
+host = "your_db_host"
+dbname = "your_db_name"
 user = "your_db_user"
 password = "your_db_password"
 """, language="toml")
@@ -2936,7 +2979,7 @@ password = "your_db_password"
 
     with st.form("db_config_form"): # Use a form for batch input
         db_host = st.text_input("Host", value=existing_secrets.get("host", "localhost"))
-        db_port = st.number_input("Port", value=existing_secrets.get("port", 5432), min_value=1, max_value=65535)
+        db_port = st.number_input("Port", value=int(existing_secrets.get("port", 5432)), min_value=1, max_value=65535)
         db_name = st.text_input("Database Name", value=existing_secrets.get("dbname", ""))
         db_user = st.text_input("User", value=existing_secrets.get("user", ""))
         db_password = st.text_input("Password", type="password", value=existing_secrets.get("password", ""))
@@ -2981,111 +3024,349 @@ password = "your_db_password"
                 except Exception as e_connect_init:
                     st.error(f"An unexpected error occurred during database setup: {e_connect_init}")
 
-def show_main_application():
-    """Main application interface with sidebar navigation and proper page routing"""
+def generate_dashboard_html(dashboard_items):
+    """Generate HTML content for the entire dashboard with embedded Plotly charts"""
+    if not dashboard_items:
+        return "<html><body><h1>Empty Dashboard</h1><p>No items to display.</p></body></html>"
     
-    # Initialize page state if not set
-    if 'app_page' not in st.session_state:
-        st.session_state.app_page = 'data_integration'
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>DBChat Dashboard</title>
+        <script src='https://cdn.plot.ly/plotly-latest.min.js'></script>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+            .dashboard-container { max-width: 1200px; margin: 0 auto; }
+            .kpi-section { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 30px; }
+            .kpi-item { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); min-width: 200px; text-align: center; }
+            .chart-section { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 20px; }
+            .chart-item { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            .chart-title { font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #333; }
+            .kpi-label { font-size: 14px; color: #666; margin-bottom: 5px; }
+            .kpi-value { font-size: 28px; font-weight: bold; color: #333; }
+            .kpi-delta { font-size: 16px; color: #666; margin-top: 5px; }
+            h1 { color: #333; text-align: center; margin-bottom: 30px; }
+            .chart-container { width: 100%; height: 400px; margin: 10px 0; }
+            table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+            table th, table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            table th { background-color: #f2f2f2; font-weight: bold; }
+            table tr:nth-child(even) { background-color: #f9f9f9; }
+            
+            /* Chart fallback styling */
+            .chart-fallback { 
+                margin-top: 15px; 
+                padding: 15px; 
+                background-color: #f8f9fa; 
+                border: 1px solid #e9ecef; 
+                border-radius: 4px; 
+            }
+            .chart-fallback p { 
+                margin: 10px 0; 
+                color: #666; 
+                font-style: italic; 
+            }
+            .chart-fallback table { 
+                margin-top: 10px; 
+                font-size: 12px; 
+            }
+            
+            /* Print media query for PDF generation */
+            @media print {
+                body { 
+                    background-color: white !important; 
+                    font-size: 12px; 
+                }
+                .chart-container { 
+                    height: auto !important; 
+                    min-height: 200px; 
+                }
+                .chart-fallback { 
+                    display: block !important; 
+                    page-break-inside: avoid; 
+                }
+                .chart-item { 
+                    page-break-inside: avoid; 
+                    margin-bottom: 20px; 
+                }
+                h1, .chart-title { 
+                    page-break-after: avoid; 
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="dashboard-container">
+            <h1>DBChat Dashboard</h1>
+    """
     
-    # Sidebar Navigation
-    with st.sidebar:
-        st.markdown("### DBChat Navigation")
-        st.markdown(f"**Welcome, {st.session_state.logged_in_user}!**")
-        st.markdown("---")
-        
-        # Navigation buttons
-        if st.button("Data Integration & ETL", use_container_width=True):
-            st.session_state.app_page = 'data_integration'
-            st.rerun()
+    # Separate KPIs and other items
+    kpi_items = [item for item in dashboard_items if item.get('chart_type') == 'KPI']
+    other_items = [item for item in dashboard_items if item.get('chart_type') != 'KPI']
+    
+    # Add KPI section
+    if kpi_items:
+        html_content += '<div class="kpi-section">'
+        for item in kpi_items:
+            params = item['params']
+            data_snapshot = item['data_snapshot']
+            label = params.get('label', 'KPI')
+            value_col = params.get('value_col')
+            delta_col = params.get('delta_col')
             
-        if st.button("Ask Questions", use_container_width=True):
-            st.session_state.app_page = 'query'
-            st.rerun()
+            value = "N/A"
+            delta = ""
             
-        if st.button("My Dashboard", use_container_width=True):
-            st.session_state.app_page = 'dashboard'
-            st.rerun()
-            
-        if st.button("Manage Dashboard Sharing", use_container_width=True):
-            st.session_state.app_page = 'dashboard_management'
-            st.rerun()
-            
-        # Admin-only features
-        user_roles = st.session_state.get('user_roles', [])
-        if isinstance(user_roles, str):
-            try:
-                import json
-                user_roles = json.loads(user_roles)
-            except:
-                user_roles = []
-        
-        is_admin = 'admin' in user_roles
-        
-        if is_admin:
-            st.markdown("---")
-            st.markdown("**Admin Features**")
-            
-            if st.button("Database Configuration", use_container_width=True):
-                st.session_state.app_page = 'db_config'
-                st.rerun()
-            
-            if st.button("User Management", use_container_width=True):
-                st.session_state.app_page = 'admin_users'
-                st.rerun()
+            if not data_snapshot.empty and value_col in data_snapshot.columns:
+                try:
+                    value = pd.to_numeric(data_snapshot[value_col].iloc[0])
+                    if isinstance(value, float):
+                        value = f"{value:,.2f}"
+                    else:
+                        value = f"{value:,}"
+                except:
+                    value = str(data_snapshot[value_col].iloc[0])
                 
-            if st.button("LLM Settings", use_container_width=True):
-                st.session_state.app_page = 'llm_settings'
-                st.rerun()
+                if delta_col and delta_col in data_snapshot.columns:
+                    try:
+                        delta_val = pd.to_numeric(data_snapshot[delta_col].iloc[0])
+                        delta = f"Δ {delta_val:+.2f}"
+                    except:
+                        delta = str(data_snapshot[delta_col].iloc[0])
             
-            if st.button("Email Settings", use_container_width=True):
-                st.session_state.app_page = 'email_settings'
-                st.rerun()
-        
-        st.markdown("---")
-        
-        # Status indicators
-        st.markdown("**Status**")
-        
-        # LLM status
-        llm_status = st.session_state.get('sidebar_llm_status_message', 'LLM: Not configured')
-        if 'Connected' in llm_status:
-            st.success(f"✅ LLM Ready")
-        else:
-            st.info(f"🔧 LLM: Configure in Admin Settings")
-            
-        # Show data status if any data is loaded
-        if st.session_state.get('data') is not None:
-            st.success(f"📊 Data Loaded: {st.session_state.connection_type or 'Unknown'}")
-        else:
-            st.info("📥 Ready for Data Integration")
-        
-        st.markdown("---")
-        
-        # Logout button
-        if st.button("Logout", use_container_width=True):
-            logout()
+            html_content += f"""
+            <div class="kpi-item">
+                <div class="kpi-label">{label}</div>
+                <div class="kpi-value">{value}</div>
+                {f'<div class="kpi-delta">{delta}</div>' if delta else ''}
+            </div>
+            """
+        html_content += '</div>'
     
-    # Main content area based on selected page
-    if st.session_state.app_page == 'data_integration':
-        data_integration_ui.show_data_integration_page()
-    elif st.session_state.app_page == 'query':
-        show_query_screen()
-    elif st.session_state.app_page == 'dashboard':
-        show_dashboard_screen()
-    elif st.session_state.app_page == 'dashboard_management':
-        show_dashboard_management_page()
-    elif st.session_state.app_page == 'db_config' and is_admin:
-        show_admin_db_configuration_page()
-    elif st.session_state.app_page == 'admin_users' and is_admin:
-        show_admin_panel()
-    elif st.session_state.app_page == 'llm_settings' and is_admin:
-        show_llm_settings_page()
-    elif st.session_state.app_page == 'email_settings' and is_admin:
-        show_email_settings_page()
-    else:
-        # Default to data integration
-        data_integration_ui.show_data_integration_page()
+    # Add charts section with JavaScript
+    javascript_code = ""
+    if other_items:
+        html_content += '<div class="chart-section">'
+        
+        for i, item in enumerate(other_items):
+            title = item.get('title', item['chart_type'])
+            chart_type = item['chart_type']
+            data_snapshot = item['data_snapshot']
+            params = item['params']
+            
+            html_content += f'<div class="chart-item"><div class="chart-title">{title}</div>'
+            
+            if chart_type == 'Table':
+                # Render table
+                selected_columns = params.get('columns', data_snapshot.columns.tolist())
+                
+                if not data_snapshot.empty:
+                    display_columns = [col for col in selected_columns if col in data_snapshot.columns]
+                    if display_columns:
+                        table_html = data_snapshot[display_columns].to_html(classes='table table-striped', escape=False)
+                        html_content += f'<div style="overflow-x: auto;">{table_html}</div>'
+                    else:
+                        html_content += '<p>No data to display</p>'
+                else:
+                    html_content += '<p>No data available</p>'
+            else:
+                # Create chart container
+                chart_div_id = f'chart_{i}'
+                
+                # Generate Plotly figure and convert to JavaScript
+                try:
+                    fig = None
+                    if chart_type == "Bar Chart" and not data_snapshot.empty:
+                        x_col, y_col = params.get('x'), params.get('y')
+                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
+                            fig = px.bar(data_snapshot, x=x_col, y=y_col, color=params.get('color'), title=title)
+                    
+                    elif chart_type == "Line Chart" and not data_snapshot.empty:
+                        x_col, y_col = params.get('x'), params.get('y')
+                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
+                            fig = px.line(data_snapshot, x=x_col, y=y_col, color=params.get('color'), title=title)
+                    
+                    elif chart_type == "Scatter Plot" and not data_snapshot.empty:
+                        x_col, y_col = params.get('x'), params.get('y')
+                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
+                            fig = px.scatter(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
+                                           size=params.get('size'), title=title)
+                    
+                    elif chart_type == "Pie Chart" and not data_snapshot.empty:
+                        names_col, values_col = params.get('names'), params.get('values')
+                        if names_col in data_snapshot.columns and values_col in data_snapshot.columns:
+                            fig = px.pie(data_snapshot, names=names_col, values=values_col, title=title)
+                    
+                    elif chart_type == "Histogram" and not data_snapshot.empty:
+                        x_col = params.get('x')
+                        if x_col in data_snapshot.columns:
+                            fig = px.histogram(data_snapshot, x=x_col, title=title)
+                    
+                    if fig:
+                        # Apply consistent styling for PDF/print
+                        fig.update_layout(
+                            template="plotly_white",  # Better for PDF/print
+                            font=dict(size=12),
+                            title_font_size=14,
+                            width=500,
+                            height=400,
+                            margin=dict(l=50, r=50, t=50, b=50),
+                            showlegend=True,
+                            paper_bgcolor='white',
+                            plot_bgcolor='white'
+                        )
+                        
+                        # Generate static image and embed it
+                        try:
+                            image_bytes = fig.to_image(format="png", engine="kaleido")
+                            b64_image = base64.b64encode(image_bytes).decode()
+                            html_content += f'<div id="{chart_div_id}" class="chart-container"><img src="data:image/png;base64,{b64_image}" style="width:100%; height:auto;"></div>'
+                        except Exception as img_err:
+                            print(f"[HTML GEN] Error generating static image for chart '{title}': {img_err}")
+                            html_content += f'<div id="{chart_div_id}" class="chart-container"><p>Error generating chart image.</p></div>'
+
+                        # Convert figure to JSON and JavaScript for interactive HTML
+                        try:
+                            import json
+                            # Get the figure data, layout, and config
+                            fig_dict = fig.to_dict()
+                            fig_json = json.dumps(fig_dict, default=str)  # Use default=str to handle any non-serializable objects
+                            
+                            # Add static fallback for PDF compatibility (shows when JavaScript is disabled)
+                            fallback_html = ""
+                            try:
+                                # Create a simple table representation as fallback
+                                if not data_snapshot.empty:
+                                    # For different chart types, create appropriate fallback
+                                    if chart_type in ["Bar Chart", "Line Chart", "Scatter Plot"]:
+                                        x_col, y_col = params.get('x'), params.get('y')
+                                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
+                                            # Show top 10 rows as table
+                                            fallback_data = data_snapshot[[x_col, y_col]].head(10)
+                                            fallback_html = f"""
+                                            <div class="chart-fallback" style="display: none;">
+                                                <p><em>Chart preview (static view for PDF):</em></p>
+                                                {fallback_data.to_html(classes='table table-striped', escape=False)}
+                                                {f'<p><small>Showing first 10 of {len(data_snapshot)} rows</small></p>' if len(data_snapshot) > 10 else ''}
+                                            </div>
+                                            """
+                                    elif chart_type == "Pie Chart":
+                                        names_col, values_col = params.get('names'), params.get('values')
+                                        if names_col in data_snapshot.columns and values_col in data_snapshot.columns:
+                                            fallback_data = data_snapshot[[names_col, values_col]].head(10)
+                                            fallback_html = f"""
+                                            <div class="chart-fallback" style="display: none;">
+                                                <p><em>Chart data (static view for PDF):</em></p>
+                                                {fallback_data.to_html(classes='table table-striped', escape=False)}
+                                            </div>
+                                            """
+                                    elif chart_type == "Histogram":
+                                        x_col = params.get('x')
+                                        if x_col in data_snapshot.columns:
+                                            # Show value distribution as table
+                                            try:
+                                                value_counts = data_snapshot[x_col].value_counts().head(10)
+                                                fallback_df = pd.DataFrame({x_col: value_counts.index, 'Count': value_counts.values})
+                                                fallback_html = f"""
+                                                <div class="chart-fallback" style="display: none;">
+                                                    <p><em>Value distribution (static view for PDF):</em></p>
+                                                    {fallback_df.to_html(classes='table table-striped', escape=False)}
+                                                </div>
+                                                """
+                                            except:
+                                                fallback_html = f"""
+                                                <div class="chart-fallback" style="display: none;">
+                                                    <p><em>Histogram data available but preview unavailable</em></p>
+                                                </div>
+                                                """
+                            except Exception as fallback_error:
+                                print(f"[HTML GENERATION] Fallback generation error: {fallback_error}")
+                                fallback_html = '<div class="chart-fallback" style="display: none;"><p><em>Chart data available</em></p></div>'
+                            
+                            # Add the fallback HTML
+                            html_content += fallback_html
+                            
+                            # Add JavaScript to render the chart
+                            javascript_code += f"""
+                            try {{
+                                var figData = {fig_json};
+                                var chartDiv = document.getElementById('{chart_div_id}');
+                                // Replace the static image with the interactive chart
+                                chartDiv.innerHTML = ''; 
+                                Plotly.newPlot('{chart_div_id}', figData.data, figData.layout, {{
+                                    displayModeBar: false,
+                                    staticPlot: false, // Make it interactive
+                                    responsive: true
+                                }}).then(function() {{
+                                    // Hide fallback when chart renders successfully
+                                    var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
+                                    if (fallback) fallback.style.display = 'none';
+                                }}).catch(function(err) {{
+                                    console.error('Error rendering chart {chart_div_id}:', err);
+                                    // Show fallback if chart fails to render
+                                    var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
+                                    if (fallback) {{
+                                        fallback.style.display = 'block';
+                                        fallback.style.marginTop = '10px';
+                                    }}
+                                    document.getElementById('{chart_div_id}').innerHTML = '<p style="color: #666; font-style: italic;">Interactive chart not available - see data table below</p>';
+                                }});
+                            }} catch(e) {{
+                                console.error('Error rendering chart {chart_div_id}:', e);
+                                // Show fallback if JavaScript fails
+                                var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
+                                if (fallback) {{
+                                    fallback.style.display = 'block';
+                                    fallback.style.marginTop = '10px';
+                                }}
+                                document.getElementById('{chart_div_id}').innerHTML = '<p style="color: #666; font-style: italic;">Interactive chart not available - see data table below</p>';
+                            }}
+                            """
+                        except Exception as json_error:
+                            print(f"[HTML GENERATION] JSON serialization error for chart {i}: {json_error}")
+                            # Create a simple data table as complete fallback
+                            try:
+                                if not data_snapshot.empty:
+                                    simple_table = data_snapshot.head(5).to_html(classes='table table-striped', escape=False)
+                                    html_content += f'<div style="margin-top: 10px;"><p><em>Chart data (top 5 rows):</em></p>{simple_table}</div>'
+                                else:
+                                    html_content += '<p>No data available for chart</p>'
+                            except:
+                                html_content += f'<p>Error serializing chart data: {str(json_error)}</p>'
+                    else:
+                        html_content += '<p>Chart could not be generated</p>'
+                        
+                except Exception as e:
+                    html_content += f'<p>Error generating chart: {str(e)}</p>'
+            
+            html_content += '</div>'
+        html_content += '</div>'
+    
+    # Add JavaScript code to render charts
+    if javascript_code:
+        html_content += f"""
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            {javascript_code}
+        }});
+        </script>
+        """
+    
+    html_content += """
+        </div>
+    </body>
+    </html>
+    """
+    
+    return html_content
+
+def get_download_link_html(html_content, filename="dashboard.html"):
+    """Generate a download link for HTML content"""
+    import base64
+    
+    b64_content = base64.b64encode(html_content.encode()).decode()
+    href = f'<a href="data:text/html;base64,{b64_content}" download="{filename}">📥 Download Dashboard HTML</a>'
+    return href
 
 def show_dashboard_screen():
     """Enhanced dashboard management interface with full visualization support and email sharing"""
@@ -3161,6 +3442,11 @@ def show_dashboard_screen():
     # Dashboard header with controls
     st.markdown(f"### Dashboard: {selected_dashboard}")
     
+    manage_button_label = "✅ Done Managing" if st.session_state.get('dashboard_manage_mode') else "⚙️ Manage Layout"
+    if st.button(manage_button_label, key="manage_dashboard_layout_btn"):
+        st.session_state.dashboard_manage_mode = not st.session_state.get('dashboard_manage_mode', False)
+        st.rerun()
+
     # Dashboard Management Controls
     st.markdown("### ⚙️ Dashboard Management")
     col1, col2, col3 = st.columns(3)
@@ -3320,14 +3606,17 @@ def show_dashboard_screen():
                         current_kpi_label = "KPI Value"
 
                     # Editable KPI Label
-                    st.text_input(
-                        "KPI Label", 
-                        value=current_kpi_label,
-                        key=f"kpi_label_edit_{original_kpi_item_index}", 
-                        on_change=handle_kpi_label_change,
-                        args=(original_kpi_item_index,),
-                        label_visibility="collapsed"
-                    )
+                    if st.session_state.get('dashboard_manage_mode'):
+                        st.text_input(
+                            "KPI Label", 
+                            value=current_kpi_label,
+                            key=f"kpi_label_edit_{original_kpi_item_index}", 
+                            on_change=handle_kpi_label_change,
+                            args=(original_kpi_item_index,),
+                            label_visibility="collapsed"
+                        )
+                    else:
+                        st.markdown(f"**{current_kpi_label}**")
 
                     value_col = params.get('value_col')
                     delta_col = params.get('delta_col')
@@ -3354,12 +3643,33 @@ def show_dashboard_screen():
                         label_visibility="collapsed"
                     )
 
-                    # Remove button for KPI
-                    if st.button("🗑️ Remove", key=f"remove_kpi_{original_kpi_item_index}"):
-                        st.session_state.dashboard_items.pop(original_kpi_item_index)
-                        save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
-                        st.rerun()
-
+                    # --- Item Controls ---
+                    control_cols = st.columns([1, 1, 1])
+                    with control_cols[0]:
+                        st.button(
+                            "🔼",
+                            key=f"move_up_kpi_{original_kpi_item_index}",
+                            on_click=handle_item_move,
+                            args=(original_kpi_item_index, "up"),
+                            disabled=(original_kpi_item_index == 0),
+                            use_container_width=True,
+                            help="Move Up"
+                        )
+                    with control_cols[1]:
+                        st.button(
+                            "🔽",
+                            key=f"move_down_kpi_{original_kpi_item_index}",
+                            on_click=handle_item_move,
+                            args=(original_kpi_item_index, "down"),
+                            disabled=(original_kpi_item_index == len(st.session_state.dashboard_items) - 1),
+                            use_container_width=True,
+                            help="Move Down"
+                        )
+                    with control_cols[2]:
+                        if st.button("🗑️", key=f"remove_kpi_{original_kpi_item_index}", use_container_width=True, help="Remove"):
+                            st.session_state.dashboard_items.pop(original_kpi_item_index)
+                            save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
+                            st.rerun()
         st.markdown("---")
 
     # Render Charts and Tables
@@ -3384,14 +3694,17 @@ def show_dashboard_screen():
             with cols[i % num_cols]:
                 with st.container():
                     # Editable Chart Title
-                    st.text_input(
-                        f"Chart Title", 
-                        value=item.get('title', item['chart_type']),
-                        key=f"chart_title_edit_{current_item_absolute_index}", 
-                        on_change=handle_chart_title_change,
-                        args=(current_item_absolute_index,),
-                        label_visibility="collapsed"
-                    )
+                    if st.session_state.get('dashboard_manage_mode'):
+                        st.text_input(
+                            f"Chart Title", 
+                            value=item.get('title', item['chart_type']),
+                            key=f"chart_title_edit_{current_item_absolute_index}", 
+                            on_change=handle_chart_title_change,
+                            args=(current_item_absolute_index,),
+                            label_visibility="collapsed"
+                        )
+                    else:
+                        st.markdown(f"**{item.get('title', item['chart_type'])}**")
                     
                     # Get chart data and parameters
                     data_snapshot = item['data_snapshot']
@@ -3507,348 +3820,36 @@ def show_dashboard_screen():
                     elif data_snapshot.empty and chart_type != "Table":
                         st.info(f"No data available for '{item.get('title', chart_type)}'.")
 
-                    # Item controls - simplified to just remove button
-                    if st.button("🗑️ Remove", key=f"remove_item_{current_item_absolute_index}", use_container_width=True):
-                        st.session_state.dashboard_items.pop(current_item_absolute_index)
-                        save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
-                        st.rerun()
+                    # --- Item Controls ---
+                    control_cols = st.columns([1, 1, 1])
+                    with control_cols[0]:
+                        st.button(
+                            "🔼",
+                            key=f"move_up_item_{current_item_absolute_index}",
+                            on_click=handle_item_move,
+                            args=(current_item_absolute_index, "up"),
+                            disabled=(current_item_absolute_index == 0),
+                            use_container_width=True,
+                            help="Move Up"
+                        )
+                    with control_cols[1]:
+                        st.button(
+                            "🔽",
+                            key=f"move_down_item_{current_item_absolute_index}",
+                            on_click=handle_item_move,
+                            args=(current_item_absolute_index, "down"),
+                            disabled=(current_item_absolute_index == len(st.session_state.dashboard_items) - 1),
+                            use_container_width=True,
+                            help="Move Down"
+                        )
+                    with control_cols[2]:
+                        if st.button("🗑️", key=f"remove_item_{current_item_absolute_index}", use_container_width=True, help="Remove"):
+                            st.session_state.dashboard_items.pop(current_item_absolute_index)
+                            save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
+                            st.rerun()
     
     elif not kpi_items:
         st.info("This dashboard is empty. Add charts from the 'Ask Questions' page.")
-
-# Helper functions for dashboard HTML generation and download
-def generate_dashboard_html(dashboard_items):
-    """Generate HTML content for the entire dashboard with embedded Plotly charts"""
-    if not dashboard_items:
-        return "<html><body><h1>Empty Dashboard</h1><p>No items to display.</p></body></html>"
-    
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>DBChat Dashboard</title>
-        <script src='https://cdn.plot.ly/plotly-latest.min.js'></script>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
-            .dashboard-container { max-width: 1200px; margin: 0 auto; }
-            .kpi-section { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 30px; }
-            .kpi-item { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); min-width: 200px; text-align: center; }
-            .chart-section { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 20px; }
-            .chart-item { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-            .chart-title { font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #333; }
-            .kpi-label { font-size: 14px; color: #666; margin-bottom: 5px; }
-            .kpi-value { font-size: 28px; font-weight: bold; color: #333; }
-            .kpi-delta { font-size: 16px; color: #666; margin-top: 5px; }
-            h1 { color: #333; text-align: center; margin-bottom: 30px; }
-            .chart-container { width: 100%; height: 400px; margin: 10px 0; }
-            table { border-collapse: collapse; width: 100%; margin: 10px 0; }
-            table th, table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            table th { background-color: #f2f2f2; font-weight: bold; }
-            table tr:nth-child(even) { background-color: #f9f9f9; }
-            
-            /* Chart fallback styling */
-            .chart-fallback { 
-                margin-top: 15px; 
-                padding: 15px; 
-                background-color: #f8f9fa; 
-                border: 1px solid #e9ecef; 
-                border-radius: 4px; 
-            }
-            .chart-fallback p { 
-                margin: 10px 0; 
-                color: #666; 
-                font-style: italic; 
-            }
-            .chart-fallback table { 
-                margin-top: 10px; 
-                font-size: 12px; 
-            }
-            
-            /* Print media query for PDF generation */
-            @media print {
-                body { 
-                    background-color: white !important; 
-                    font-size: 12px; 
-                }
-                .chart-container { 
-                    height: auto !important; 
-                    min-height: 200px; 
-                }
-                .chart-fallback { 
-                    display: block !important; 
-                    page-break-inside: avoid; 
-                }
-                .chart-item { 
-                    page-break-inside: avoid; 
-                    margin-bottom: 20px; 
-                }
-                h1, .chart-title { 
-                    page-break-after: avoid; 
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="dashboard-container">
-            <h1>DBChat Dashboard</h1>
-    """
-    
-    # Separate KPIs and other items
-    kpi_items = [item for item in dashboard_items if item.get('chart_type') == 'KPI']
-    other_items = [item for item in dashboard_items if item.get('chart_type') != 'KPI']
-    
-    # Add KPI section
-    if kpi_items:
-        html_content += '<div class="kpi-section">'
-        for item in kpi_items:
-            params = item['params']
-            data_snapshot = item['data_snapshot']
-            label = params.get('label', 'KPI')
-            value_col = params.get('value_col')
-            delta_col = params.get('delta_col')
-            
-            value = "N/A"
-            delta = ""
-            
-            if not data_snapshot.empty and value_col in data_snapshot.columns:
-                try:
-                    value = pd.to_numeric(data_snapshot[value_col].iloc[0])
-                    if isinstance(value, float):
-                        value = f"{value:,.2f}"
-                    else:
-                        value = f"{value:,}"
-                except:
-                    value = str(data_snapshot[value_col].iloc[0])
-                
-                if delta_col and delta_col in data_snapshot.columns:
-                    try:
-                        delta_val = pd.to_numeric(data_snapshot[delta_col].iloc[0])
-                        delta = f"Δ {delta_val:+.2f}"
-                    except:
-                        delta = str(data_snapshot[delta_col].iloc[0])
-            
-            html_content += f"""
-            <div class="kpi-item">
-                <div class="kpi-label">{label}</div>
-                <div class="kpi-value">{value}</div>
-                {f'<div class="kpi-delta">{delta}</div>' if delta else ''}
-            </div>
-            """
-        html_content += '</div>'
-    
-    # Add charts section with JavaScript
-    javascript_code = ""
-    if other_items:
-        html_content += '<div class="chart-section">'
-        
-        for i, item in enumerate(other_items):
-            title = item.get('title', item['chart_type'])
-            chart_type = item['chart_type']
-            data_snapshot = item['data_snapshot']
-            params = item['params']
-            
-            html_content += f'<div class="chart-item"><div class="chart-title">{title}</div>'
-            
-            if chart_type == 'Table':
-                # Render table
-                selected_columns = params.get('columns', data_snapshot.columns.tolist())
-                
-                if not data_snapshot.empty:
-                    display_columns = [col for col in selected_columns if col in data_snapshot.columns]
-                    if display_columns:
-                        table_html = data_snapshot[display_columns].to_html(classes='table table-striped', escape=False)
-                        html_content += f'<div style="overflow-x: auto;">{table_html}</div>'
-                    else:
-                        html_content += '<p>No data to display</p>'
-                else:
-                    html_content += '<p>No data available</p>'
-            else:
-                # Create chart container
-                chart_div_id = f'chart_{i}'
-                html_content += f'<div id="{chart_div_id}" class="chart-container"></div>'
-                
-                # Generate Plotly figure and convert to JavaScript
-                try:
-                    fig = None
-                    if chart_type == "Bar Chart" and not data_snapshot.empty:
-                        x_col, y_col = params.get('x'), params.get('y')
-                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                            fig = px.bar(data_snapshot, x=x_col, y=y_col, color=params.get('color'), title=title)
-                    
-                    elif chart_type == "Line Chart" and not data_snapshot.empty:
-                        x_col, y_col = params.get('x'), params.get('y')
-                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                            fig = px.line(data_snapshot, x=x_col, y=y_col, color=params.get('color'), title=title)
-                    
-                    elif chart_type == "Scatter Plot" and not data_snapshot.empty:
-                        x_col, y_col = params.get('x'), params.get('y')
-                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                            fig = px.scatter(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
-                                           size=params.get('size'), title=title)
-                    
-                    elif chart_type == "Pie Chart" and not data_snapshot.empty:
-                        names_col, values_col = params.get('names'), params.get('values')
-                        if names_col in data_snapshot.columns and values_col in data_snapshot.columns:
-                            fig = px.pie(data_snapshot, names=names_col, values=values_col, title=title)
-                    
-                    elif chart_type == "Histogram" and not data_snapshot.empty:
-                        x_col = params.get('x')
-                        if x_col in data_snapshot.columns:
-                            fig = px.histogram(data_snapshot, x=x_col, title=title)
-                    
-                    if fig:
-                        # Apply consistent styling for PDF/print
-                        fig.update_layout(
-                            template="plotly_white",  # Better for PDF/print
-                            font=dict(size=12),
-                            title_font_size=14,
-                            width=500,
-                            height=400,
-                            margin=dict(l=50, r=50, t=50, b=50),
-                            showlegend=True,
-                            paper_bgcolor='white',
-                            plot_bgcolor='white'
-                        )
-                        
-                        # Convert figure to JSON and JavaScript
-                        try:
-                            import json
-                            # Get the figure data, layout, and config
-                            fig_dict = fig.to_dict()
-                            fig_json = json.dumps(fig_dict, default=str)  # Use default=str to handle any non-serializable objects
-                            
-                            # Add static fallback for PDF compatibility (shows when JavaScript is disabled)
-                            fallback_html = ""
-                            try:
-                                # Create a simple table representation as fallback
-                                if not data_snapshot.empty:
-                                    # For different chart types, create appropriate fallback
-                                    if chart_type in ["Bar Chart", "Line Chart", "Scatter Plot"]:
-                                        x_col, y_col = params.get('x'), params.get('y')
-                                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                                            # Show top 10 rows as table
-                                            fallback_data = data_snapshot[[x_col, y_col]].head(10)
-                                            fallback_html = f"""
-                                            <div class="chart-fallback" style="display: none;">
-                                                <p><em>Chart preview (static view for PDF):</em></p>
-                                                {fallback_data.to_html(classes='table table-striped', escape=False)}
-                                                {f'<p><small>Showing first 10 of {len(data_snapshot)} rows</small></p>' if len(data_snapshot) > 10 else ''}
-                                            </div>
-                                            """
-                                    elif chart_type == "Pie Chart":
-                                        names_col, values_col = params.get('names'), params.get('values')
-                                        if names_col in data_snapshot.columns and values_col in data_snapshot.columns:
-                                            fallback_data = data_snapshot[[names_col, values_col]].head(10)
-                                            fallback_html = f"""
-                                            <div class="chart-fallback" style="display: none;">
-                                                <p><em>Chart data (static view for PDF):</em></p>
-                                                {fallback_data.to_html(classes='table table-striped', escape=False)}
-                                            </div>
-                                            """
-                                    elif chart_type == "Histogram":
-                                        x_col = params.get('x')
-                                        if x_col in data_snapshot.columns:
-                                            # Show value distribution as table
-                                            try:
-                                                value_counts = data_snapshot[x_col].value_counts().head(10)
-                                                fallback_df = pd.DataFrame({x_col: value_counts.index, 'Count': value_counts.values})
-                                                fallback_html = f"""
-                                                <div class="chart-fallback" style="display: none;">
-                                                    <p><em>Value distribution (static view for PDF):</em></p>
-                                                    {fallback_df.to_html(classes='table table-striped', escape=False)}
-                                                </div>
-                                                """
-                                            except:
-                                                fallback_html = f"""
-                                                <div class="chart-fallback" style="display: none;">
-                                                    <p><em>Histogram data available but preview unavailable</em></p>
-                                                </div>
-                                                """
-                            except Exception as fallback_error:
-                                print(f"[HTML GENERATION] Fallback generation error: {fallback_error}")
-                                fallback_html = '<div class="chart-fallback" style="display: none;"><p><em>Chart data available</em></p></div>'
-                            
-                            # Add the fallback HTML
-                            html_content += fallback_html
-                            
-                            # Add JavaScript to render the chart
-                            javascript_code += f"""
-                            try {{
-                                var figData = {fig_json};
-                                Plotly.newPlot('{chart_div_id}', figData.data, figData.layout, {{
-                                    displayModeBar: false,
-                                    staticPlot: true,
-                                    responsive: true
-                                }}).then(function() {{
-                                    // Hide fallback when chart renders successfully
-                                    var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
-                                    if (fallback) fallback.style.display = 'none';
-                                }}).catch(function(err) {{
-                                    console.error('Error rendering chart {chart_div_id}:', err);
-                                    // Show fallback if chart fails to render
-                                    var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
-                                    if (fallback) {{
-                                        fallback.style.display = 'block';
-                                        fallback.style.marginTop = '10px';
-                                    }}
-                                    document.getElementById('{chart_div_id}').innerHTML = '<p style="color: #666; font-style: italic;">Interactive chart not available - see data table below</p>';
-                                }});
-                            }} catch(e) {{
-                                console.error('Error rendering chart {chart_div_id}:', e);
-                                // Show fallback if JavaScript fails
-                                var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
-                                if (fallback) {{
-                                    fallback.style.display = 'block';
-                                    fallback.style.marginTop = '10px';
-                                }}
-                                document.getElementById('{chart_div_id}').innerHTML = '<p style="color: #666; font-style: italic;">Interactive chart not available - see data table below</p>';
-                            }}
-                            """
-                        except Exception as json_error:
-                            print(f"[HTML GENERATION] JSON serialization error for chart {i}: {json_error}")
-                            # Create a simple data table as complete fallback
-                            try:
-                                if not data_snapshot.empty:
-                                    simple_table = data_snapshot.head(5).to_html(classes='table table-striped', escape=False)
-                                    html_content += f'<div style="margin-top: 10px;"><p><em>Chart data (top 5 rows):</em></p>{simple_table}</div>'
-                                else:
-                                    html_content += '<p>No data available for chart</p>'
-                            except:
-                                html_content += f'<p>Error serializing chart data: {str(json_error)}</p>'
-                    else:
-                        html_content += '<p>Chart could not be generated</p>'
-                        
-                except Exception as e:
-                    html_content += f'<p>Error generating chart: {str(e)}</p>'
-            
-            html_content += '</div>'
-        html_content += '</div>'
-    
-    # Add JavaScript code to render charts
-    if javascript_code:
-        html_content += f"""
-        <script>
-        document.addEventListener('DOMContentLoaded', function() {{
-            {javascript_code}
-        }});
-        </script>
-        """
-    
-    html_content += """
-        </div>
-    </body>
-    </html>
-    """
-    
-    return html_content
-
-def get_download_link_html(html_content, filename="dashboard.html"):
-    """Generate a download link for HTML content"""
-    import base64
-    
-    b64_content = base64.b64encode(html_content.encode()).decode()
-    href = f'<a href="data:text/html;base64,{b64_content}" download="{filename}">📥 Download Dashboard HTML</a>'
-    return href
 
 def show_dashboard_management_page():
     """Dashboard sharing management page"""
@@ -3861,18 +3862,31 @@ def show_dashboard_management_page():
         return
 
     current_user = st.session_state.logged_in_user
-    st.subheader(f"Dashboards Owned by You ({current_user})")
 
-    # Get dashboards owned by current user
+    # Get all dashboards and filter for owned dashboards
     dashboard_names = get_user_dashboard_names(current_user)
     owned_dashboard_tuples = [d for d in dashboard_names if d[2] == current_user]
-
+    
+    # If the user owns no dashboards, they can't manage sharing.
     if not owned_dashboard_tuples:
         st.info("You do not own any dashboards yet. Create one from the 'My Dashboard' page.")
         if st.button("Go to My Dashboard", key="back_to_dash_from_empty_manage_sharing"):
             st.session_state.app_page = "dashboard"
             st.rerun()
         return
+
+    # Ensure the session state is synchronized with an OWNED dashboard for this page.
+    owned_dashboard_names = [d[0] for d in owned_dashboard_tuples]
+    current_dashboard_name = st.session_state.get('current_dashboard_name')
+
+    # If the currently selected dashboard is not one the user owns, or if its items are missing,
+    # default to the first owned dashboard to ensure the page context is correct.
+    if current_dashboard_name not in owned_dashboard_names or not st.session_state.get('dashboard_items'):
+        first_owned_dashboard_name = owned_dashboard_names[0]
+        st.session_state.current_dashboard_name = first_owned_dashboard_name
+        st.session_state.dashboard_items = load_user_dashboard(current_user, first_owned_dashboard_name)
+    
+    st.subheader(f"Dashboards Owned by You ({current_user})")
 
     for dash_name, display_name, owner_username in sorted(owned_dashboard_tuples, key=lambda x: x[0]):
         with st.container():
@@ -3962,39 +3976,6 @@ def show_dashboard_management_page():
     if st.button("Back to My Dashboard", key="back_to_dash_from_manage_sharing_main"):
         st.session_state.app_page = "dashboard"
         st.rerun()
-
-    # Download and Email sharing controls
-    col1, col2 = st.columns(2)
-    
-    # Generate dashboard HTML for download and email
-    dashboard_html_content = generate_dashboard_html(st.session_state.dashboard_items)
-    current_dashboard_name_for_email = st.session_state.current_dashboard_name
-    
-    with col1:
-        safe_dashboard_name = (current_dashboard_name_for_email or "dashboard").replace(' ','_')
-        st.markdown(get_download_link_html(dashboard_html_content, f"{safe_dashboard_name}_dashboard.html"), unsafe_allow_html=True)
-    
-    with col2:
-        if st.button("Share Dashboard via Email", key="share_dashboard_email_button"):
-            st.session_state.show_email_form = True
-            st.rerun()
-    
-    # Email form modal
-    if st.session_state.get('show_email_form', False):
-        with st.expander("📧 Send Dashboard Email", expanded=True):
-            # Get all accessible dashboards for selection
-            all_user_dashboards = get_user_dashboard_names(st.session_state.logged_in_user)
-            
-            send_email.show_send_email_ui(
-                dashboard_html_content=dashboard_html_content, 
-                dashboard_name=current_dashboard_name_for_email,
-                all_dashboards=all_user_dashboards
-            )
-            if st.button("Close Email Form", key="close_email_form_button"):
-                st.session_state.show_email_form = False
-                st.rerun()
-    
-    st.markdown("---")
 
 def show_admin_panel():
     """Admin panel for user management"""
@@ -4446,815 +4427,113 @@ def send_smtp_email(to_email, subject, body, attachment_path=None):
         print(f"[EMAIL] Error sending email: {str(e)}")
         return False
 
-# --- Main Application Logic ---
-def main():
-    # Section 0: Ensure Session Stability (MUST BE FIRST)
-    ensure_session_stability()
-    
-    # Section 1: Handle Database Configuration Process
-    # This section ensures that if the DB isn't marked as configured,
-    # we attempt to configure it via secrets or guide the user to the manual config page.
-    # Database configuration is GLOBAL - once configured by admin, it works for all users
-    if not st.session_state.get('db_configured_successfully', False):
-        if not st.session_state.attempted_secrets_db_init:
-            st.session_state.attempted_secrets_db_init = True
-            conn_secrets = None
-            try:
-                with st.spinner("Checking database configuration from secrets..."):
-                    conn_secrets = database.get_db_connection()
-                if conn_secrets:
-                    # Verify this is a PostgreSQL connection
-                    try:
-                        cursor = conn_secrets.cursor()
-                        cursor.execute("SELECT version()")
-                        version_result = cursor.fetchone()
-                        if version_result and 'PostgreSQL' in str(version_result[0]):
-                            init_secrets_success = database.init_db(conn_secrets)
-                            if init_secrets_success:
-                                st.session_state.db_configured_successfully = True
-                                initialize_app_defaults()
-                                st.sidebar.success("PostgreSQL DB auto-configured from secrets.")
-                                if st.session_state.page == "db_config": # If we were on db_config, move to login
-                                    st.session_state.page = "login"
-                                # No st.rerun() here; let it flow to LLM init and page rendering in this same run
-                            else:
-                                st.sidebar.error("PostgreSQL connection OK, but table init failed. Please check permissions.")
-                                if st.session_state.page != "db_config":
-                                    st.session_state.page = "db_config"
-                                    st.rerun() # Rerun to go to db_config page
-                        else:
-                            st.sidebar.error("❌ Only PostgreSQL databases are supported. Please configure PostgreSQL connection.")
-                            if st.session_state.page != "db_config":
-                                st.session_state.page = "db_config"
-                                st.rerun()
-                    except Exception as version_check_error:
-                        st.sidebar.error(f"Failed to verify PostgreSQL connection: {version_check_error}")
-                        if st.session_state.page != "db_config":
-                            st.session_state.page = "db_config"
-                            st.rerun()
-                else: # Secrets not found or connection failed
-                    st.sidebar.error("❌ PostgreSQL connection required. Please configure PostgreSQL in secrets or manually.")
-                    if st.session_state.page != "db_config":
-                        st.session_state.page = "db_config"
-                        st.rerun() # Rerun to go to db_config page
-            except Exception as e_secrets_init:
-                print(f"[SECRETS DEBUG] Database init failed: {e_secrets_init}")
-                if st.session_state.page != "login":
-                    st.sidebar.error(f"Error during secrets-based DB init: {e_secrets_init}")
-                if st.session_state.page != "db_config":
-                    st.session_state.page = "db_config"
-                    st.rerun() # Rerun to go to db_config page
-
-    # Section 2: Initialize LLM Client (only if database is configured)
-    if st.session_state.db_configured_successfully:
-        get_llm_client() # This will set up the LLM client and status messages
-
-    # Section 3: Page Routing and UI Display
-    if st.session_state.db_configured_successfully:
-        # Database is configured, proceed with normal app flow
-        if not st.session_state.logged_in_user:
-            # User is not logged in, show login page
-            show_login_page()
-        else:
-            # User is logged in, show main application with sidebar navigation
-            show_main_application()
-    else:
-        # Database is not configured, show configuration page
-        show_db_configuration_page()
-
-    # --- Debug Logs Panel --- (Added to sidebar when user is logged in and logs exist)
-    if st.session_state.logged_in_user and (
-        st.session_state.log_data_schema_str or 
-        st.session_state.log_openai_prompt_str or 
-        st.session_state.log_generated_sql_str or 
-        st.session_state.log_query_execution_details_str
-    ):
-        with st.sidebar.expander("🔍 View Debug Logs", expanded=False):
-            if st.session_state.log_data_schema_str:
-                st.subheader("Data Schema Sent to LLM")
-                st.text(st.session_state.log_data_schema_str)
-            if st.session_state.log_openai_prompt_str:
-                st.subheader("LLM Prompt")
-                st.text(st.session_state.log_openai_prompt_str)
-            if st.session_state.log_generated_sql_str:
-                st.subheader("Last Generated SQL")
-                st.code(st.session_state.log_generated_sql_str, language="sql")
-            if st.session_state.log_query_execution_details_str:
-                st.subheader("Last Query Execution Details")
-                st.text(st.session_state.log_query_execution_details_str)
-
-def show_login_page():
-    # Add login-page class to hide sidebar
-    st.markdown("""
-    <script>
-    document.body.classList.add('login-page');
-    </script>
-    """, unsafe_allow_html=True)
-    
-    # Inject CSS directly for this page to ensure purple gradient background
-    st.markdown(""" 
-    <style>
-        body {
-            background: linear-gradient(135deg, #6200ea 0%, #200079 100%) !important;
-            min-height: 100vh !important; 
-            display: flex !important; 
-            align-items: center !important; 
-            justify-content: center !important; 
-        }
-        .stApp {
-            background-color: transparent !important; 
-            display: flex !important; 
-            align-items: center !important; 
-            justify-content: center !important; 
-            min-height: 100vh !important; 
-        }
-        .main .block-container {
-            background-color: rgba(255, 255, 255, 0.95) !important;
-            border-radius: 15px !important;
-            padding: 2rem !important;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
-            max-width: 400px !important;
-            width: 100% !important;
-            margin: 0 auto !important;
-        }
-        /* More specific selectors for login form inputs */
-        .login-page .stTextInput > div > div > input,
-        .stTextInput > div > div > input[type="text"],
-        .stTextInput > div > div > input[type="password"] {
-            border-radius: 8px !important;
-            border: 2px solid #d1d5db !important;
-            padding: 0.75rem 1rem !important;
-            font-size: 1rem !important;
-            color: #1f2937 !important;
-            background-color: #ffffff !important;
-            transition: all 0.3s ease !important;
-            font-weight: 500 !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
-        }
-        .login-page .stTextInput > div > div > input:focus,
-        .stTextInput > div > div > input[type="text"]:focus,
-        .stTextInput > div > div > input[type="password"]:focus {
-            border-color: #6200ea !important;
-            box-shadow: 0 0 0 3px rgba(98, 0, 234, 0.15), 0 2px 4px rgba(0,0,0,0.1) !important;
-            outline: none !important;
-            background-color: #ffffff !important;
-            color: #1f2937 !important;
-        }
-        .login-page .stTextInput > div > div > input::placeholder,
-        .stTextInput > div > div > input[type="text"]::placeholder,
-        .stTextInput > div > div > input[type="password"]::placeholder {
-            color: #9ca3af !important;
-            font-weight: 400 !important;
-        }
-        .login-page .stTextInput > label,
-        .stTextInput > label {
-            color: #1a237e !important;
-            font-weight: 600 !important;
-            font-size: 0.95rem !important;
-            margin-bottom: 0.5rem !important;
-            display: block !important;
-        }
-        /* Force override any conflicting styles */
-        div[data-testid="stForm"] .stTextInput input {
-            color: #1f2937 !important;
-            background-color: #ffffff !important;
-            border: 2px solid #d1d5db !important;
-        }
-        .stButton > button {
-            border-radius: 8px !important;
-            padding: 0.75rem 1.5rem !important;
-            font-size: 1rem !important;
-            font-weight: 600 !important;
-            background: linear-gradient(135deg, #6200ea 0%, #200079 100%) !important;
-            border: none !important;
-            color: white !important;
-            width: 100% !important;
-            margin-top: 1rem !important;
-        }
-        .stButton > button:hover {
-            background: linear-gradient(135deg, #7c4dff 0%, #3d1cb3 100%) !important;
-            box-shadow: 0 4px 12px rgba(98, 0, 234, 0.2) !important;
-        }
-        .stMarkdown h1 {
-            color: #1a237e !important;
-            font-size: 2rem !important;
-            font-weight: 700 !important;
-            margin-bottom: 1.5rem !important;
-            text-align: center !important;
-        }
-        .stMarkdown p {
-            color: #424242 !important;
-            font-size: 1rem !important;
-            text-align: center !important;
-            margin-bottom: 1.5rem !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Center the login form
-    st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-    st.title("Welcome to DBChat")
-    st.markdown("Please log in to continue")
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Login form
-    with st.form("login_form"):
-        username = st.text_input("Username", placeholder="Enter your username")
-        password = st.text_input("Password", type="password", placeholder="Enter your password")
-        submit = st.form_submit_button("Login")
-        
-        # Additional inline styling to ensure changes take effect
-        st.markdown("""
-        <style>
-        /* Force input styling with timestamp cache buster */
-        .stTextInput input {
-            color: #1f2937 !important;
-            background-color: #ffffff !important;
-            border: 2px solid #d1d5db !important;
-            border-radius: 8px !important;
-            padding: 0.75rem 1rem !important;
-            font-weight: 500 !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-        }
-        .stTextInput input:focus {
-            border-color: #6200ea !important;
-            box-shadow: 0 0 0 3px rgba(98, 0, 234, 0.15) !important;
-            color: #1f2937 !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        if submit:
-            if not username or not password:
-                st.error("Please enter both username and password")
-            else:
-                # Get user from database using the appropriate database function
-                if is_sqlite_connection():
-                    user_data = get_user_by_username_sqlite(username)
-                    log_func = log_app_action_sqlite
-                else:
-                    user_data = database.get_user_by_username_from_db(username)
-                    log_func = database.log_app_action
-                
-                if user_data and check_password(user_data["hashed_password"], password):
-                    st.session_state.logged_in_user = username
-                    st.session_state.user_roles = user_data.get("roles", [])
-                    st.session_state.app_page = 'data_integration'
-                    log_func(username, "LOGIN_SUCCESS", "User logged in successfully", "SUCCESS")
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password")
-                    log_func(username, "LOGIN_FAILURE", "Invalid login attempt", "FAILURE")
-
-def logout():
-    """Logs out the current user and redirects to login page."""
-    if st.session_state.logged_in_user:
-        try:
-            if is_sqlite_connection():
-                log_app_action_sqlite(st.session_state.logged_in_user, "LOGOUT", "User logged out", "SUCCESS")
-            else:
-                database.log_app_action(st.session_state.logged_in_user, "LOGOUT", "User logged out", "SUCCESS")
-        except Exception as e:
-            print(f"[LOGOUT] Failed to log logout action: {e}")
-    
-
-    # Clear user-specific session state while preserving global app settings
-    # Note: Database configuration should persist across users as it's a global app setting
-    user_specific_keys = [
-        'logged_in_user', 'user_roles', 'dashboard_items', 'current_dashboard_name', 
-        'results_df', 'chat_history', 'conversation_log_for_query', 'original_query_for_clarification',
-        'clarification_question_pending', 'llm_clarification_question', 'connected', 'connection_type',
-        'data', 'data_schema', 'db_connection', 'db_engine', 'selected_table'
-    ]
-    
-    # Global settings that should persist across user sessions (DON'T clear these):
-    # - 'db_configured_successfully': Database config is global, not user-specific
-    # - 'attempted_secrets_db_init': Prevents re-initialization on every login
-    # - 'current_db_params': Database connection parameters are global
-    
-    for key in user_specific_keys:
-        if key in st.session_state:
-            if key in ['user_roles', 'dashboard_items', 'chat_history', 'conversation_log_for_query']:
-                st.session_state[key] = []  # Reset to empty list
-            elif key in ['connected', 'clarification_question_pending']:
-                st.session_state[key] = False  # Reset to False
-            elif key == 'selected_table':
-                st.session_state[key] = "All Tables / Auto-detect"  # Reset to default
-            else:
-                st.session_state[key] = None  # Reset to None
-    
-    # Reset page navigation
-    st.session_state.page = "login"
-    st.session_state.app_page = 'data_integration'
-    
-    # Update activity timestamp
-    st.session_state.last_activity_timestamp = time.time()
-    
-    st.rerun()
-
-# Add these after imports
-openai_api_key = st.secrets.get("OPENAI_API_KEY", None)
-local_llm_secret_base_url = st.secrets.get("LOCAL_LLM_BASE_URL", None)
-
-def clear_logs():
-    pass
-
-def convert_postgresql_to_sqlite(sql_query):
-    """
-    Convert common PostgreSQL syntax to SQLite-compatible syntax.
-    Handles ILIKE, EXTRACT, NULLS FIRST/LAST, and other PostgreSQL-specific patterns.
-    Also attempts to fix common SQL syntax errors.
-    """
-    import re
-    
-    # First, apply the dedicated SQLCoder filter WHERE fix
-    sql_query = sql_fixer.fix_sqlcoder_filter_where_error(sql_query)
-    
-    # Then attempt to fix other common SQL syntax errors
-    def fix_sql_syntax_errors(query):
-        """Fix common SQL syntax errors that might come from LLM"""
-        
-        # Fix SQLCoder's invalid "filter WHERE" syntax
-        # Pattern: SUM(column) filter WHERE conditions AS alias
-        # Should be: SUM(column) AS alias (and move conditions to WHERE clause)
-        import re
-        
-        print(f"[SQL FIX] Original query: {query}")
-        
-        # Direct fix for the specific SQLCoder "filter WHERE" error
-        if 'filter WHERE' in query:
-            print(f"[SQL FIX] Detected filter WHERE pattern, applying direct fix")
-            # For profit comparison queries about South region, use a template
-            if 'profit' in query.lower() and 'south' in query.lower() and ('2015' in query or '2016' in query):
-                query = """
-                SELECT strftime('%Y', order_date) AS YEAR, SUM(profit) AS total_profit
-                FROM integrated_data 
-                WHERE region = 'South' AND strftime('%Y', order_date) IN ('2015', '2016')
-                GROUP BY strftime('%Y', order_date)
-                ORDER BY YEAR
-                """
-                print(f"[SQL FIX] Applied template fix for South profit comparison")
-                return query
-            else:
-                # Generic fix: remove filter WHERE and fix syntax
-                query = re.sub(r'SUM\s*\([^)]+\)\s+filter\s+WHERE[^A]+AS\s+(\w+)', r'SUM(profit) AS \1', query, flags=re.IGNORECASE)
-                # Add basic WHERE clause
-                if 'WHERE' not in query.upper() and 'FROM integrated_data' in query:
-                    query = query.replace('FROM integrated_data', 'FROM integrated_data WHERE 1=1')
-                print(f"[SQL FIX] Applied generic filter WHERE fix")
-        
-        # Look for the specific problematic pattern from the error
-        filter_where_pattern = r'SUM\s*\(\s*([^)]+)\s*\)\s+filter\s+WHERE\s+([^A][^S]*?)\s+AS\s+(\w+)'
-        
-        if re.search(filter_where_pattern, query, re.IGNORECASE):
-            print(f"[SQL FIX] Detected invalid 'filter WHERE' syntax")
-            
-            match = re.search(filter_where_pattern, query, re.IGNORECASE)
-            if match:
-                column = match.group(1).strip()
-                conditions = match.group(2).strip()
-                alias = match.group(3).strip()
-                
-                print(f"[SQL FIX] Extracted - column: {column}, conditions: {conditions}, alias: {alias}")
-                
-                # Replace the malformed part with correct SUM syntax
-                corrected_sum = f'SUM({column}) AS {alias}'
-                query = re.sub(filter_where_pattern, corrected_sum, query, flags=re.IGNORECASE)
-                
-                # Now add the WHERE clause properly
-                if 'WHERE' not in query.upper():
-                    # Add WHERE clause before GROUP BY
-                    if 'GROUP BY' in query.upper():
-                        query = re.sub(r'(\s+FROM\s+[^\s]+)', f'\\1 WHERE {conditions}', query, flags=re.IGNORECASE)
-                    else:
-                        # Add WHERE before any potential ORDER BY or at the end
-                        query = query.rstrip(';') + f' WHERE {conditions}'
-                else:
-                    # Append to existing WHERE with AND
-                    query = re.sub(r'(WHERE\s+)', f'\\1{conditions} AND ', query, flags=re.IGNORECASE)
-                
-                print(f"[SQL FIX] Fixed query: {query}")
-        
-        # Handle the specific case from the error more directly
-        if 'filter WHERE' in query:
-            print(f"[SQL FIX] Direct filter WHERE fix needed")
-            
-            # Simple pattern replacement for the specific SQLCoder error
-            # Replace: SUM(column) filter WHERE conditions AS alias
-            # With: SUM(column) AS alias and move conditions to WHERE clause
-            
-            # Use a simpler regex to catch the exact pattern from the error
-            filter_pattern = r'SUM\s*\([^)]+\)\s+filter\s+WHERE\s+[^A]+AS\s+\w+'
-            if re.search(filter_pattern, query, re.IGNORECASE):
-                # Extract the key parts
-                column_match = re.search(r'SUM\s*\(([^)]+)\)', query, re.IGNORECASE)
-                alias_match = re.search(r'AS\s+(\w+)', query, re.IGNORECASE)
-                
-                if column_match and alias_match:
-                    column = column_match.group(1)
-                    alias = alias_match.group(1)
-                    
-                    # For profit comparison queries, create a proper query
-                    if 'profit' in column.lower() and ('south' in query.lower() or 'region' in query.lower()):
-                        query = f"""
-                        SELECT strftime('%Y', order_date) AS YEAR, SUM({column}) AS {alias}
-                        FROM integrated_data 
-                        WHERE region = 'South' AND strftime('%Y', order_date) IN ('2015', '2016')
-                        GROUP BY strftime('%Y', order_date)
-                        ORDER BY YEAR
-                        """
-                        print(f"[SQL FIX] Applied specific fix for profit comparison query")
-                    else:
-                        # Generic fix - remove the filter WHERE part and create proper syntax
-                        # Replace the entire malformed expression
-                        corrected_sum = f'SUM({column}) AS {alias}'
-                        query = re.sub(filter_pattern, corrected_sum, query, flags=re.IGNORECASE)
-                        
-                        # Add basic WHERE clause if missing
-                        if 'WHERE' not in query.upper():
-                            query = query.replace('FROM integrated_data', 'FROM integrated_data WHERE 1=1')
-                        
-                        print(f"[SQL FIX] Applied generic filter WHERE fix")
-            
-            # Additional fallback - if still contains filter WHERE, do a direct replacement
-            if 'filter WHERE' in query:
-                # Last resort: remove the filter WHERE entirely and create basic syntax
-                query = re.sub(r'\s+filter\s+WHERE[^A]+AS\s+', ' AS ', query, flags=re.IGNORECASE)
-                print(f"[SQL FIX] Applied fallback filter WHERE removal")
-        
-        # Direct string replacement for common malformed patterns
-        malformed_patterns = [
-            ('LOWER("customer_name", SUM(sales) AS total_sales', 'LOWER("customer_name"), SUM(sales) AS total_sales'),
-            ('LOWER("customer_name", SUM(profit) AS total_profit', 'LOWER("customer_name"), SUM(profit) AS total_profit'),
-            ('LOWER("customer_name", SUM(revenue) AS total_revenue', 'LOWER("customer_name"), SUM(revenue) AS total_revenue'),
-        ]
-        
-        for malformed, fixed in malformed_patterns:
-            if malformed in query:
-                query = query.replace(malformed, fixed)
-        
-        # More general pattern: LOWER("column", SUM(column) AS alias
-        pattern = r'LOWER\s*\(\s*"([^"]+)",\s*SUM\s*\(\s*([^)]+)\s*\)\s+AS\s+(\w+)'
-        replacement = r'LOWER("\1"), SUM(\2) AS \3'
-        query = re.sub(pattern, replacement, query, flags=re.IGNORECASE)
-        
-        # Also handle case without quotes around column names
-        pattern2 = r'LOWER\s*\(\s*([^,\s]+),\s*SUM\s*\(\s*([^)]+)\s*\)\s+AS\s+(\w+)'
-        replacement2 = r'LOWER(\1), SUM(\2) AS \3'
-        query = re.sub(pattern2, replacement2, query, flags=re.IGNORECASE)
-        
-        # Fix WHERE clause with extra closing parenthesis
-        query = re.sub(r'WHERE\s+"([^"]+)"\)\s+LIKE', r'WHERE "\1" LIKE', query, flags=re.IGNORECASE)
-        
-        # Also try to add LOWER to WHERE clause for case-insensitive comparison
-        query = re.sub(r'WHERE\s+"([^"]+)"\s+LIKE', r'WHERE LOWER("\1") LIKE', query, flags=re.IGNORECASE)
-        
-        # Fix quotes around years in IN clause for SQLite compatibility
-        query = re.sub(r"IN\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)", r"IN ('\1', '\2')", query, flags=re.IGNORECASE)
-        
-        return query
-    
-    # Apply syntax fixes first (only for real errors, not conversion artifacts)
-    sql_query = fix_sql_syntax_errors(sql_query)
-    
-    # Remove NULLS FIRST/LAST (not supported in SQLite)
-    sql_query = re.sub(r'\s+NULLS\s+(FIRST|LAST)\b', '', sql_query, flags=re.IGNORECASE)
-    
-    # Convert ILIKE to case-insensitive LIKE using LOWER()
-    # Use a much simpler and more reliable approach
-    
-    # Pattern 1: Handle quoted column names: "column" ILIKE 'pattern'
-    sql_query = re.sub(
-        r'"([^"]+)"\s+ILIKE\s+(\'[^\']*\')', 
-        r'LOWER("\1") LIKE LOWER(\2)', 
-        sql_query, 
-        flags=re.IGNORECASE
-    )
-    
-    # Pattern 2: Handle unquoted column names: column ILIKE 'pattern'  
-    sql_query = re.sub(
-        r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s+ILIKE\s+(\'[^\']*\')', 
-        r'LOWER(\1) LIKE LOWER(\2)', 
-        sql_query, 
-        flags=re.IGNORECASE
-    )
-    
-    # Convert EXTRACT functions to SQLite equivalents
-    def extract_replacement(match):
-        extract_part = match.group(1).upper()
-        column = match.group(2).strip()
-        
-        if extract_part == 'YEAR':
-            return f"strftime('%Y', {column})"
-        elif extract_part == 'MONTH':
-            return f"strftime('%m', {column})"
-        elif extract_part == 'DAY':
-            return f"strftime('%d', {column})"
-        elif extract_part == 'HOUR':
-            return f"strftime('%H', {column})"
-        elif extract_part == 'MINUTE':
-            return f"strftime('%M', {column})"
-        elif extract_part == 'SECOND':
-            return f"strftime('%S', {column})"
-        else:
-            # For invalid EXTRACT usage like EXTRACT(STATE FROM column), just return the column
-            # This handles the weird EXTRACT(STATE FROM integrated_data.state) case
-            return column
-    
-    # Handle EXTRACT(part FROM column) patterns
-    sql_query = re.sub(r'EXTRACT\s*\(\s*(\w+)\s+FROM\s+([^)]+)\)', extract_replacement, sql_query, flags=re.IGNORECASE)
-    
-    # Fix column alias references in the same SELECT statement
-    # SQLite doesn't allow using column aliases in the same SELECT's WHERE or other clauses
-    # We need to replace the alias references with the original expressions
-    def fix_alias_references(query):
-        # Extract all column aliases and their expressions from the SELECT clause
-        select_aliases = {}
-        
-        # Find the SELECT clause (everything between SELECT and FROM)
-        select_match = re.search(r'SELECT\s+(.*?)\s+FROM', query, re.IGNORECASE | re.DOTALL)
-        if not select_match:
-            return query
-            
-        select_clause = select_match.group(1)
-        
-        # Split by commas, but be careful of commas inside functions
-        select_items = []
-        paren_depth = 0
-        current_item = ""
-        
-        for char in select_clause:
-            if char == '(':
-                paren_depth += 1
-            elif char == ')':
-                paren_depth -= 1
-            elif char == ',' and paren_depth == 0:
-                select_items.append(current_item.strip())
-                current_item = ""
-                continue
-            current_item += char
-            
-        if current_item.strip():
-            select_items.append(current_item.strip())
-        
-        # Extract aliases from each select item
-        for item in select_items:
-            # Look for "expression AS alias" pattern
-            as_match = re.search(r'^(.+?)\s+AS\s+(\w+)$', item.strip(), re.IGNORECASE)
-            if as_match:
-                expression = as_match.group(1).strip()
-                alias = as_match.group(2).strip()
-                select_aliases[alias] = expression
-        
-        # Replace alias references with original expressions in the SELECT clause only
-        # Look for alias references in later select items
-        for alias, expression in select_aliases.items():
-            # Create a pattern that matches the alias but not when it's being defined
-            alias_pattern = rf'\b{re.escape(alias)}\b'
-            
-            # Only replace in select items that come after the alias definition
-            # and not in the alias definition itself
-            modified_query = query
-            for other_alias, other_expr in select_aliases.items():
-                if other_alias != alias and alias in other_expr:
-                    # Replace the alias in this other expression
-                    new_expr = re.sub(alias_pattern, f'({expression})', other_expr)
-                    # Update the query
-                    old_item = f"{other_expr} AS {other_alias}"
-                    new_item = f"{new_expr} AS {other_alias}"
-                    modified_query = modified_query.replace(old_item, new_item)
-            
-            query = modified_query
-        
-        return query
-    
-    sql_query = fix_alias_references(sql_query)
-    
-    # Convert PostgreSQL boolean literals
-    sql_query = re.sub(r'\bTRUE\b', '1', sql_query, flags=re.IGNORECASE)
-    sql_query = re.sub(r'\bFALSE\b', '0', sql_query, flags=re.IGNORECASE)
-    
-    # Final cleanup - remove extra spaces
-    sql_query = re.sub(r'\s+', ' ', sql_query).strip()
-    
-    return sql_query
-
-# --- Database Configuration Page ---
-def show_admin_db_configuration_page():
-    """Admin-accessible database configuration page for reconfiguring database settings"""
-    st.title("Database Configuration")
-    st.info("Configure or reconfigure the PostgreSQL database connection for the application.")
-    
-    # Show current connection status
-    if st.session_state.get('db_configured_successfully', False):
-        st.success("✅ Database is currently connected and configured.")
-        
-        # Show current connection details if available
-        try:
-            current_params = database.get_db_connection_params_for_display()
-            if current_params:
-                st.subheader("Current Database Configuration")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.info(f"**Host:** {current_params.get('host', 'Unknown')}")
-                    st.info(f"**Port:** {current_params.get('port', 'Unknown')}")
-                    st.info(f"**Database:** {current_params.get('dbname', 'Unknown')}")
-                with col2:
-                    st.info(f"**User:** {current_params.get('user', 'Unknown')}")
-                    st.info("**Password:** ••••••••")
-                    # Test current connection
-                    try:
-                        test_conn = database.get_db_connection()
-                        if test_conn:
-                            test_conn.close()
-                            st.success("🔗 Connection test: **Active**")
-                        else:
-                            st.error("❌ Connection test: **Failed**")
-                    except Exception as e:
-                        st.error(f"❌ Connection test: **Failed** - {str(e)}")
-        except Exception as e:
-            st.warning(f"Could not retrieve current connection details: {e}")
-    else:
-        st.warning("⚠️ Database is not properly configured.")
-    
-    st.markdown("---")
-    st.subheader("Update Database Configuration")
-    st.markdown("Enter new connection details below. These settings will be used for the current session.")
-    
-    # Get existing settings for defaults
-    try:
-        existing_settings = database.get_db_connection_params_for_display()
-        if existing_settings is None: 
-            existing_settings = {}
-    except:
-        existing_settings = {}
-
-    with st.form("admin_db_config_form"):
-        db_host = st.text_input("Host", value=existing_settings.get("host", "localhost"))
-        db_port = st.number_input("Port", value=int(existing_settings.get("port", 5432)), min_value=1, max_value=65535)
-        db_name = st.text_input("Database Name", value=existing_settings.get("dbname", ""))
-        db_user = st.text_input("User", value=existing_settings.get("user", ""))
-        db_password = st.text_input("Password", type="password", help="Leave blank to keep current password")
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            test_connection = st.form_submit_button("🔍 Test Connection")
-        with col2:
-            save_config = st.form_submit_button("💾 Save Configuration")
-        with col3:
-            reset_config = st.form_submit_button("🔄 Reset to Defaults")
-
-        if test_connection or save_config:
-            if not all([db_host, db_name, db_user]):
-                st.error("Host, Database Name, and User are required.")
-            else:
-                # Use current password if new one not provided
-                password_to_use = db_password if db_password else existing_settings.get("password", "")
-                
-                provided_params = {
-                    "host": db_host,
-                    "port": int(db_port),
-                    "dbname": db_name,
-                    "user": db_user,
-                    "password": password_to_use
-                }
-                
-                conn = None
-                try:
-                    with st.spinner("Testing database connection..."):
-                        conn = database.get_db_connection(provided_params=provided_params)
-                    
-                    if conn:
-                        # Verify it's PostgreSQL
-                        try:
-                            cursor = conn.cursor()
-                            cursor.execute("SELECT version()")
-                            version_result = cursor.fetchone()
-                            if version_result and 'PostgreSQL' in str(version_result[0]):
-                                st.success("✅ Successfully connected to PostgreSQL!")
-                                
-                                if save_config:
-                                    # Test table initialization
-                                    with st.spinner("Verifying database tables..."):
-                                        init_success = database.init_db(conn)
-                                    
-                                    if init_success:
-                                        st.success("✅ Database tables verified/initialized successfully!")
-                                        st.session_state.db_configured_successfully = True
-                                        
-                                        # Log the successful configuration
-                                        try:
-                                            database.log_app_action(st.session_state.logged_in_user, "ADMIN_DB_CONFIG_SUCCESS", f"Database reconfigured: {db_host}:{db_port}/{db_name}", "SUCCESS")
-                                        except Exception as log_error:
-                                            print(f"[ADMIN DB CONFIG] Failed to log action: {log_error}")
-                                        
-                                        st.balloons()
-                                        st.info("✨ Database configuration updated successfully! You can now use all application features.")
-                                    else:
-                                        st.error("❌ Failed to initialize database tables. Please check database permissions.")
-                                elif test_connection:
-                                    st.info("🔍 Connection test successful! Click 'Save Configuration' to apply changes.")
-                            else:
-                                st.error("❌ Connected database is not PostgreSQL. Only PostgreSQL is supported.")
-                        except Exception as version_check_error:
-                            st.error(f"❌ Failed to verify PostgreSQL connection: {version_check_error}")
-                    else:
-                        st.error("❌ Failed to connect to database with provided settings.")
-                        
-                except Exception as e_connect:
-                    st.error(f"❌ Database connection error: {str(e_connect)}")
-                    # Log the failed configuration attempt
-                    try:
-                        database.log_app_action(st.session_state.logged_in_user, "ADMIN_DB_CONFIG_FAILURE", f"Failed to connect: {str(e_connect)}", "FAILURE")
-                    except Exception as log_error:
-                        print(f"[ADMIN DB CONFIG] Failed to log failure: {log_error}")
-                finally:
-                    if conn:
-                        try:
-                            conn.close()
-                        except Exception:
-                            pass
-
-        if reset_config:
-            st.session_state.db_configured_successfully = False
-            if 'current_db_params' in st.session_state:
-                del st.session_state.current_db_params
-            st.success("🔄 Database configuration reset. Please reconfigure with new settings.")
-            st.rerun()
-
-def show_db_configuration_page():
-    st.header("Database Configuration")
-    st.warning("The application requires a PostgreSQL database connection to function.")
-    st.markdown("Please provide the connection details below. These settings will be used for the current session. To make them permanent, you'll need to create or update a `secrets.toml` file in the `.streamlit` directory of your application with a `[postgres]` section.")
-    st.markdown("Example `secrets.toml`:")
-    st.code("""
-[postgres]
-host = "your_db_host" "your_db_name"
-user = "your_db_user"
-password = "your_db_password"
-""", language="toml")
-
-    st.markdown("---")
-    st.subheader("Enter Connection Details")
-
-    # Try to get existing secrets for placeholder/hint text
-    try:
-        existing_secrets = database.get_db_connection_params_for_display()
-        if existing_secrets is None: 
-            existing_secrets = {}
-    except:
-        existing_secrets = {}
-
-    with st.form("db_config_form"): # Use a form for batch input
-        db_host = st.text_input("Host", value=existing_secrets.get("host", "localhost"))
-        db_port = st.number_input("Port", value=existing_secrets.get("port", 5432), min_value=1, max_value=65535)
-        db_name = st.text_input("Database Name", value=existing_secrets.get("dbname", ""))
-        db_user = st.text_input("User", value=existing_secrets.get("user", ""))
-        db_password = st.text_input("Password", type="password", value=existing_secrets.get("password", ""))
-
-        submitted = st.form_submit_button("Connect and Initialize Database")
-
-        if submitted:
-            if not all([db_host, db_name, db_user]):
-                st.error("Host, Database Name, and User are required.")
-            else:
-                provided_params = {
-                    "host": db_host,
-                    "port": db_port,
-                    "dbname": db_name,
-                    "user": db_user,
-                    "password": db_password
-                }
-                conn = None
-                try:
-                    with st.spinner("Attempting to connect to the database..."):
-                        conn = database.get_db_connection(provided_params=provided_params)
-                    
-                    if conn:
-                        st.success("Successfully connected to the database!")
-                        with st.spinner("Initializing database tables (this may take a moment)..."):
-                            init_success = database.init_db(conn)
-                        
-                        if init_success:
-                            st.success("Database tables initialized successfully.")
-                            st.session_state.db_configured_successfully = True
-                            initialize_app_defaults() 
-                            st.info("Configuration successful for this session. Proceeding to login.")
-                            st.balloons()
-                            import time
-                            time.sleep(2)
-                            st.session_state.page = "login"
-                            st.rerun()
-                        else:
-                            st.error("Failed to initialize database tables. Please check console logs and database permissions.")
-                    else:
-                        st.error(f"Failed to connect to PostgreSQL with the provided details. Please verify the parameters and ensure the database server is accessible.")
-                except Exception as e_connect_init:
-                    st.error(f"An unexpected error occurred during database setup: {e_connect_init}")
-
 # --- Enhanced CSS with Purple Gradient Theme ---
+
+def show_main_application():
+    """Main application interface with sidebar navigation and proper page routing"""
+    
+    # Initialize page state if not set
+    if 'app_page' not in st.session_state:
+        st.session_state.app_page = 'data_integration'
+    
+    # Sidebar Navigation
+    with st.sidebar:
+        st.markdown("### DBChat Navigation")
+        st.markdown(f"**Welcome, {st.session_state.logged_in_user}!**")
+        st.markdown("---")
+        
+        # Navigation buttons
+        if st.button("Data Integration & ETL", use_container_width=True):
+            st.session_state.app_page = 'data_integration'
+            st.rerun()
+            
+        if st.button("Ask Questions", use_container_width=True):
+            st.session_state.app_page = 'query'
+            st.rerun()
+            
+        if st.button("My Dashboard", use_container_width=True):
+            st.session_state.app_page = 'dashboard'
+            st.rerun()
+            
+        if st.button("Manage Dashboard Sharing", use_container_width=True):
+            st.session_state.app_page = 'dashboard_management'
+            st.rerun()
+            
+        # Admin-only features
+        user_roles = st.session_state.get('user_roles', [])
+        if isinstance(user_roles, str):
+            try:
+                import json
+                user_roles = json.loads(user_roles)
+            except:
+                user_roles = []
+        
+        is_admin = 'admin' in user_roles
+        
+        if is_admin:
+            st.markdown("---")
+            st.markdown("**Admin Features**")
+            
+            if st.button("Database Configuration", use_container_width=True):
+                st.session_state.app_page = 'db_config'
+                st.rerun()
+            
+            if st.button("User Management", use_container_width=True):
+                st.session_state.app_page = 'admin_users'
+                st.rerun()
+                
+            if st.button("LLM Settings", use_container_width=True):
+                st.session_state.app_page = 'llm_settings'
+                st.rerun()
+            
+            if st.button("Email Settings", use_container_width=True):
+                st.session_state.app_page = 'email_settings'
+                st.rerun()
+        
+        st.markdown("---")
+        
+        # Status indicators
+        st.markdown("**Status**")
+        
+        # LLM status
+        llm_status = st.session_state.get('sidebar_llm_status_message', 'LLM: Not configured')
+        if 'Connected' in llm_status:
+            st.success(f"✅ LLM Ready")
+        else:
+            st.info(f"🔧 LLM: Configure in Admin Settings")
+            
+        # Show data status if any data is loaded
+        if st.session_state.get('data') is not None:
+            st.success(f"📊 Data Loaded: {st.session_state.connection_type or 'Unknown'}")
+        else:
+            st.info("📥 Ready for Data Integration")
+        
+        st.markdown("---")
+        
+        # Logout button
+        if st.button("Logout", use_container_width=True):
+            logout()
+    
+    # Main content area based on selected page
+    if st.session_state.app_page == 'data_integration':
+        data_integration_ui.show_data_integration_page()
+    elif st.session_state.app_page == 'query':
+        show_query_screen()
+    elif st.session_state.app_page == 'dashboard':
+        show_dashboard_screen()
+    elif st.session_state.app_page == 'dashboard_management':
+        show_dashboard_management_page()
+    elif st.session_state.app_page == 'db_config' and is_admin:
+        show_admin_db_configuration_page()
+    elif st.session_state.app_page == 'admin_users' and is_admin:
+        show_admin_panel()
+    elif st.session_state.app_page == 'llm_settings' and is_admin:
+        show_llm_settings_page()
+    elif st.session_state.app_page == 'email_settings' and is_admin:
+        show_email_settings_page()
+    else:
+        # Default to data integration
+        data_integration_ui.show_data_integration_page()
 
 if __name__ == "__main__":
     load_custom_css()

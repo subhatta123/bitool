@@ -8,6 +8,8 @@ import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 import pdfkit
+import os
+from html2image import Html2Image
 
 PDFKIT_AVAILABLE = True
 PDFKIT_IMPORT_ERROR = ""
@@ -86,14 +88,19 @@ def get_email_config():
         }
     return default_config
 
-def send_dashboard_email(recipient_email, subject, body, attachment_content, attachment_filename, attachment_type='html', schedule_info=None, resolved_email_cfg=None):
+def send_dashboard_email(recipient_email, subject, body, attachments, schedule_info=None, resolved_email_cfg=None):
+    """
+    Sends an email with multiple attachments.
+    attachments should be a list of dicts: [{'content': ..., 'filename': ..., 'type': ...}]
+    """
     email_cfg = resolved_email_cfg if resolved_email_cfg else get_email_config()
     
     smtp_server_host = email_cfg.get("SMTP_SERVER")
-    smtp_user = email_cfg.get("SMTP_USERNAME")
+    smtp_user = email_cfg.get("SMTP_USERNAME") or ""
+    smtp_pass = email_cfg.get("SMTP_PASSWORD") or ""
     sender = email_cfg.get("SENDER_EMAIL")
 
-    if not smtp_user or not email_cfg.get("SMTP_PASSWORD") or not sender or not smtp_server_host:
+    if not smtp_user or not smtp_pass or not sender or not smtp_server_host:
         err_msg = "Email server credentials are not configured."
         if schedule_info and schedule_info.get('is_scheduled_job'):
             print(f"ERROR for {recipient_email}: {err_msg}")
@@ -101,28 +108,45 @@ def send_dashboard_email(recipient_email, subject, body, attachment_content, att
             st.error(err_msg)
         return False
 
-    msg = MIMEMultipart('alternative')
+    msg = MIMEMultipart('mixed')
     msg['From'] = sender
     msg['To'] = recipient_email
     msg['Subject'] = subject
     msg.attach(MIMEText(body, 'html'))
 
-    if attachment_content and attachment_filename and attachment_type:
-        part = MIMEBase('application', "octet-stream")
-        if attachment_type == 'html':
-            part.set_payload(attachment_content.encode('utf-8'))
-        elif attachment_type == 'pdf':
-            part.set_payload(attachment_content)
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', f'attachment; filename="{attachment_filename}.{attachment_type}"')
-        msg.attach(part)
+    if attachments:
+        for attachment in attachments:
+            attachment_content = attachment.get('content')
+            attachment_filename = attachment.get('filename')
+            attachment_type = attachment.get('type')
+
+            if not all([attachment_content, attachment_filename, attachment_type]):
+                continue
+            
+            part = None
+            if attachment_type == 'html':
+                part = MIMEBase('text', 'html')
+                part.set_payload(attachment_content.encode('utf-8'))
+                encoders.encode_base64(part)
+            elif attachment_type == 'pdf':
+                part = MIMEBase('application', 'pdf')
+                part.set_payload(attachment_content)
+                encoders.encode_base64(part)
+            elif attachment_type == 'png':
+                part = MIMEBase('image', 'png')
+                part.set_payload(attachment_content)
+                encoders.encode_base64(part)
+
+            if part:
+                part.add_header('Content-Disposition', f'attachment; filename="{attachment_filename}.{attachment_type}"')
+                msg.attach(part)
         
     try:
         port = int(email_cfg.get("SMTP_PORT", 587))
         server = smtplib.SMTP(smtp_server_host, port)
         if email_cfg.get('USE_TLS'):
             server.starttls()
-        server.login(smtp_user, email_cfg.get("SMTP_PASSWORD"))
+        server.login(smtp_user, smtp_pass)
         server.sendmail(sender, recipient_email, msg.as_string())
         server.quit()
         if not (schedule_info and schedule_info.get('is_scheduled_job')):
@@ -159,6 +183,7 @@ def show_send_email_ui(dashboard_html_content=None, dashboard_name=None, all_das
                         selected_dashboard_html = app.generate_dashboard_html(items)
                     except Exception as e:
                         st.error(f"Error loading dashboard '{selected_dashboard_name}': {e}")
+                        selected_dashboard_html = "Could not load dashboard content."
                     break
     elif dashboard_name:
         st.info(f"📊 Sharing dashboard: **{dashboard_name}**")
@@ -170,7 +195,8 @@ def show_send_email_ui(dashboard_html_content=None, dashboard_name=None, all_das
     subject = st.text_input("Subject:", value=f"Your Dashboard: {selected_dashboard_name}", key="email_subject_input")
     
     include_html = st.checkbox("Include HTML attachment", value=True, key="include_html")
-    include_pdf = st.checkbox("Include PDF attachment", value=True, key="include_pdf", disabled=not PDFKIT_AVAILABLE, help=f"PDF generation unavailable: {PDFKIT_IMPORT_ERROR}" if not PDFKIT_AVAILABLE else "")
+    include_image = st.checkbox("Include Image attachment", value=True, key="include_image_v6",
+                                 help="Static PNG image of the dashboard")
 
     body_template = "<p>Hi,</p><p>Please find your dashboard attached.</p>"
     body_html_content = st.text_area("Email Body:", value=body_template, height=150, key="email_body_content")
@@ -180,28 +206,77 @@ def show_send_email_ui(dashboard_html_content=None, dashboard_name=None, all_das
             st.error("Recipient email is required.")
             return
 
+        if not include_html and not include_image:
+            st.warning("Please select at least one attachment format.")
+            return
+
         safe_filename = "".join(c for c in (selected_dashboard_name or "dashboard") if c.isalnum() or c in (' ', '_')).rstrip()
         
-        if include_html:
-            send_dashboard_email(recipient, subject, body_html_content, selected_dashboard_html, safe_filename, 'html')
-        
-        if include_pdf:
-            if PDFKIT_AVAILABLE:
-                with st.spinner("Generating PDF..."):
-                    pdf_bytes = generate_dashboard_pdf(selected_dashboard_html, safe_filename)
-                if pdf_bytes:
-                    send_dashboard_email(recipient, subject, body_html_content, pdf_bytes, safe_filename, 'pdf')
-                else:
-                    st.error("Failed to generate PDF.")
+        attachments = []
+        if include_image:
+            with st.spinner("Generating Image..."):
+                image_bytes = generate_dashboard_image(selected_dashboard_html, safe_filename)
+            
+            if image_bytes:
+                attachments.append({
+                    'content': image_bytes,
+                    'filename': safe_filename,
+                    'type': 'png'
+                })
             else:
-                st.warning("PDF generation is not available.")
+                st.error("Failed to generate image attachment.")
 
-def generate_dashboard_pdf(html_content, dashboard_name="dashboard"):
-    if not PDFKIT_AVAILABLE:
+        if include_html:
+            attachments.append({
+                'content': selected_dashboard_html,
+                'filename': safe_filename,
+                'type': 'html'
+            })
+        
+        if not attachments:
+            st.error("Failed to prepare any attachments. Email not sent.")
+            return
+
+        send_dashboard_email(recipient, subject, body_html_content, attachments)
+
+def generate_dashboard_image(dashboard_html_content, dashboard_name="dashboard"):
+    """
+    Generate PNG image from dashboard HTML content using html2image.
+    Returns image bytes if successful, None if failed.
+    """
+    if not dashboard_html_content:
+        print("[IMAGE] No HTML content provided for image generation")
         return None
+    
     try:
-        options = {'page-size': 'A4', 'margin-top': '0.75in', 'margin-right': '0.75in', 'margin-bottom': '0.75in', 'margin-left': '0.75in', 'encoding': "UTF-8"}
-        return pdfkit.from_string(html_content, False, options=options)
+        hti = Html2Image(output_path='temp_images')
+        
+        # Create a temporary HTML file to render
+        temp_html_path = 'temp_dashboard.html'
+        with open(temp_html_path, 'w', encoding='utf-8') as f:
+            f.write(dashboard_html_content)
+
+        # Generate the image
+        output_filename = f"{dashboard_name}.png"
+        hti.screenshot(html_file=temp_html_path, save_as=output_filename, size=(1200, 900))
+        
+        image_path = os.path.join('temp_images', output_filename)
+        
+        if os.path.exists(image_path):
+            with open(image_path, 'rb') as f:
+                image_bytes = f.read()
+            
+            # Clean up generated files
+            os.remove(temp_html_path)
+            os.remove(image_path)
+            
+            print(f"[IMAGE] Successfully generated image: {image_path}")
+            return image_bytes
+        else:
+            print(f"[IMAGE] Image generation failed: file not found at {image_path}")
+            return None
+
     except Exception as e:
-        print(f"[PDF] pdfkit generation failed: {e}")
+        print(f"[IMAGE] html2image generation failed: {e}")
+        st.error(f"Image generation failed: {e}")
         return None

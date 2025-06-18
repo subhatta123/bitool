@@ -26,3 +26,8 @@ dataclasses # For Python < 3.7 compatibility (built-in for 3.7+)
 
 # plotly 
 pyinstaller 
+
+# For PDF/Image Generation (Optional but recommended)
+html2image
+pdfkit
+weasyprint 
