@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
 # --- Install System Dependencies ---
-# Install prerequisites for adding new repositories and for pyodbc/psycopg2
+# Step 1: Install prerequisites for adding new repositories and for pyodbc/psycopg2
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg \
@@ -19,13 +19,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-transport-https \
     ca-certificates
 
-# --- Install Microsoft ODBC Driver for SQL Server (Robust Method) ---
-# This is done in a single RUN command to ensure all layers are built together, avoiding cache issues.
-# It downloads the GPG key, adds it to the trusted keyring, configures the repository with the 'signed-by' attribute,
-# updates the package list, and installs the driver. This is the most reliable method.
-RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update \
+# --- Install Microsoft ODBC Driver for SQL Server (Robust, Multi-Step Method) ---
+# Step 2: Download and install the GPG key
+RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+
+# Step 3: Add the Microsoft repository, explicitly referencing the key
+RUN echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list
+
+# Step 4: Update package lists again and install the driver
+RUN apt-get update \
     && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql17
 
 # Clean up apt-get files to reduce final image size
