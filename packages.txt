@@ -1,3 +1,4 @@
 unixodbc-dev
+unixodbc
 libpq-dev
 wkhtmltopdf 
