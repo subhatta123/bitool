@@ -7,21 +7,24 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Set the working directory in the container
 WORKDIR /app
 
-# Install system dependencies, including build tools and libraries for pyodbc and psycopg2
-# Explicitly add 'unixodbc' runtime which is a dependency for the MS driver
+# --- Install System Dependencies ---
+# Install prerequisites for adding new repositories and for pyodbc/psycopg2
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg \
     unixodbc \
     unixodbc-dev \
     libpq-dev \
-    wkhtmltopdf
+    wkhtmltopdf \
+    apt-transport-https \
+    ca-certificates
 
-# --- Install Microsoft ODBC Driver for SQL Server ---
+# --- Install Microsoft ODBC Driver for SQL Server (Robust Method) ---
 # This is done in a single RUN command to ensure all layers are built together, avoiding cache issues.
-# It adds Microsoft's repository, updates the package list, and installs the driver.
+# It downloads the GPG key, adds it to the trusted keyring, configures the repository with the 'signed-by' attribute,
+# updates the package list, and installs the driver. This is the most reliable method.
 RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && curl -fsSL https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql17
 
