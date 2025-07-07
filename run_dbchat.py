@@ -6,7 +6,7 @@ import time # Added for potential sleep
 
 print("--- run_dbchat.py script started ---")
 print(f"Python version: {sys.version}")
-print(f"sys.executable (path to DBChat.exe when bundled): {sys.executable}")
+print(f"sys.executable (path to ConvaBI.exe when bundled): {sys.executable}")
 print(f"sys.argv: {sys.argv}")
 print(f"Current working directory: {os.getcwd()}")
 print(f"PYI_PYTHON_EXE env var: {os.environ.get('PYI_PYTHON_EXE')}")

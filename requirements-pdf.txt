@@ -1,4 +1,4 @@
-# Optional dependencies for PDF generation in DBChat email functionality
+# Optional dependencies for PDF generation in ConvaBI email functionality
 # Install with: pip install -r requirements-pdf.txt
 
 # WeasyPrint - Recommended PDF generator (pure Python)

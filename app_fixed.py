@@ -36,7 +36,7 @@ import database # Import the new database module
 # --- Page Setup (MUST BE THE FIRST STREAMLIT COMMAND) ---
 st.set_page_config(
     layout="wide", 
-    page_title="DBChat - Query Your Data with AI",
+    page_title="ConvaBI - Query Your Data with AI",
     initial_sidebar_state="expanded", # Keep sidebar open by default
 )
 
@@ -2261,7 +2261,7 @@ def generate_dashboard_html(dashboard_items):
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>DBChat Dashboard Export</title> 
+            <title>ConvaBI Dashboard Export</title> 
             <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
             <style>
                 body { 
@@ -2371,7 +2371,7 @@ def generate_dashboard_html(dashboard_items):
             </style>
         </head>
         <body>
-            <h1>DBChat Dashboard</h1>
+            <h1>ConvaBI Dashboard</h1>
         """
     ]
 

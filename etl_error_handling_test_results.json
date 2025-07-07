@@ -1,0 +1,79 @@
+{
+  "timestamp": "2025-06-28T13:53:02.962854",
+  "validation_logic_test": true,
+  "mock_results": [
+    {
+      "column": "Row ID",
+      "target_type": "integer",
+      "success": true,
+      "null_percentage": 80.0,
+      "original_type": "object",
+      "new_type": "Int64"
+    },
+    {
+      "column": "Order Date",
+      "target_type": "date",
+      "success": true,
+      "null_percentage": 80.0,
+      "original_type": "object",
+      "new_type": "datetime64[ns]"
+    },
+    {
+      "column": "Sales",
+      "target_type": "float",
+      "success": true,
+      "null_percentage": 80.0,
+      "original_type": "object",
+      "new_type": "float64"
+    }
+  ],
+  "mock_error_response": {
+    "success": false,
+    "error": "ETL transformations failed final validation. High null rates detected.",
+    "validation_failed": true,
+    "automatic_error_recovery": true,
+    "can_proceed_anyway": true,
+    "recovery_guidance": {
+      "quick_fixes": [
+        "\ud83d\udca1 Quick Fix: High null rates (80%) are normal for your dataset",
+        "\ud83d\udca1 Quick Fix: Consider proceeding anyway - nulls are legitimate business data"
+      ],
+      "data_quality_insights": {
+        "total_rows": 9994,
+        "overall_null_percentage": 80.0,
+        "problematic_columns": 0,
+        "success_columns": 3
+      },
+      "recommended_actions": [
+        "1. Review the high null rates - this is common in real-world data",
+        "2. Proceed with the transformation if nulls are expected",
+        "3. Use 'Proceed Anyway' option to continue",
+        "4. Consider data cleaning if nulls are unexpected"
+      ],
+      "alternative_approaches": [
+        "Keep columns as 'string' type to preserve all data",
+        "Clean source data before importing if nulls are errors",
+        "Use data transformation tools to handle missing values"
+      ]
+    },
+    "data_summary": {
+      "total_rows": 9994,
+      "columns_analyzed": [
+        "Row ID",
+        "Order Date",
+        "Sales"
+      ],
+      "high_null_columns": [
+        "Row ID",
+        "Order Date",
+        "Sales"
+      ]
+    }
+  },
+  "expected_behavior": {
+    "modal_should_appear": true,
+    "proceed_button_available": true,
+    "high_null_rates_explained": true,
+    "workflow_progression_enabled": true
+  }
+}

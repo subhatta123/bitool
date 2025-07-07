@@ -71,7 +71,7 @@ def handle_chart_title_change(item_abs_idx):
 # --- Page Setup (MUST BE THE FIRST STREAMLIT COMMAND) ---
 st.set_page_config(
     layout="wide", 
-    page_title="DBChat - Query Your Data with AI",
+    page_title="ConvaBI - Query Your Data with AI",
     initial_sidebar_state="expanded", # Keep sidebar open by default
     menu_items={
         'Get Help': None,
@@ -84,7 +84,7 @@ st.set_page_config(
 def load_custom_css():
     css = """
     <style>
-        /* --- DBChat Purple Gradient Theme UI --- */
+        /* --- ConvaBI Purple Gradient Theme UI --- */
         /* --- V2.0 - Matching Login Page Style --- */
 
         /* --- Global Reset & Body --- */
@@ -754,7 +754,7 @@ def check_password(hashed_password, password):
 # ... (entire class definition) ...
 # class QueryApp(HydraHeadApp):
 # ... (entire class definition) ...
-# class MyDBChatApp(HydraApp):
+# class MyConvaBIApp(HydraApp):
 # ... (entire class definition) ...
 
 # --- SQLite-compatible Database Functions ---
@@ -2382,7 +2382,7 @@ def show_login_page():
     
     # Center the login form
     st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-    st.title("Welcome to DBChat")
+    st.title("Welcome to ConvaBI")
     st.markdown("Please log in to continue")
     st.markdown("</div>", unsafe_allow_html=True)
     

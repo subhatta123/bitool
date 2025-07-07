@@ -40,6 +40,20 @@ import query_clarifier
 import data_integration
 import data_integration_ui
 import sql_fixer
+import semantic_layer
+import semantic_layer_ui
+import semantic_integration
+try:
+    import enhanced_dashboard
+except ImportError:
+    enhanced_dashboard = None
+    print("[DASHBOARD] Enhanced dashboard features not available")
+
+try:
+    import dashboard_exports
+except ImportError:
+    dashboard_exports = None
+    print("[EXPORT] Dashboard export module not available")
 
 # --- Callback Functions for UI elements ---
 def handle_kpi_label_change(item_idx):
@@ -92,7 +106,7 @@ def handle_item_move(item_idx, direction):
 # --- Page Setup (MUST BE THE FIRST STREAMLIT COMMAND) ---
 st.set_page_config(
     layout="wide", 
-    page_title="DBChat - Query Your Data with AI",
+    page_title="ConvaBI - Query Your Data with AI",
     initial_sidebar_state="expanded", # Keep sidebar open by default
     menu_items={
         'Get Help': None,
@@ -105,7 +119,7 @@ st.set_page_config(
 def load_custom_css():
     css = """
     <style>
-        /* --- DBChat Purple Gradient Theme UI --- */
+        /* --- ConvaBI Purple Gradient Theme UI --- */
         /* --- V2.0 - Matching Login Page Style --- */
 
         /* --- Global Reset & Body --- */
@@ -583,10 +597,7 @@ def validate_session_health():
                 try:
                     user_data = None
                     try:
-                        if is_sqlite_connection():
-                            user_data = get_user_by_username_sqlite(st.session_state.logged_in_user)
-                        else:
-                            user_data = database.get_user_by_username_from_db(st.session_state.logged_in_user)
+                        user_data = database.get_user_by_username_from_db(st.session_state.logged_in_user)
                     except Exception as db_error:
                         print(f"[SESSION] Database connection error during user validation: {db_error}")
                         return True
@@ -776,106 +787,21 @@ def check_password(hashed_password, password):
 # ... (entire class definition) ...
 # class QueryApp(HydraHeadApp):
 # ... (entire class definition) ...
-# class MyDBChatApp(HydraApp):
+# class MyConvaBIApp(HydraApp):
 # ... (entire class definition) ...
-
-# --- SQLite-compatible Database Functions ---
-def is_sqlite_connection():
-    """Check if we're using SQLite based on session state parameters"""
-    current_params = st.session_state.get("current_db_params", {})
-    return current_params.get("type") == "sqlite"
-
-def get_sqlite_connection():
-    """Get SQLite connection"""
-    current_params = st.session_state.get("current_db_params", {})
-    if current_params.get("type") == "sqlite":
-        import sqlite3
-        return sqlite3.connect(current_params.get("path", "dbchat_app.db"))
-    return None
-
-def get_user_by_username_sqlite(username):
-    """SQLite-compatible version of get_user_by_username_from_db"""
-    conn = get_sqlite_connection()
-    if not conn:
-        return None
-    
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT username, hashed_password, roles FROM app_users WHERE username = ?", (username,))
-        result = cursor.fetchone()
-        
-        if result:
-            return {
-                "username": result[0],
-                "hashed_password": result[1], 
-                "roles": result[2] if result[2] else []
-            }
-        return None
-    except Exception as e:
-        st.error(f"Error fetching user from SQLite: {e}")
-        return None
-    finally:
-        conn.close()
-
-def create_user_sqlite(username, hashed_password, roles):
-    """SQLite-compatible version of create_user_in_db"""
-    conn = get_sqlite_connection()
-    if not conn:
-        return False
-    
-    try:
-        cursor = conn.cursor()
-        import json
-        cursor.execute(
-            "INSERT INTO app_users (username, hashed_password, roles) VALUES (?, ?, ?)",
-            (username, hashed_password, json.dumps(roles))
-        )
-        conn.commit()
-        return True
-    except Exception as e:
-        st.error(f"Error creating user in SQLite: {e}")
-        return False
-    finally:
-        conn.close()
-
-def log_app_action_sqlite(username, action, details, status="INFO"):
-    """SQLite-compatible version of log_app_action"""
-    conn = get_sqlite_connection()
-    if not conn:
-        return
-    
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO app_logs (username, action, details, status) VALUES (?, ?, ?, ?)",
-            (username, action, details, status)
-        )
-        conn.commit()
-    except Exception as e:
-        print(f"Error logging action to SQLite: {e}")
-    finally:
-        conn.close()
-
-def ensure_default_admin_user_sqlite(default_username, default_password_hash, default_roles):
-    """SQLite-compatible version of ensure_default_admin_user_in_db"""
-    existing_admin = get_user_by_username_sqlite(default_username)
-    if not existing_admin:
-        st.info(f"Default admin user '{default_username}' not found in database. Creating...")
-        success = create_user_sqlite(default_username, default_password_hash, default_roles)
-        if success:
-            st.success(f"Default admin user '{default_username}' created in database.")
-        else:
-            st.error(f"Failed to create default admin user '{default_username}' in database.")
 
 # --- Application Defaults Initialization ---
 def initialize_app_defaults():
-    """Initializes application defaults, like ensuring the default admin user exists in the DB."""
+    """Initializes application defaults, like ensuring the default admin user exists in PostgreSQL."""
     default_admin_hashed_password = hash_password(DEFAULT_ADMIN_PASSWORD)
     default_admin_roles = ["admin", "superuser"]
-    if is_sqlite_connection():
-        ensure_default_admin_user_sqlite(DEFAULT_ADMIN_USERNAME, default_admin_hashed_password, default_admin_roles)
-    else:
+    
+    # Only use PostgreSQL for user management
+    try:
         database.ensure_default_admin_user_in_db(DEFAULT_ADMIN_USERNAME, default_admin_hashed_password, default_admin_roles)
+    except Exception as e:
+        st.error(f"Failed to initialize default admin user in PostgreSQL: {e}")
+        print(f"[INIT] Error initializing admin user: {e}")
     # Future: Add other app default initializations here if needed
 
 # --- Dashboard Save/Load Functions ---
@@ -1072,7 +998,19 @@ def get_user_dashboard_names(username):
 
 # --- OpenAI LLM Helper ---
 def get_sql_from_openai(natural_language_query, data_schema, db_type="sqlserver", target_table=None):
-    """Generates SQL query from natural language using the globally configured LLM client."""
+    """Generates SQL query from natural language using the globally configured LLM client with semantic layer enhancement."""
+    try:
+        # Use the enhanced version from semantic integration
+        return semantic_integration.get_enhanced_sql_from_openai(
+            natural_language_query, data_schema, db_type, target_table, use_semantic_layer=True
+        )
+    except Exception as e:
+        print(f"[SEMANTIC LAYER] Failed to use enhanced generation, falling back to basic: {e}")
+        # Fallback to basic implementation
+        return get_basic_sql_from_openai(natural_language_query, data_schema, db_type, target_table)
+
+def get_basic_sql_from_openai(natural_language_query, data_schema, db_type="sqlserver", target_table=None):
+    """Basic SQL generation without semantic layer (fallback)"""
     client = st.session_state.get("llm_client_instance")
     if not client:
         st.error("LLM client is not initialized. Please configure it in LLM Settings.")
@@ -1469,25 +1407,121 @@ def show_query_screen():
     """Displays the UI for asking questions and viewing results."""
     st.header("Ask Questions About Your Data")
 
-    if st.session_state.data is not None and not st.session_state.data.empty:
+    # Check for integrated data sources first (new unified flow)
+    integration_engine = data_integration.data_integration_engine
+    summary = integration_engine.get_data_sources_summary()
+    
+    # Initialize data variables
+    active_data = None
+    active_schema = None
+    active_connection_type = None
+    available_tables = []
+    
+    # Prioritize integrated data sources over legacy session state
+    if summary['total_sources'] > 0:
+        st.success(f"✅ **{summary['total_sources']} integrated data sources available**")
+        
+        # Get available tables from integrated data
+        try:
+            integrated_tables_df = integration_engine.get_integrated_data()
+            if not integrated_tables_df.empty and 'available_tables' in integrated_tables_df.columns:
+                available_tables = integrated_tables_df['available_tables'].tolist()
+        except:
+            # Alternative method to get table list
+            for source_info in summary['sources']:
+                table_name = f"source_{source_info['id']}"
+                available_tables.append(table_name)
+        
+        if available_tables:
+            # Select a table to preview and query
+            selected_preview_table = st.selectbox(
+                "Select data source to preview:",
+                available_tables,
+                key="preview_table_select"
+            )
+            
+            if selected_preview_table:
+                try:
+                    # Get data for preview and schema
+                    preview_data = integration_engine.get_integrated_data(selected_preview_table)
+                    if not preview_data.empty:
+                        st.subheader(f"Data Preview: {selected_preview_table} (First 5 rows)")
+                        st.dataframe(preview_data.head())
+                        
+                        # Set active data for querying
+                        active_data = preview_data
+                        active_connection_type = "integrated"
+                        
+                        # Build schema from integrated data
+                        schema = []
+                        for col in preview_data.columns:
+                            schema.append({"name": col, "type": str(preview_data[col].dtype)})
+                        active_schema = schema
+                        
+                        # Show enhanced schema if semantic layer is available
+                        semantic_layer = st.session_state.get('semantic_layer')
+                        if semantic_layer and semantic_layer.tables:
+                            st.success("🧠 **Enhanced with business intelligence** - queries will be more accurate!")
+                            with st.expander("🔍 View Enhanced Schema", expanded=False):
+                                enhanced_prompt = semantic_layer.generate_enhanced_schema_prompt(active_schema, "integrated")
+                                st.text_area("Enhanced schema sent to LLM:", enhanced_prompt, height=200)
+                        
+                    else:
+                        st.warning(f"Selected table '{selected_preview_table}' is empty.")
+                except Exception as e:
+                    st.error(f"Error loading data from '{selected_preview_table}': {e}")
+        else:
+            st.warning("⚠️ No integrated data tables found. Please add and transform data in 'Data Setup & Intelligence'.")
+    
+    # Fallback to legacy session state data (old flow)
+    elif st.session_state.data is not None and not st.session_state.data.empty:
+        st.info("📊 Using legacy data connection")
         st.subheader("Data Preview (First 5 rows)")
         st.dataframe(st.session_state.data.head())
-    elif st.session_state.connection_type != "csv":  # For DBs, we might not load all data initially
+        
+        active_data = st.session_state.data
+        active_schema = st.session_state.data_schema
+        active_connection_type = st.session_state.connection_type
+        
+    elif st.session_state.connection_type and st.session_state.connection_type != "csv":
         st.info("Connected to database. Schema information would typically be shown here.")
         if st.session_state.data_schema and isinstance(st.session_state.data_schema, dict) and "error" not in st.session_state.data_schema:
             st.write("Available schema for LLM:")
             st.json(st.session_state.data_schema)
+            
+        active_schema = st.session_state.data_schema
+        active_connection_type = st.session_state.connection_type
+        
+    else:
+        st.warning("⚠️ **No data connected!** Please set up your data first.")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📊 Set Up Data", type="primary"):
+                st.session_state.app_page = 'data_setup'
+                st.rerun()
+        with col2:
+            if st.button("🔗 Use Legacy Connection"):
+                st.session_state.app_page = 'connect_data'  # This would be the old connection page
+                st.rerun()
+        return
 
-    # Table selection dropdown
+    # Table/Source selection dropdown
     table_options = ["All Tables / Auto-detect"]
-    if st.session_state.data_schema and isinstance(st.session_state.data_schema, dict):
-        table_options.extend(list(st.session_state.data_schema.keys()))
     
-    st.session_state.selected_table = st.selectbox(
+    # Add options based on active data source
+    if active_connection_type == "integrated" and available_tables:
+        table_options.extend(available_tables)
+    elif active_schema and isinstance(active_schema, dict):
+        table_options.extend(list(active_schema.keys()))
+    elif active_schema and isinstance(active_schema, list):
+        # For CSV/API data, just show the data source name
+        table_options.append("Current Data Source")
+    
+    selected_table = st.selectbox(
         "Focus query on a specific table (optional):",
         options=table_options,
-        index=table_options.index(st.session_state.selected_table) if st.session_state.selected_table in table_options else 0,
-        key="query_screen_table_select" # Added unique key
+        index=0,
+        key="query_screen_table_select"
     )
 
     # --- Query Input and Clarification Flow ---
@@ -1511,12 +1545,27 @@ def show_query_screen():
                 st.session_state.log_generated_sql_str = None
                 st.session_state.log_query_execution_details_str = None
                 
+                # Check if we have valid data to query
+                if not active_schema:
+                    st.error("❌ No data schema available. Please connect to data first.")
+                    if st.button("📊 Set Up Data"):
+                        st.session_state.app_page = 'data_setup'
+                        st.rerun()
+                    return
+                
                 with st.spinner("Thinking..."):
+                    # Update session state for handle_llm_response compatibility
+                    if active_data is not None:
+                        st.session_state.data = active_data
+                    st.session_state.data_schema = active_schema
+                    st.session_state.connection_type = active_connection_type
+                    st.session_state.selected_table = selected_table
+                    
                     llm_response = query_clarifier.get_sql_or_clarification(
                         natural_language_query=natural_language_query_input,
-                        data_schema=st.session_state.data_schema,
-                        db_type=st.session_state.connection_type,
-                        target_table=st.session_state.selected_table,
+                        data_schema=active_schema,
+                        db_type=active_connection_type or "integrated",
+                        target_table=selected_table,
                         conversation_history=None # First turn, no prior history for this specific interaction
                     )
                     handle_llm_response(llm_response)
@@ -1653,11 +1702,12 @@ def show_query_screen():
                         st.session_state.conversation_log_for_query.append({"role": "user", "content": answer_to_submit})
                         
                         with st.spinner("Processing your clarification..."):
+                            # Use active data for clarification processing
                             llm_response = query_clarifier.get_sql_or_clarification(
                                 natural_language_query=st.session_state.original_query_for_clarification, 
-                                data_schema=st.session_state.data_schema,
-                                db_type=st.session_state.connection_type,
-                                target_table=st.session_state.selected_table,
+                                data_schema=active_schema or st.session_state.data_schema,
+                                db_type=active_connection_type or st.session_state.connection_type,
+                                target_table=selected_table or st.session_state.selected_table,
                                 conversation_history=st.session_state.conversation_log_for_query
                             )
                             handle_llm_response(llm_response)
@@ -1918,27 +1968,35 @@ def show_query_screen():
                 except Exception as e_viz:
                     st.error(f"Error during visualization setup or 'Add to Dashboard' logic: {e_viz}")
 
-    if st.button("Disconnect and Choose Another Source", key="disconnect_button_query_screen"): # Ensured key is unique
-        # Reset relevant session state variables
-        st.session_state.connected = False
-        st.session_state.connection_type = None
-        st.session_state.data = None
-        st.session_state.db_connection = None
-        st.session_state.db_engine = None
-        st.session_state.data_schema = None
-        st.session_state.selected_table = "All Tables / Auto-detect"
-        clear_logs() # This clears the specific log strings
-        st.session_state.results_df = None
-        st.session_state.dashboard_items = [] 
-        
-        # Reset clarification flow states as well
-        st.session_state.clarification_question_pending = False
-        st.session_state.llm_clarification_question = ""
-        st.session_state.original_query_for_clarification = ""
-        st.session_state.conversation_log_for_query = []
-        
-        
-        st.rerun()
+    # Action buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📊 Set Up New Data", key="setup_new_data_button", type="primary"):
+            st.session_state.app_page = 'data_setup'
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 Reset All Data", key="disconnect_button_query_screen"):
+            # Reset legacy session state variables
+            st.session_state.connected = False
+            st.session_state.connection_type = None
+            st.session_state.data = None
+            st.session_state.db_connection = None
+            st.session_state.db_engine = None
+            st.session_state.data_schema = None
+            st.session_state.selected_table = "All Tables / Auto-detect"
+            clear_logs() # This clears the specific log strings
+            st.session_state.results_df = None
+            st.session_state.dashboard_items = [] 
+            
+            # Reset clarification flow states as well
+            st.session_state.clarification_question_pending = False
+            st.session_state.llm_clarification_question = ""
+            st.session_state.original_query_for_clarification = ""
+            st.session_state.conversation_log_for_query = []
+            
+            st.success("✅ All data sources reset. Please set up your data again.")
+            st.rerun()
 
 
 def handle_llm_response(llm_response):
@@ -2203,6 +2261,13 @@ def main():
     # Section 0: Ensure Session Stability (MUST BE FIRST)
     ensure_session_stability()
     
+    # Section 0.1: Initialize Semantic Layer Integration (EARLY INITIALIZATION)
+    if st.session_state.get('db_configured_successfully', False):
+        try:
+            semantic_integration.apply_semantic_layer_integration()
+        except Exception as e:
+            print(f"[SEMANTIC LAYER] Integration failed: {e}")
+    
     # Section 1: Handle Database Configuration Process
     # This section ensures that if the DB isn't marked as configured,
     # we attempt to configure it via secrets or guide the user to the manual config page.
@@ -2407,7 +2472,7 @@ def show_login_page():
     
     # Center the login form
     st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
-    st.title("Welcome to DBChat")
+    st.title("Welcome to ConvaBI")
     st.markdown("Please log in to continue")
     st.markdown("</div>", unsafe_allow_html=True)
     
@@ -2442,13 +2507,9 @@ def show_login_page():
             if not username or not password:
                 st.error("Please enter both username and password")
             else:
-                # Get user from database using the appropriate database function
-                if is_sqlite_connection():
-                    user_data = get_user_by_username_sqlite(username)
-                    log_func = log_app_action_sqlite
-                else:
-                    user_data = database.get_user_by_username_from_db(username)
-                    log_func = database.log_app_action
+                # Get user from PostgreSQL database
+                user_data = database.get_user_by_username_from_db(username)
+                log_func = database.log_app_action
                 
                 if user_data and check_password(user_data["hashed_password"], password):
                     st.session_state.logged_in_user = username
@@ -2464,10 +2525,7 @@ def logout():
     """Logs out the current user and redirects to login page."""
     if st.session_state.logged_in_user:
         try:
-            if is_sqlite_connection():
-                log_app_action_sqlite(st.session_state.logged_in_user, "LOGOUT", "User logged out", "SUCCESS")
-            else:
-                database.log_app_action(st.session_state.logged_in_user, "LOGOUT", "User logged out", "SUCCESS")
+            database.log_app_action(st.session_state.logged_in_user, "LOGOUT", "User logged out", "SUCCESS")
         except Exception as e:
             print(f"[LOGOUT] Failed to log logout action: {e}")
     
@@ -3033,7 +3091,7 @@ def generate_dashboard_html(dashboard_items):
     <!DOCTYPE html>
     <html>
     <head>
-        <title>DBChat Dashboard</title>
+        <title>ConvaBI Dashboard</title>
         <script src='https://cdn.plot.ly/plotly-latest.min.js'></script>
         <style>
             body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
@@ -3071,6 +3129,16 @@ def generate_dashboard_html(dashboard_items):
                 font-size: 12px; 
             }
             
+            /* Loading indicator */
+            .chart-loading {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 200px;
+                color: #666;
+                font-style: italic;
+            }
+            
             /* Print media query for PDF generation */
             @media print {
                 body { 
@@ -3097,7 +3165,7 @@ def generate_dashboard_html(dashboard_items):
     </head>
     <body>
         <div class="dashboard-container">
-            <h1>DBChat Dashboard</h1>
+            <h1>ConvaBI Dashboard</h1>
     """
     
     # Separate KPIs and other items
@@ -3144,7 +3212,7 @@ def generate_dashboard_html(dashboard_items):
         html_content += '</div>'
     
     # Add charts section with JavaScript
-    javascript_code = ""
+    chart_scripts = []
     if other_items:
         html_content += '<div class="chart-section">'
         
@@ -3172,6 +3240,7 @@ def generate_dashboard_html(dashboard_items):
             else:
                 # Create chart container
                 chart_div_id = f'chart_{i}'
+                html_content += f'<div id="{chart_div_id}" class="chart-container"><div class="chart-loading">Loading chart...</div></div>'
                 
                 # Generate Plotly figure and convert to JavaScript
                 try:
@@ -3203,9 +3272,9 @@ def generate_dashboard_html(dashboard_items):
                             fig = px.histogram(data_snapshot, x=x_col, title=title)
                     
                     if fig:
-                        # Apply consistent styling for PDF/print
+                        # Apply consistent styling for HTML/PDF
                         fig.update_layout(
-                            template="plotly_white",  # Better for PDF/print
+                            template="plotly_white",
                             font=dict(size=12),
                             title_font_size=14,
                             width=500,
@@ -3216,139 +3285,181 @@ def generate_dashboard_html(dashboard_items):
                             plot_bgcolor='white'
                         )
                         
-                        # Generate static image and embed it
+                        # Convert figure to JSON for JavaScript rendering
                         try:
-                            image_bytes = fig.to_image(format="png", engine="kaleido")
-                            b64_image = base64.b64encode(image_bytes).decode()
-                            html_content += f'<div id="{chart_div_id}" class="chart-container"><img src="data:image/png;base64,{b64_image}" style="width:100%; height:auto;"></div>'
-                        except Exception as img_err:
-                            print(f"[HTML GEN] Error generating static image for chart '{title}': {img_err}")
-                            html_content += f'<div id="{chart_div_id}" class="chart-container"><p>Error generating chart image.</p></div>'
-
-                        # Convert figure to JSON and JavaScript for interactive HTML
-                        try:
-                            import json
-                            # Get the figure data, layout, and config
-                            fig_dict = fig.to_dict()
-                            fig_json = json.dumps(fig_dict, default=str)  # Use default=str to handle any non-serializable objects
+                            # Create a clean version of the figure data
+                            fig_data = []
+                            for trace in fig.data:
+                                trace_dict = {
+                                    'x': trace.x.tolist() if hasattr(trace.x, 'tolist') else list(trace.x),
+                                    'y': trace.y.tolist() if hasattr(trace.y, 'tolist') else list(trace.y),
+                                    'type': trace.type,
+                                    'name': trace.name if trace.name else ''
+                                }
+                                
+                                # Add chart-specific properties
+                                if chart_type == "Bar Chart":
+                                    trace_dict['type'] = 'bar'
+                                elif chart_type == "Line Chart":
+                                    trace_dict['type'] = 'scatter'
+                                    trace_dict['mode'] = 'lines+markers'
+                                elif chart_type == "Scatter Plot":
+                                    trace_dict['type'] = 'scatter'
+                                    trace_dict['mode'] = 'markers'
+                                elif chart_type == "Pie Chart":
+                                    trace_dict['type'] = 'pie'
+                                    trace_dict['labels'] = trace.labels.tolist() if hasattr(trace.labels, 'tolist') else list(trace.labels)
+                                    trace_dict['values'] = trace.values.tolist() if hasattr(trace.values, 'tolist') else list(trace.values)
+                                elif chart_type == "Histogram":
+                                    trace_dict['type'] = 'histogram'
+                                
+                                # Add color if present
+                                if hasattr(trace, 'marker') and hasattr(trace.marker, 'color'):
+                                    trace_dict['marker'] = {'color': trace.marker.color}
+                                
+                                fig_data.append(trace_dict)
                             
-                            # Add static fallback for PDF compatibility (shows when JavaScript is disabled)
-                            fallback_html = ""
+                            # Create layout object
+                            layout = {
+                                'title': {'text': title, 'font': {'size': 14}},
+                                'font': {'size': 12},
+                                'margin': {'l': 50, 'r': 50, 't': 50, 'b': 50},
+                                'paper_bgcolor': 'white',
+                                'plot_bgcolor': 'white',
+                                'showlegend': True
+                            }
+                            
+                            # Add axis information if available
                             try:
-                                # Create a simple table representation as fallback
-                                if not data_snapshot.empty:
-                                    # For different chart types, create appropriate fallback
-                                    if chart_type in ["Bar Chart", "Line Chart", "Scatter Plot"]:
-                                        x_col, y_col = params.get('x'), params.get('y')
-                                        if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                                            # Show top 10 rows as table
-                                            fallback_data = data_snapshot[[x_col, y_col]].head(10)
-                                            fallback_html = f"""
-                                            <div class="chart-fallback" style="display: none;">
-                                                <p><em>Chart preview (static view for PDF):</em></p>
-                                                {fallback_data.to_html(classes='table table-striped', escape=False)}
-                                                {f'<p><small>Showing first 10 of {len(data_snapshot)} rows</small></p>' if len(data_snapshot) > 10 else ''}
-                                            </div>
-                                            """
-                                    elif chart_type == "Pie Chart":
-                                        names_col, values_col = params.get('names'), params.get('values')
-                                        if names_col in data_snapshot.columns and values_col in data_snapshot.columns:
-                                            fallback_data = data_snapshot[[names_col, values_col]].head(10)
-                                            fallback_html = f"""
-                                            <div class="chart-fallback" style="display: none;">
-                                                <p><em>Chart data (static view for PDF):</em></p>
-                                                {fallback_data.to_html(classes='table table-striped', escape=False)}
-                                            </div>
-                                            """
-                                    elif chart_type == "Histogram":
-                                        x_col = params.get('x')
-                                        if x_col in data_snapshot.columns:
-                                            # Show value distribution as table
-                                            try:
-                                                value_counts = data_snapshot[x_col].value_counts().head(10)
-                                                fallback_df = pd.DataFrame({x_col: value_counts.index, 'Count': value_counts.values})
-                                                fallback_html = f"""
-                                                <div class="chart-fallback" style="display: none;">
-                                                    <p><em>Value distribution (static view for PDF):</em></p>
-                                                    {fallback_df.to_html(classes='table table-striped', escape=False)}
-                                                </div>
-                                                """
-                                            except:
-                                                fallback_html = f"""
-                                                <div class="chart-fallback" style="display: none;">
-                                                    <p><em>Histogram data available but preview unavailable</em></p>
-                                                </div>
-                                                """
-                            except Exception as fallback_error:
-                                print(f"[HTML GENERATION] Fallback generation error: {fallback_error}")
-                                fallback_html = '<div class="chart-fallback" style="display: none;"><p><em>Chart data available</em></p></div>'
+                                xaxis = getattr(fig.layout, 'xaxis', None)
+                                if xaxis:
+                                    xaxis_title_obj = getattr(xaxis, 'title', None)
+                                    if xaxis_title_obj:
+                                        xaxis_title = getattr(xaxis_title_obj, 'text', None)
+                                        if xaxis_title:
+                                            layout['xaxis'] = {'title': xaxis_title}
+                            except (AttributeError, TypeError):
+                                pass
                             
-                            # Add the fallback HTML
-                            html_content += fallback_html
+                            try:
+                                yaxis = getattr(fig.layout, 'yaxis', None)
+                                if yaxis:
+                                    yaxis_title_obj = getattr(yaxis, 'title', None)
+                                    if yaxis_title_obj:
+                                        yaxis_title = getattr(yaxis_title_obj, 'text', None)
+                                        if yaxis_title:
+                                            layout['yaxis'] = {'title': yaxis_title}
+                            except (AttributeError, TypeError):
+                                pass
                             
-                            # Add JavaScript to render the chart
-                            javascript_code += f"""
-                            try {{
-                                var figData = {fig_json};
-                                var chartDiv = document.getElementById('{chart_div_id}');
-                                // Replace the static image with the interactive chart
-                                chartDiv.innerHTML = ''; 
-                                Plotly.newPlot('{chart_div_id}', figData.data, figData.layout, {{
-                                    displayModeBar: false,
-                                    staticPlot: false, // Make it interactive
-                                    responsive: true
-                                }}).then(function() {{
-                                    // Hide fallback when chart renders successfully
-                                    var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
-                                    if (fallback) fallback.style.display = 'none';
-                                }}).catch(function(err) {{
-                                    console.error('Error rendering chart {chart_div_id}:', err);
-                                    // Show fallback if chart fails to render
-                                    var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
-                                    if (fallback) {{
-                                        fallback.style.display = 'block';
-                                        fallback.style.marginTop = '10px';
+                            # Create the chart script
+                            chart_script = f"""
+                                function createChart{i}() {{
+                                    try {{
+                                        var data = {json.dumps(fig_data)};
+                                        var layout = {json.dumps(layout)};
+                                        var config = {{
+                                            displayModeBar: false,
+                                            responsive: true
+                                        }};
+                                        
+                                        Plotly.newPlot('{chart_div_id}', data, layout, config)
+                                            .then(function() {{
+                                                console.log('Chart {i} rendered successfully');
+                                            }})
+                                            .catch(function(err) {{
+                                                console.error('Error rendering chart {i}:', err);
+                                                document.getElementById('{chart_div_id}').innerHTML = 
+                                                    '<div class="chart-fallback"><p>Chart could not be rendered</p></div>';
+                                            }});
+                                    }} catch(e) {{
+                                        console.error('Error creating chart {i}:', e);
+                                        document.getElementById('{chart_div_id}').innerHTML = 
+                                            '<div class="chart-fallback"><p>Error: ' + e.message + '</p></div>';
                                     }}
-                                    document.getElementById('{chart_div_id}').innerHTML = '<p style="color: #666; font-style: italic;">Interactive chart not available - see data table below</p>';
-                                }});
-                            }} catch(e) {{
-                                console.error('Error rendering chart {chart_div_id}:', e);
-                                // Show fallback if JavaScript fails
-                                var fallback = document.querySelector('#{chart_div_id}').parentElement.querySelector('.chart-fallback');
-                                if (fallback) {{
-                                    fallback.style.display = 'block';
-                                    fallback.style.marginTop = '10px';
                                 }}
-                                document.getElementById('{chart_div_id}').innerHTML = '<p style="color: #666; font-style: italic;">Interactive chart not available - see data table below</p>';
-                            }}
                             """
+                            chart_scripts.append(chart_script)
+                        
                         except Exception as json_error:
                             print(f"[HTML GENERATION] JSON serialization error for chart {i}: {json_error}")
-                            # Create a simple data table as complete fallback
+                            # Create a fallback table
                             try:
                                 if not data_snapshot.empty:
-                                    simple_table = data_snapshot.head(5).to_html(classes='table table-striped', escape=False)
-                                    html_content += f'<div style="margin-top: 10px;"><p><em>Chart data (top 5 rows):</em></p>{simple_table}</div>'
+                                    simple_table = data_snapshot.head(10).to_html(classes='table table-striped', escape=False)
+                                    fallback_content = f'<div class="chart-fallback"><p><em>Chart data (first 10 rows):</em></p>{simple_table}</div>'
                                 else:
-                                    html_content += '<p>No data available for chart</p>'
-                            except:
-                                html_content += f'<p>Error serializing chart data: {str(json_error)}</p>'
+                                    fallback_content = '<div class="chart-fallback"><p>No data available for chart</p></div>'
+                                
+                                # Replace the loading div with fallback content
+                                html_content = html_content.replace(
+                                    f'<div id="{chart_div_id}" class="chart-container"><div class="chart-loading">Loading chart...</div></div>',
+                                    f'<div id="{chart_div_id}" class="chart-container">{fallback_content}</div>'
+                                )
+                            except Exception as fallback_error:
+                                print(f"[HTML GENERATION] Fallback error: {fallback_error}")
+                                html_content = html_content.replace(
+                                    f'<div id="{chart_div_id}" class="chart-container"><div class="chart-loading">Loading chart...</div></div>',
+                                    f'<div id="{chart_div_id}" class="chart-container"><div class="chart-fallback"><p>Error generating chart: {str(json_error)}</p></div></div>'
+                                )
                     else:
-                        html_content += '<p>Chart could not be generated</p>'
+                        # No figure generated - replace loading with message
+                        html_content = html_content.replace(
+                            f'<div id="{chart_div_id}" class="chart-container"><div class="chart-loading">Loading chart...</div></div>',
+                            f'<div id="{chart_div_id}" class="chart-container"><div class="chart-fallback"><p>Chart could not be generated</p></div></div>'
+                        )
                         
                 except Exception as e:
-                    html_content += f'<p>Error generating chart: {str(e)}</p>'
+                    print(f"[HTML GENERATION] Error generating chart {i}: {e}")
+                    # Replace loading with error message
+                    html_content = html_content.replace(
+                        f'<div id="{chart_div_id}" class="chart-container"><div class="chart-loading">Loading chart...</div></div>',
+                        f'<div id="{chart_div_id}" class="chart-container"><div class="chart-fallback"><p>Error generating chart: {str(e)}</p></div></div>'
+                    )
             
             html_content += '</div>'
         html_content += '</div>'
     
     # Add JavaScript code to render charts
-    if javascript_code:
-        html_content += f"""
+    if chart_scripts:
+        html_content += """
         <script>
-        document.addEventListener('DOMContentLoaded', function() {{
-            {javascript_code}
-        }});
+        document.addEventListener('DOMContentLoaded', function() {
+            // Wait for Plotly to load
+            if (typeof Plotly !== 'undefined') {
+                renderAllCharts();
+            } else {
+                // Wait a bit more for Plotly to load
+                setTimeout(function() {
+                    if (typeof Plotly !== 'undefined') {
+                        renderAllCharts();
+                    } else {
+                        console.error('Plotly failed to load');
+                        // Show fallback for all charts
+                        var chartContainers = document.querySelectorAll('.chart-container');
+                        chartContainers.forEach(function(container) {
+                            if (container.innerHTML.includes('Loading chart...')) {
+                                container.innerHTML = '<div class="chart-fallback"><p>Plotly library failed to load</p></div>';
+                            }
+                        });
+                    }
+                }, 2000);
+            }
+            
+            function renderAllCharts() {
+        """
+        
+        # Add all chart creation functions
+        for script in chart_scripts:
+            html_content += script
+        
+        # Add calls to create all charts
+        for i in range(len(chart_scripts)):
+            html_content += f"        createChart{i}();\n"
+        
+        html_content += """
+            }
+        });
         </script>
         """
     
@@ -3369,8 +3480,204 @@ def get_download_link_html(html_content, filename="dashboard.html"):
     return href
 
 def show_dashboard_screen():
-    """Enhanced dashboard management interface with full visualization support and email sharing"""
-    st.title("My Dashboard")
+    """Enhanced dashboard management interface with AI filters, cross-filtering, and modern UI"""
+    
+    # Enhanced CSS for compact buttons and better UI
+    st.markdown("""
+    <style>
+    .compact-btn {
+        padding: 0.25rem 0.5rem !important;
+        margin: 0.1rem !important;
+        font-size: 0.75rem !important;
+        min-height: 1.8rem !important;
+        border-radius: 4px !important;
+    }
+    
+    .dashboard-header {
+        border-bottom: 2px solid rgba(255,255,255,0.1);
+        padding-bottom: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .dashboard-item {
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        background: rgba(255,255,255,0.05);
+        backdrop-filter: blur(10px);
+    }
+    
+    .management-controls {
+        background: rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+        border: 1px solid rgba(255,255,255,0.15);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+    
+    /* Tab styling enhancements */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: rgba(255,255,255,0.05);
+        border-radius: 8px;
+        padding: 4px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background: transparent;
+        border-radius: 6px;
+        color: rgba(255,255,255,0.7);
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        background: rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.9);
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: rgba(98, 0, 234, 0.3) !important;
+        color: white !important;
+        font-weight: 600;
+    }
+    
+    /* Enhanced form styling */
+    .management-controls .stTextInput input {
+        background: rgba(255,255,255,0.1) !important;
+        border: 1px solid rgba(255,255,255,0.2) !important;
+        border-radius: 8px !important;
+        color: white !important;
+        font-size: 14px !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    .management-controls .stTextInput input:focus {
+        border-color: rgba(98, 0, 234, 0.5) !important;
+        box-shadow: 0 0 0 2px rgba(98, 0, 234, 0.2) !important;
+        background: rgba(255,255,255,0.15) !important;
+    }
+    
+    .management-controls .stCheckbox {
+        background: rgba(255,255,255,0.05);
+        padding: 0.5rem;
+        border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    /* Success/Error message styling */
+    .management-controls .stAlert {
+        border-radius: 8px;
+        margin: 0.5rem 0;
+        font-weight: 500;
+    }
+    
+    /* Info boxes */
+    .dashboard-info {
+        background: rgba(33, 150, 243, 0.1);
+        border-left: 4px solid #2196F3;
+        padding: 1rem;
+        border-radius: 6px;
+        margin: 0.5rem 0;
+    }
+    
+    .dashboard-warning {
+        background: rgba(255, 152, 0, 0.1);
+        border-left: 4px solid #FF9800;
+        padding: 1rem;
+        border-radius: 6px;
+        margin: 0.5rem 0;
+    }
+    
+    .dashboard-error {
+        background: rgba(244, 67, 54, 0.1);
+        border-left: 4px solid #F44336;
+        padding: 1rem;
+        border-radius: 6px;
+        margin: 0.5rem 0;
+    }
+    
+    .filter-indicator {
+        background: rgba(98, 0, 234, 0.3);
+        color: white;
+        padding: 0.3rem 0.8rem;
+        border-radius: 15px;
+        margin: 0.2rem;
+        font-size: 0.8rem;
+        display: inline-block;
+    }
+    
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin: 1rem 0;
+    }
+    
+    .chart-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 1.5rem;
+        margin: 1rem 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Initialize enhanced dashboard features
+    try:
+        from enhanced_dashboard import EnhancedDashboard, DashboardFilter
+        if 'enhanced_dashboard' not in st.session_state:
+            st.session_state.enhanced_dashboard = EnhancedDashboard()
+        enhanced_dash = st.session_state.enhanced_dashboard
+        
+        # Ensure all required attributes exist
+        if not hasattr(enhanced_dash, 'active_selections'):
+            enhanced_dash.active_selections = {}
+        if not hasattr(enhanced_dash, 'chart_interactions'):
+            enhanced_dash.chart_interactions = {}
+        if not hasattr(enhanced_dash, 'drill_down_stack'):
+            enhanced_dash.drill_down_stack = []
+        
+        # Verify the apply_cross_filter_selection method exists
+        if not hasattr(enhanced_dash, 'apply_cross_filter_selection'):
+            st.warning("Enhanced dashboard missing cross-filter method. Some features may not work.")
+            enhanced_dash = None
+            
+    except ImportError as e:
+        enhanced_dash = None
+        st.warning(f"Enhanced dashboard features not available: {e}. Using basic dashboard.")
+    except Exception as e:
+        enhanced_dash = None
+        st.error(f"Error initializing enhanced dashboard: {e}. Using basic dashboard.")
+    
+    # Dashboard header
+    st.markdown('<div class="dashboard-header">', unsafe_allow_html=True)
+    
+    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+    with col1:
+        st.title("📊 My Dashboard")
+    with col2:
+        # Enhanced/Basic mode toggle
+        if enhanced_dash:
+            enhanced_mode = st.checkbox("🚀 Enhanced Mode", value=True, help="Enable AI filters and cross-filtering")
+        else:
+            enhanced_mode = False
+    with col3:
+        # Export options
+        if st.button("📤 Export", help="Export dashboard in various formats"):
+            st.session_state.show_export_modal = True
+    with col4:
+        # Management mode toggle
+        manage_mode = st.session_state.get('dashboard_manage_mode', False)
+        manage_button_label = "✅ Done Managing" if manage_mode else "⚙️ Manage"
+        if st.button(manage_button_label, key="manage_dashboard_layout_btn"):
+            st.session_state.dashboard_manage_mode = not manage_mode
+            st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Dashboard selection and management
     dashboard_names = get_user_dashboard_names(st.session_state.logged_in_user)
@@ -3386,7 +3693,6 @@ def show_dashboard_screen():
                 st.session_state.current_dashboard_name = new_dashboard_name
                 st.session_state.dashboard_items = []
                 save_user_dashboard(st.session_state.logged_in_user, new_dashboard_name, [])
-
                 st.success(f"Dashboard '{new_dashboard_name}' created!")
                 st.rerun()
         return
@@ -3399,10 +3705,9 @@ def show_dashboard_screen():
     if current_dashboard not in dashboard_options:
         current_dashboard = dashboard_options[0]
         st.session_state.current_dashboard_name = current_dashboard
-        # Load dashboard items when auto-selecting
         st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, current_dashboard)
     
-    # Ensure dashboard items are loaded if they're missing (for session recovery)
+    # Ensure dashboard items are loaded if they're missing
     elif not st.session_state.get('dashboard_items'):
         print(f"[DASHBOARD] Loading missing dashboard items for '{current_dashboard}'")
         st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, current_dashboard)
@@ -3417,6 +3722,10 @@ def show_dashboard_screen():
     if selected_dashboard != st.session_state.current_dashboard_name:
         st.session_state.current_dashboard_name = selected_dashboard
         st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, selected_dashboard)
+        if enhanced_dash:
+            # Reset AI filters when switching dashboards
+            if 'dashboard_ai_filters' in st.session_state:
+                del st.session_state.dashboard_ai_filters
         print(f"[DASHBOARD] Switched to dashboard '{selected_dashboard}' with {len(st.session_state.dashboard_items)} items")
         st.rerun()
     
@@ -3439,145 +3748,276 @@ def show_dashboard_screen():
                     st.write(f"  - {name} (owner: {owner})")
         return
 
-    # Dashboard header with controls
-    st.markdown(f"### Dashboard: {selected_dashboard}")
+    # Enhanced Dashboard Features (if available and enabled)
+    ai_filters = []
+    filter_changes = {}
+    cross_filter_active = False
     
-    manage_button_label = "✅ Done Managing" if st.session_state.get('dashboard_manage_mode') else "⚙️ Manage Layout"
-    if st.button(manage_button_label, key="manage_dashboard_layout_btn"):
-        st.session_state.dashboard_manage_mode = not st.session_state.get('dashboard_manage_mode', False)
-        st.rerun()
-
-    # Dashboard Management Controls
-    st.markdown("### ⚙️ Dashboard Management")
-    col1, col2, col3 = st.columns(3)
-    
-    # Rename Dashboard
-    with col1:
-        st.markdown("##### Rename Dashboard")
-        new_name = st.text_input("New Dashboard Name:", value=selected_dashboard, key="rename_dashboard_input")
-        if st.button("📝 Rename", key="rename_dashboard_btn"):
-            if new_name and new_name.strip() and new_name != selected_dashboard:
-                # Check if name already exists
-                existing_names = [name for name, _, owner in dashboard_names if owner == st.session_state.logged_in_user]
-                if new_name in existing_names:
-                    st.error(f"Dashboard '{new_name}' already exists. Please choose a different name.")
+    if enhanced_dash and enhanced_mode:
+        try:
+            # Generate AI filters if not already done
+            if 'dashboard_ai_filters' not in st.session_state:
+                if hasattr(enhanced_dash, 'generate_ai_filters'):
+                    st.session_state.dashboard_ai_filters = enhanced_dash.generate_ai_filters(st.session_state.dashboard_items)
                 else:
-                    # Rename the dashboard
-                    try:
-                        if database.rename_dashboard_in_db(st.session_state.logged_in_user, selected_dashboard, new_name):
-                            st.session_state.current_dashboard_name = new_name
-                            st.success(f"Dashboard renamed from '{selected_dashboard}' to '{new_name}'!")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "RENAME_DASHBOARD_SUCCESS", f"Renamed '{selected_dashboard}' to '{new_name}'", "SUCCESS")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "RENAME_DASHBOARD_SUCCESS", f"Renamed '{selected_dashboard}' to '{new_name}'", "SUCCESS")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD] Failed to log rename action: {log_error}")
-                            st.rerun()
-                        else:
-                            st.error("Failed to rename dashboard. Please try again.")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "RENAME_DASHBOARD_FAILURE", f"Failed to rename '{selected_dashboard}' to '{new_name}'", "FAILURE")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "RENAME_DASHBOARD_FAILURE", f"Failed to rename '{selected_dashboard}' to '{new_name}'", "FAILURE")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD] Failed to log rename failure: {log_error}")
-                    except Exception as e:
-                        st.error(f"Error renaming dashboard: {e}")
-            elif new_name == selected_dashboard:
-                st.info("New name is the same as current name.")
-            else:
-                st.warning("Please enter a valid dashboard name.")
-    
-    # Create New Dashboard  
-    with col2:
-        st.markdown("##### Create New Dashboard")
-        create_name = st.text_input("Dashboard Name:", placeholder="Enter new dashboard name", key="create_dashboard_input")
-        if st.button("➕ Create", key="create_dashboard_btn"):
-            if create_name and create_name.strip():
-                # Check if name already exists
-                existing_names = [name for name, _, owner in dashboard_names if owner == st.session_state.logged_in_user]
-                if create_name in existing_names:
-                    st.error(f"Dashboard '{create_name}' already exists. Please choose a different name.")
-                else:
-                    # Create new dashboard
-                    try:
-                        if database.save_dashboard_to_db(st.session_state.logged_in_user, create_name, [], []):
-                            st.session_state.current_dashboard_name = create_name
-                            st.session_state.dashboard_items = []
-                            st.success(f"Dashboard '{create_name}' created successfully!")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "CREATE_DASHBOARD_SUCCESS", f"Created dashboard: {create_name}", "SUCCESS")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "CREATE_DASHBOARD_SUCCESS", f"Created dashboard: {create_name}", "SUCCESS")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD] Failed to log create action: {log_error}")
-                            st.rerun()
-                        else:
-                            st.error("Failed to create dashboard. Please try again.")
-                    except Exception as e:
-                        st.error(f"Error creating dashboard: {e}")
-            else:
-                st.warning("Please enter a valid dashboard name.")
-    
-    # Delete Dashboard
-    with col3:
-        st.markdown("##### Delete Dashboard")
-        st.warning("⚠️ This action cannot be undone!")
-        if st.button("🗑️ Delete Dashboard", key="delete_dashboard_btn", type="secondary"):
-            st.session_state.show_delete_confirmation = True
-            st.rerun()
+                    st.session_state.dashboard_ai_filters = []
+        except Exception as e:
+            st.error(f"Error generating AI filters: {e}")
+            enhanced_dash = None
+            enhanced_mode = False
         
-        # Delete confirmation dialog
-        if st.session_state.get('show_delete_confirmation', False):
-            st.error(f"⚠️ **Confirm Deletion**: Are you sure you want to delete '{selected_dashboard}'?")
-            col_confirm, col_cancel = st.columns(2)
-            with col_confirm:
-                if st.button("✅ Yes, Delete", key="confirm_delete_btn", type="primary"):
-                    try:
-                        if database.delete_dashboard_from_db(st.session_state.logged_in_user, selected_dashboard):
-                            # Get remaining dashboards
-                            remaining_dashboards = get_user_dashboard_names(st.session_state.logged_in_user)
-                            if remaining_dashboards:
-                                # Switch to first remaining dashboard
-                                st.session_state.current_dashboard_name = remaining_dashboards[0][0]
-                                st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, remaining_dashboards[0][0])
-                            else:
-                                # No dashboards left
-                                st.session_state.current_dashboard_name = None
-                                st.session_state.dashboard_items = []
-                            
-                            st.session_state.show_delete_confirmation = False
-                            st.success(f"Dashboard '{selected_dashboard}' deleted successfully!")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "DELETE_DASHBOARD_SUCCESS", f"Deleted dashboard: {selected_dashboard}", "SUCCESS")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "DELETE_DASHBOARD_SUCCESS", f"Deleted dashboard: {selected_dashboard}", "SUCCESS")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD] Failed to log delete action: {log_error}")
-                            st.rerun()
-                        else:
-                            st.error("Failed to delete dashboard. Please try again.")
-                            try:
-                                if is_sqlite_connection():
-                                    log_app_action_sqlite(st.session_state.logged_in_user, "DELETE_DASHBOARD_FAILURE", f"Failed to delete dashboard: {selected_dashboard}", "FAILURE")
-                                else:
-                                    database.log_app_action(st.session_state.logged_in_user, "DELETE_DASHBOARD_FAILURE", f"Failed to delete dashboard: {selected_dashboard}", "FAILURE")
-                            except Exception as log_error:
-                                print(f"[DASHBOARD] Failed to log delete failure: {log_error}")
-                    except Exception as e:
-                        st.error(f"Error deleting dashboard: {e}")
+        if enhanced_dash:  # Only proceed if enhanced_dash is still valid
+            ai_filters = st.session_state.dashboard_ai_filters
             
-            with col_cancel:
-                if st.button("❌ Cancel", key="cancel_delete_btn"):
-                    st.session_state.show_delete_confirmation = False
+            # Render filters in sidebar (only if filters exist)
+            if ai_filters and hasattr(enhanced_dash, 'render_filter_sidebar'):
+                try:
+                    filter_changes = enhanced_dash.render_filter_sidebar(ai_filters)
+                except Exception as filter_error:
+                    print(f"[DASHBOARD] Filter rendering failed: {filter_error}")
+                    filter_changes = {}
+                
+                # Update filter active values
+                for filter_id, new_values in filter_changes.items():
+                    for filter_obj in ai_filters:
+                        if filter_obj.filter_id == filter_id:
+                            filter_obj.active_values = new_values
+                            break
+            
+                # Cross-filtering controls in sidebar
+                if enhanced_dash.active_selections:
+                    st.sidebar.markdown("---")
+                    st.sidebar.markdown("### 🔗 Cross-Filter Selections")
+                    
+                    for chart_id, selection in enhanced_dash.active_selections.items():
+                        filters = selection.get('filters', {})
+                        if filters:
+                            with st.sidebar.expander(f"📊 Chart Filter", expanded=True):
+                                for col, val in filters.items():
+                                    st.sidebar.write(f"**{col}:** {val}")
+                                
+                                if st.sidebar.button(f"Clear This Filter", key=f"clear_cross_{chart_id}"):
+                                    del enhanced_dash.active_selections[chart_id]
+                                    st.rerun()
+                    
+                    # Clear all cross-filters button
+                    if st.sidebar.button("🔄 Clear All Cross-Filters"):
+                        enhanced_dash.clear_cross_filters()
+                        st.rerun()
+                    
+                    cross_filter_active = True
+        
+        # Show filter status
+        status_parts = []
+        if ai_filters:
+            active_ai_filters = [f for f in ai_filters if f.active_values != f.values]
+            if active_ai_filters:
+                status_parts.append(f"AI Filters: {', '.join([f.name for f in active_ai_filters])}")
+        
+        if cross_filter_active and enhanced_dash:
+            cross_filter_count = len(enhanced_dash.active_selections)
+            status_parts.append(f"Cross-Filters: {cross_filter_count} active")
+        
+        if status_parts:
+            filter_info = " | ".join(status_parts)
+            st.markdown(f'<div class="filter-indicator">🎛️ {filter_info}</div>', unsafe_allow_html=True)
+        
+        # Enhanced dashboard controls
+        control_cols = st.columns([2, 1, 1])
+        with control_cols[0]:
+            if st.button("🤖 Regenerate AI Filters", help="Regenerate AI-suggested filters"):
+                if enhanced_dash:
+                    st.session_state.dashboard_ai_filters = enhanced_dash.generate_ai_filters(st.session_state.dashboard_items)
                     st.rerun()
-    
-    st.markdown("---")
+                else:
+                    st.warning("Enhanced dashboard not available")
+        with control_cols[1]:
+            if st.button("🔗 Enable Cross-Filter", help="Click charts to filter others"):
+                st.info("💡 Use the dropdown filters under each chart to apply cross-filtering!")
+        with control_cols[2]:
+            if cross_filter_active and st.button("🔄 Reset All", help="Clear all filters"):
+                if enhanced_dash:
+                    enhanced_dash.clear_cross_filters()
+                    # Reset AI filters too
+                    for filter_obj in ai_filters:
+                        filter_obj.active_values = filter_obj.values
+                    st.rerun()
+                else:
+                    st.warning("Enhanced dashboard not available")
+
+    # Dashboard Management Controls (only show in manage mode)
+    if manage_mode:
+        st.markdown('<div class="management-controls">', unsafe_allow_html=True)
+        
+        # Create tabbed interface for better organization
+        management_tab1, management_tab2, management_tab3 = st.tabs(["🔧 Edit Dashboard", "➕ Create New", "🗑️ Delete Dashboard"])
+        
+        # Tab 1: Edit Current Dashboard
+        with management_tab1:
+            st.markdown("#### 📝 Rename Current Dashboard")
+            st.info(f"Currently editing: **{selected_dashboard}**")
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                new_name = st.text_input(
+                    "New Dashboard Name:", 
+                    value=selected_dashboard, 
+                    key="rename_dashboard_input",
+                    placeholder="Enter new dashboard name"
+                )
+            with col2:
+                rename_btn = st.button("📝 Rename", key="rename_dashboard_btn", use_container_width=True)
+            
+            if rename_btn:
+                if new_name and new_name.strip() and new_name != selected_dashboard:
+                    # Check if name already exists
+                    existing_names = [name for name, _, owner in dashboard_names if owner == st.session_state.logged_in_user]
+                    if new_name in existing_names:
+                        st.error(f"❌ Dashboard '{new_name}' already exists. Please choose a different name.")
+                    else:
+                        # Rename the dashboard
+                        try:
+                            if database.rename_dashboard_in_db(st.session_state.logged_in_user, selected_dashboard, new_name):
+                                st.session_state.current_dashboard_name = new_name
+                                st.success(f"✅ Dashboard renamed from '{selected_dashboard}' to '{new_name}'!")
+                                try:
+                                    if is_sqlite_connection():
+                                        log_app_action_sqlite(st.session_state.logged_in_user, "RENAME_DASHBOARD_SUCCESS", f"Renamed '{selected_dashboard}' to '{new_name}'", "SUCCESS")
+                                    else:
+                                        database.log_app_action(st.session_state.logged_in_user, "RENAME_DASHBOARD_SUCCESS", f"Renamed '{selected_dashboard}' to '{new_name}'", "SUCCESS")
+                                except Exception as log_error:
+                                    print(f"[DASHBOARD] Failed to log rename action: {log_error}")
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to rename dashboard. Please try again.")
+                        except Exception as e:
+                            st.error(f"❌ Error renaming dashboard: {e}")
+                elif new_name == selected_dashboard:
+                    st.warning("⚠️ New name is the same as current name.")
+                else:
+                    st.warning("⚠️ Please enter a valid dashboard name.")
+        
+        # Tab 2: Create New Dashboard
+        with management_tab2:
+            st.markdown("#### ➕ Create New Dashboard")
+            st.info("Create a new dashboard to organize your charts and visualizations.")
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                create_name = st.text_input(
+                    "Dashboard Name:", 
+                    placeholder="Enter new dashboard name", 
+                    key="create_dashboard_input"
+                )
+            with col2:
+                create_btn = st.button("➕ Create", key="create_dashboard_btn", use_container_width=True)
+            
+            if create_btn:
+                if create_name and create_name.strip():
+                    # Check if name already exists
+                    existing_names = [name for name, _, owner in dashboard_names if owner == st.session_state.logged_in_user]
+                    if create_name in existing_names:
+                        st.error(f"❌ Dashboard '{create_name}' already exists. Please choose a different name.")
+                    else:
+                        # Create new dashboard
+                        try:
+                            if database.save_dashboard_to_db(st.session_state.logged_in_user, create_name, [], []):
+                                st.session_state.current_dashboard_name = create_name
+                                st.session_state.dashboard_items = []
+                                st.success(f"✅ Dashboard '{create_name}' created successfully!")
+                                st.balloons()
+                                try:
+                                    if is_sqlite_connection():
+                                        log_app_action_sqlite(st.session_state.logged_in_user, "CREATE_DASHBOARD_SUCCESS", f"Created dashboard: {create_name}", "SUCCESS")
+                                    else:
+                                        database.log_app_action(st.session_state.logged_in_user, "CREATE_DASHBOARD_SUCCESS", f"Created dashboard: {create_name}", "SUCCESS")
+                                except Exception as log_error:
+                                    print(f"[DASHBOARD] Failed to log create action: {log_error}")
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to create dashboard. Please try again.")
+                        except Exception as e:
+                            st.error(f"❌ Error creating dashboard: {e}")
+                else:
+                    st.warning("⚠️ Please enter a valid dashboard name.")
+        
+        # Tab 3: Delete Dashboard
+        with management_tab3:
+            st.markdown("#### 🗑️ Delete Dashboard")
+            st.error(f"⚠️ **Warning**: You are about to delete dashboard '{selected_dashboard}'")
+            st.markdown("**This action cannot be undone!** All charts and configurations will be permanently lost.")
+            
+            # Show dashboard info
+            chart_count = len(st.session_state.dashboard_items)
+            st.info(f"📊 This dashboard contains **{chart_count}** chart(s)")
+            
+            # Confirmation checkbox
+            confirm_delete = st.checkbox(
+                f"I understand that deleting '{selected_dashboard}' cannot be undone",
+                key="confirm_delete_checkbox"
+            )
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button(
+                    "🗑️ Delete Dashboard", 
+                    key="delete_dashboard_btn", 
+                    type="secondary",
+                    disabled=not confirm_delete,
+                    use_container_width=True
+                ):
+                    st.session_state.show_delete_confirmation = True
+                    st.rerun()
+            
+            with col2:
+                if st.button("❌ Cancel", key="cancel_delete_action", use_container_width=True):
+                    st.session_state.show_delete_confirmation = False
+                    st.info("Delete action cancelled.")
+            
+            # Final confirmation dialog
+            if st.session_state.get('show_delete_confirmation', False):
+                st.markdown("---")
+                st.error(f"🚨 **FINAL CONFIRMATION**: Delete '{selected_dashboard}'?")
+                
+                final_col1, final_col2 = st.columns([1, 1])
+                with final_col1:
+                    if st.button("✅ YES, DELETE PERMANENTLY", key="confirm_delete_btn", type="primary"):
+                        try:
+                            if database.delete_dashboard_from_db(st.session_state.logged_in_user, selected_dashboard):
+                                # Get remaining dashboards
+                                remaining_dashboards = get_user_dashboard_names(st.session_state.logged_in_user)
+                                if remaining_dashboards:
+                                    # Switch to first remaining dashboard
+                                    st.session_state.current_dashboard_name = remaining_dashboards[0][0]
+                                    st.session_state.dashboard_items = load_user_dashboard(st.session_state.logged_in_user, remaining_dashboards[0][0])
+                                else:
+                                    # No dashboards left
+                                    st.session_state.current_dashboard_name = None
+                                    st.session_state.dashboard_items = []
+                                
+                                st.session_state.show_delete_confirmation = False
+                                st.success(f"✅ Dashboard '{selected_dashboard}' deleted successfully!")
+                                try:
+                                    if is_sqlite_connection():
+                                        log_app_action_sqlite(st.session_state.logged_in_user, "DELETE_DASHBOARD_SUCCESS", f"Deleted dashboard: {selected_dashboard}", "SUCCESS")
+                                    else:
+                                        database.log_app_action(st.session_state.logged_in_user, "DELETE_DASHBOARD_SUCCESS", f"Deleted dashboard: {selected_dashboard}", "SUCCESS")
+                                except Exception as log_error:
+                                    print(f"[DASHBOARD] Failed to log delete action: {log_error}")
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to delete dashboard. Please try again.")
+                        except Exception as e:
+                            st.error(f"❌ Error deleting dashboard: {e}")
+                
+                with final_col2:
+                    if st.button("❌ NO, KEEP DASHBOARD", key="final_cancel_delete_btn"):
+                        st.session_state.show_delete_confirmation = False
+                        st.success("Dashboard deletion cancelled.")
+                        st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)  # Close management controls div
+        st.markdown("---")
 
     # Separate KPIs from other chart types
     kpi_items = [item for item in st.session_state.dashboard_items if item.get('chart_type') == "KPI"]
@@ -3586,106 +4026,149 @@ def show_dashboard_screen():
     # Render KPIs in a dedicated section
     if kpi_items:
         st.subheader("📊 Key Performance Indicators")
-        num_kpi_cols = min(len(kpi_items), 4)
+        
+        # Apply filters to KPI data if enhanced mode is enabled
+        filtered_kpi_items = []
+        for item in kpi_items:
+            filtered_item = copy.deepcopy(item)
+            if enhanced_dash and enhanced_mode and ai_filters and hasattr(enhanced_dash, 'apply_filters_to_data'):
+                try:
+                    filtered_item['data_snapshot'] = enhanced_dash.apply_filters_to_data(
+                        item['data_snapshot'], ai_filters
+                    )
+                except Exception as filter_apply_error:
+                    print(f"[DASHBOARD] KPI data filtering failed: {filter_apply_error}")
+                    # Keep original data if filtering fails
+                    pass
+            filtered_kpi_items.append(filtered_item)
+        
+        st.markdown('<div class="kpi-grid">', unsafe_allow_html=True)
+        
+        # Create responsive KPI layout
+        num_kpi_cols = min(len(filtered_kpi_items), 4)
         if num_kpi_cols > 0:
             kpi_cols = st.columns(num_kpi_cols)
-            for i, item in enumerate(kpi_items):
+            for i, item in enumerate(filtered_kpi_items):
                 # Get the absolute index for callbacks
                 try:
-                    original_kpi_item_index = next(idx for idx, dash_item in enumerate(st.session_state.dashboard_items) if dash_item == item)
-                except StopIteration:
-                    st.error("Error finding KPI item. Please refresh.")
-                    continue
+                    original_kpi_item_index = next(idx for idx, dash_item in enumerate(st.session_state.dashboard_items) 
+                                                 if dash_item['id'] == item['id'])
+                except (StopIteration, KeyError):
+                    original_kpi_item_index = i  # Fallback
 
                 with kpi_cols[i % num_kpi_cols]:
-                    params = item['params']
-                    data_snapshot = item['data_snapshot']
-                    
-                    current_kpi_label = params.get('label', "KPI Value")
-                    if not current_kpi_label.strip():
-                        current_kpi_label = "KPI Value"
+                    with st.container():
+                        st.markdown('<div class="dashboard-item">', unsafe_allow_html=True)
+                        
+                        params = item['params']
+                        data_snapshot = item['data_snapshot']
+                        
+                        current_kpi_label = params.get('label', "KPI Value")
+                        if not current_kpi_label.strip():
+                            current_kpi_label = "KPI Value"
 
-                    # Editable KPI Label
-                    if st.session_state.get('dashboard_manage_mode'):
-                        st.text_input(
-                            "KPI Label", 
-                            value=current_kpi_label,
-                            key=f"kpi_label_edit_{original_kpi_item_index}", 
-                            on_change=handle_kpi_label_change,
-                            args=(original_kpi_item_index,),
+                        # Editable KPI Label (only in manage mode)
+                        if manage_mode:
+                            st.text_input(
+                                "KPI Label", 
+                                value=current_kpi_label,
+                                key=f"kpi_label_edit_{original_kpi_item_index}", 
+                                on_change=handle_kpi_label_change,
+                                args=(original_kpi_item_index,),
+                                label_visibility="collapsed"
+                            )
+                        else:
+                            st.markdown(f"**{current_kpi_label}**")
+
+                        value_col = params.get('value_col')
+                        delta_col = params.get('delta_col')
+                        kpi_value = None
+                        kpi_delta = None
+
+                        if not data_snapshot.empty and value_col in data_snapshot.columns:
+                            try:
+                                kpi_value = pd.to_numeric(data_snapshot[value_col].iloc[0])
+                            except (ValueError, TypeError):
+                                kpi_value = str(data_snapshot[value_col].iloc[0])
+                            
+                            if delta_col and delta_col in data_snapshot.columns:
+                                try:
+                                    kpi_delta = pd.to_numeric(data_snapshot[delta_col].iloc[0])
+                                except (ValueError, TypeError):
+                                    kpi_delta = str(data_snapshot[delta_col].iloc[0])
+                        
+                        # Display the KPI metric
+                        st.metric(
+                            label=" ", 
+                            value=kpi_value if kpi_value is not None else "N/A", 
+                            delta=kpi_delta if kpi_delta is not None else None, 
                             label_visibility="collapsed"
                         )
-                    else:
-                        st.markdown(f"**{current_kpi_label}**")
 
-                    value_col = params.get('value_col')
-                    delta_col = params.get('delta_col')
-                    kpi_value = None
-                    kpi_delta = None
-
-                    if not data_snapshot.empty and value_col in data_snapshot.columns:
-                        try:
-                            kpi_value = pd.to_numeric(data_snapshot[value_col].iloc[0])
-                        except (ValueError, TypeError):
-                            kpi_value = str(data_snapshot[value_col].iloc[0])
+                        # --- Compact Management Controls (only in manage mode) ---
+                        if manage_mode:
+                            st.markdown("---")
+                            control_cols = st.columns([1, 1, 1, 1])
+                            with control_cols[0]:
+                                if st.button("⬆️", key=f"move_up_kpi_{original_kpi_item_index}", 
+                                           disabled=(original_kpi_item_index == 0), help="Move Up"):
+                                    handle_item_move(original_kpi_item_index, "up")
+                            with control_cols[1]:
+                                if st.button("⬇️", key=f"move_down_kpi_{original_kpi_item_index}", 
+                                           disabled=(original_kpi_item_index == len(st.session_state.dashboard_items) - 1), 
+                                           help="Move Down"):
+                                    handle_item_move(original_kpi_item_index, "down")
+                            with control_cols[2]:
+                                if st.button("📋", key=f"copy_kpi_{original_kpi_item_index}", help="Duplicate"):
+                                    # Duplicate KPI logic
+                                    new_item = copy.deepcopy(item)
+                                    new_item['id'] = str(uuid.uuid4())
+                                    new_item['params']['label'] = f"{current_kpi_label} (Copy)"
+                                    st.session_state.dashboard_items.append(new_item)
+                                    save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
+                                    st.rerun()
+                            with control_cols[3]:
+                                if st.button("🗑️", key=f"remove_kpi_{original_kpi_item_index}", help="Delete"):
+                                    st.session_state.dashboard_items.pop(original_kpi_item_index)
+                                    save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
+                                    st.rerun()
                         
-                        if delta_col and delta_col in data_snapshot.columns:
-                            try:
-                                kpi_delta = pd.to_numeric(data_snapshot[delta_col].iloc[0])
-                            except (ValueError, TypeError):
-                                kpi_delta = str(data_snapshot[delta_col].iloc[0])
-                    
-                    # Display the KPI metric
-                    st.metric(
-                        label=" ", 
-                        value=kpi_value if kpi_value is not None else "N/A", 
-                        delta=kpi_delta if kpi_delta is not None else None, 
-                        label_visibility="collapsed"
-                    )
-
-                    # --- Item Controls ---
-                    control_cols = st.columns([1, 1, 1])
-                    with control_cols[0]:
-                        st.button(
-                            "🔼",
-                            key=f"move_up_kpi_{original_kpi_item_index}",
-                            on_click=handle_item_move,
-                            args=(original_kpi_item_index, "up"),
-                            disabled=(original_kpi_item_index == 0),
-                            use_container_width=True,
-                            help="Move Up"
-                        )
-                    with control_cols[1]:
-                        st.button(
-                            "🔽",
-                            key=f"move_down_kpi_{original_kpi_item_index}",
-                            on_click=handle_item_move,
-                            args=(original_kpi_item_index, "down"),
-                            disabled=(original_kpi_item_index == len(st.session_state.dashboard_items) - 1),
-                            use_container_width=True,
-                            help="Move Down"
-                        )
-                    with control_cols[2]:
-                        if st.button("🗑️", key=f"remove_kpi_{original_kpi_item_index}", use_container_width=True, help="Remove"):
-                            st.session_state.dashboard_items.pop(original_kpi_item_index)
-                            save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
-                            st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
         st.markdown("---")
 
     # Render Charts and Tables
     if other_items:
         st.subheader("📈 Charts & Tables")
         
-        # Display items in a 2-column grid
+        # Apply filters to chart data if enhanced mode is enabled
+        filtered_chart_items = []
+        for item in other_items:
+            filtered_item = copy.deepcopy(item)
+            if enhanced_dash and enhanced_mode and ai_filters and hasattr(enhanced_dash, 'apply_filters_to_data'):
+                try:
+                    filtered_item['data_snapshot'] = enhanced_dash.apply_filters_to_data(
+                        item['data_snapshot'], ai_filters
+                    )
+                except Exception as filter_apply_error:
+                    print(f"[DASHBOARD] Chart data filtering failed: {filter_apply_error}")
+                    # Keep original data if filtering fails
+                    pass
+            filtered_chart_items.append(filtered_item)
+        
+        st.markdown('<div class="chart-grid">', unsafe_allow_html=True)
+        
+        # Display items in a responsive grid
         num_cols = 2
         
-        for i, item in enumerate(other_items):
+        for i, item in enumerate(filtered_chart_items):
             # Get the absolute index in the full dashboard_items list
             try:
-                current_item_absolute_index = st.session_state.dashboard_items.index(item)
-            except ValueError:
-                st.warning("Skipping an item as it could not be found in the main dashboard list.")
-                continue
+                current_item_absolute_index = next(idx for idx, dash_item in enumerate(st.session_state.dashboard_items) 
+                                                 if dash_item['id'] == item['id'])
+            except (StopIteration, KeyError):
+                current_item_absolute_index = len(kpi_items) + i  # Fallback
             
             # Create columns for layout (every 2 items)
             if i % num_cols == 0:
@@ -3693,8 +4176,10 @@ def show_dashboard_screen():
             
             with cols[i % num_cols]:
                 with st.container():
-                    # Editable Chart Title
-                    if st.session_state.get('dashboard_manage_mode'):
+                    st.markdown('<div class="dashboard-item">', unsafe_allow_html=True)
+                    
+                    # Editable Chart Title (only in manage mode)
+                    if manage_mode:
                         st.text_input(
                             f"Chart Title", 
                             value=item.get('title', item['chart_type']),
@@ -3711,49 +4196,63 @@ def show_dashboard_screen():
                     params = item['params']
                     chart_type = item['chart_type']
 
-                    # Generate and display chart
+                    # Generate and display chart with enhanced features
                     fig = None
                     try:
-                        if chart_type == "Bar Chart":
-                            x_col, y_col = params.get('x'), params.get('y')
-                            if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                                fig = px.bar(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
-                                           title=item.get('title', chart_type))
-                            else:
-                                st.warning(f"Required columns for bar chart not found in data.")
+                        if enhanced_dash and enhanced_mode:
+                            # Use enhanced chart creation with cross-filtering
+                            try:
+                                fig = enhanced_dash.create_enhanced_chart(
+                                    item, data_snapshot, 
+                                    chart_id=f"chart_{current_item_absolute_index}",
+                                    enable_cross_filter=True
+                                )
+                            except Exception as chart_error:
+                                print(f"[DASHBOARD] Enhanced chart creation failed: {chart_error}")
+                                fig = None
+                        else:
+                            # Use standard chart creation
+                            if chart_type == "Bar Chart":
+                                x_col, y_col = params.get('x'), params.get('y')
+                                if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
+                                    fig = px.bar(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
+                                               title=item.get('title', chart_type))
+                                else:
+                                    st.warning(f"Required columns for bar chart not found in data.")
+                            
+                            elif chart_type == "Line Chart":
+                                x_col, y_col = params.get('x'), params.get('y')
+                                if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
+                                    fig = px.line(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
+                                                title=item.get('title', chart_type))
+                                else:
+                                    st.warning(f"Required columns for line chart not found in data.")
+                            
+                            elif chart_type == "Scatter Plot":
+                                x_col, y_col = params.get('x'), params.get('y')
+                                if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
+                                    fig = px.scatter(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
+                                                   size=params.get('size'), title=item.get('title', chart_type))
+                                else:
+                                    st.warning(f"Required columns for scatter plot not found in data.")
+                            
+                            elif chart_type == "Pie Chart":
+                                names_col, values_col = params.get('names'), params.get('values')
+                                if names_col in data_snapshot.columns and values_col in data_snapshot.columns:
+                                    fig = px.pie(data_snapshot, names=names_col, values=values_col, 
+                                               title=item.get('title', f"Pie Chart of {values_col} by {names_col}"))
+                                else:
+                                    st.warning("Required columns for pie chart not found in data.")
+                            
+                            elif chart_type == "Histogram":
+                                x_col = params.get('x')
+                                if x_col in data_snapshot.columns:
+                                    fig = px.histogram(data_snapshot, x=x_col, title=item.get('title', chart_type))
+                                else:
+                                    st.warning("Required column for histogram not found in data.")
                         
-                        elif chart_type == "Line Chart":
-                            x_col, y_col = params.get('x'), params.get('y')
-                            if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                                fig = px.line(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
-                                            title=item.get('title', chart_type))
-                            else:
-                                st.warning(f"Required columns for line chart not found in data.")
-                        
-                        elif chart_type == "Scatter Plot":
-                            x_col, y_col = params.get('x'), params.get('y')
-                            if x_col in data_snapshot.columns and y_col in data_snapshot.columns:
-                                fig = px.scatter(data_snapshot, x=x_col, y=y_col, color=params.get('color'), 
-                                               size=params.get('size'), title=item.get('title', chart_type))
-                            else:
-                                st.warning(f"Required columns for scatter plot not found in data.")
-                        
-                        elif chart_type == "Pie Chart":
-                            names_col, values_col = params.get('names'), params.get('values')
-                            if names_col in data_snapshot.columns and values_col in data_snapshot.columns:
-                                fig = px.pie(data_snapshot, names=names_col, values=values_col, 
-                                           title=item.get('title', f"Pie Chart of {values_col} by {names_col}"))
-                            else:
-                                st.warning("Required columns for pie chart not found in data.")
-                        
-                        elif chart_type == "Histogram":
-                            x_col = params.get('x')
-                            if x_col in data_snapshot.columns:
-                                fig = px.histogram(data_snapshot, x=x_col, title=item.get('title', chart_type))
-                            else:
-                                st.warning("Required column for histogram not found in data.")
-                        
-                        elif chart_type == "Table":
+                        # Handle Table type separately
+                        if chart_type == "Table":
                             selected_columns = params.get('columns', data_snapshot.columns.tolist())
                             if not isinstance(selected_columns, list):
                                 selected_columns = data_snapshot.columns.tolist()
@@ -3765,14 +4264,20 @@ def show_dashboard_screen():
                                 display_columns = data_snapshot.columns.tolist()
                             
                             if display_columns and not data_snapshot.empty:
+                                # Show filter info for tables if enhanced mode
+                                if enhanced_dash and enhanced_mode and ai_filters:
+                                    active_filters = [f for f in ai_filters if f.active_values != f.values]
+                                    if active_filters:
+                                        st.caption(f"Filtered by: {', '.join([f.name for f in active_filters])}")
+                                
                                 st.dataframe(data_snapshot[display_columns], use_container_width=True)
                             elif not data_snapshot.empty:
                                 st.dataframe(data_snapshot, use_container_width=True)
                             else:
                                 st.info("No data to display in table.")
                         
-                        # Apply dark theme to plotly charts
-                        if fig:
+                        # Apply consistent styling to charts
+                        elif fig:
                             fig.update_layout(
                                 template="plotly_dark",
                                 paper_bgcolor='rgba(0,0,0,0)',
@@ -3781,7 +4286,8 @@ def show_dashboard_screen():
                                 title_font_color='#F1F5F9',
                                 legend_font_color='#CBD5E1',
                                 autosize=True,
-                                height=400  # Optimized height for dashboard
+                                height=400,  # Optimized height for dashboard
+                                margin=dict(l=20, r=20, t=40, b=20)
                             )
                             
                             # Style axes
@@ -3812,44 +4318,146 @@ def show_dashboard_screen():
                         st.error(f"Error generating chart: {e}")
                         fig = None
                         
-                    # Display the chart
+                    # Display the chart with cross-filtering support
                     if fig and chart_type != "Table":
-                        st.plotly_chart(fig, use_container_width=True)
+                        # Enhanced chart with click handling for cross-filtering
+                        if enhanced_dash and enhanced_mode:
+                            # Add cross-filter visual indicators
+                            if item.get('cross_filtered'):
+                                st.info(f"🔗 This chart is filtered by: {item.get('cross_filter_source', 'another chart')}")
+                            
+                            # Render chart with enhanced interactivity
+                            st.plotly_chart(
+                                fig, 
+                                use_container_width=True, 
+                                key=f"chart_{current_item_absolute_index}"
+                            )
+                            
+                            # Cross-filtering interface
+                            st.markdown("**🔗 Cross-Filter Controls**")
+                            filter_cols = st.columns([3, 1])
+                            
+                            with filter_cols[0]:
+                                # Get the main axis column for filtering
+                                x_col = params.get('x')
+                                if x_col and x_col in data_snapshot.columns:
+                                    unique_values = data_snapshot[x_col].unique()[:10]  # Limit options
+                                    selected_filter_value = st.selectbox(
+                                        f"Filter others by {x_col}:",
+                                        ["Select value..."] + list(unique_values),
+                                        key=f"cross_filter_select_{current_item_absolute_index}"
+                                    )
+                                    
+                                    if selected_filter_value != "Select value...":
+                                        if st.button(f"Apply Cross-Filter", key=f"apply_cross_{current_item_absolute_index}"):
+                                            # Apply cross-filtering
+                                            selection_filters = {x_col: selected_filter_value}
+                                            
+                                            # Store the selection
+                                            enhanced_dash.active_selections[f"chart_{current_item_absolute_index}"] = {
+                                                'filters': selection_filters,
+                                                'chart_data': {'x': selected_filter_value}
+                                            }
+                                            
+                                            # Apply cross-filtering to other charts
+                                            try:
+                                                if hasattr(enhanced_dash, 'apply_cross_filter_selection'):
+                                                    st.session_state.dashboard_items = enhanced_dash.apply_cross_filter_selection(
+                                                        f"chart_{current_item_absolute_index}",
+                                                        selection_filters,
+                                                        st.session_state.dashboard_items
+                                                    )
+                                                else:
+                                                    st.warning("Cross-filtering feature not available in this session.")
+                                            except Exception as cross_filter_error:
+                                                st.error(f"Cross-filtering error: {cross_filter_error}")
+                                                print(f"[DASHBOARD] Cross-filtering error: {cross_filter_error}")
+                                            
+                                            # Show success message
+                                            st.success(f"🔗 Applied cross-filter: {x_col} = {selected_filter_value}")
+                                            
+                                            # Save updated dashboard
+                                            save_user_dashboard(
+                                                st.session_state.logged_in_user, 
+                                                st.session_state.current_dashboard_name, 
+                                                st.session_state.dashboard_items
+                                            )
+                                            st.rerun()
+                            
+                            with filter_cols[1]:
+                                if f"chart_{current_item_absolute_index}" in enhanced_dash.active_selections:
+                                    if st.button("🔄 Clear Filter", key=f"clear_single_{current_item_absolute_index}"):
+                                        del enhanced_dash.active_selections[f"chart_{current_item_absolute_index}"]
+                                        st.rerun()
+                            
+
+                        else:
+                            st.plotly_chart(fig, use_container_width=True)
                     elif not fig and chart_type != "Table" and not data_snapshot.empty:
                         st.warning(f"Could not display chart: {item.get('title', chart_type)}.")
                     elif data_snapshot.empty and chart_type != "Table":
                         st.info(f"No data available for '{item.get('title', chart_type)}'.")
 
-                    # --- Item Controls ---
-                    control_cols = st.columns([1, 1, 1])
-                    with control_cols[0]:
-                        st.button(
-                            "🔼",
-                            key=f"move_up_item_{current_item_absolute_index}",
-                            on_click=handle_item_move,
-                            args=(current_item_absolute_index, "up"),
-                            disabled=(current_item_absolute_index == 0),
-                            use_container_width=True,
-                            help="Move Up"
-                        )
-                    with control_cols[1]:
-                        st.button(
-                            "🔽",
-                            key=f"move_down_item_{current_item_absolute_index}",
-                            on_click=handle_item_move,
-                            args=(current_item_absolute_index, "down"),
-                            disabled=(current_item_absolute_index == len(st.session_state.dashboard_items) - 1),
-                            use_container_width=True,
-                            help="Move Down"
-                        )
-                    with control_cols[2]:
-                        if st.button("🗑️", key=f"remove_item_{current_item_absolute_index}", use_container_width=True, help="Remove"):
-                            st.session_state.dashboard_items.pop(current_item_absolute_index)
-                            save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
-                            st.rerun()
+                    # --- Compact Management Controls (only in manage mode) ---
+                    if manage_mode:
+                        st.markdown("---")
+                        control_cols = st.columns([1, 1, 1, 1])
+                        with control_cols[0]:
+                            if st.button("⬆️", key=f"move_up_item_{current_item_absolute_index}", 
+                                       disabled=(current_item_absolute_index == 0), help="Move Up"):
+                                handle_item_move(current_item_absolute_index, "up")
+                        with control_cols[1]:
+                            if st.button("⬇️", key=f"move_down_item_{current_item_absolute_index}", 
+                                       disabled=(current_item_absolute_index == len(st.session_state.dashboard_items) - 1), 
+                                       help="Move Down"):
+                                handle_item_move(current_item_absolute_index, "down")
+                        with control_cols[2]:
+                            if st.button("📋", key=f"copy_item_{current_item_absolute_index}", help="Duplicate"):
+                                # Duplicate chart logic
+                                new_item = copy.deepcopy(item)
+                                new_item['id'] = str(uuid.uuid4())
+                                new_item['title'] = f"{item.get('title', item['chart_type'])} (Copy)"
+                                st.session_state.dashboard_items.append(new_item)
+                                save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
+                                st.rerun()
+                        with control_cols[3]:
+                            if st.button("🗑️", key=f"remove_item_{current_item_absolute_index}", help="Delete"):
+                                st.session_state.dashboard_items.pop(current_item_absolute_index)
+                                save_user_dashboard(st.session_state.logged_in_user, st.session_state.current_dashboard_name, st.session_state.dashboard_items)
+                                st.rerun()
+                    
+                    st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
     
     elif not kpi_items:
         st.info("This dashboard is empty. Add charts from the 'Ask Questions' page.")
+    
+    # Export Modal
+    if st.session_state.get('show_export_modal', False):
+        if dashboard_exports and st.session_state.current_dashboard_name:
+            with st.expander("📤 Export Dashboard", expanded=True):
+                dashboard_exports.show_export_interface(
+                    st.session_state.dashboard_items,
+                    st.session_state.current_dashboard_name,
+                    st.session_state.logged_in_user
+                )
+                
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.button("❌ Close Export", key="close_export_modal"):
+                        st.session_state.show_export_modal = False
+                        st.rerun()
+                with col2:
+                    # Show export stats
+                    if st.session_state.dashboard_items:
+                        stats = dashboard_exports.get_export_stats(st.session_state.dashboard_items)
+                        st.info(f"📊 {stats['total_items']} items • {stats['total_data_points']} data points")
+        else:
+            st.error("❌ Export module not available. Please check installation.")
+            if st.button("Close", key="close_export_error"):
+                st.session_state.show_export_modal = False
+                st.rerun()
 
 def show_dashboard_management_page():
     """Dashboard sharing management page"""
@@ -4314,8 +4922,8 @@ def show_email_settings_page():
                         msg = MIMEMultipart()
                         msg['From'] = from_email
                         msg['To'] = smtp_username  # Send test to the configured email
-                        msg['Subject'] = "Test Email from DBChat"
-                        body = "This is a test email from your DBChat application. If you received this, your email settings are working correctly!"
+                        msg['Subject'] = "Test Email from ConvaBI"
+                        body = "This is a test email from your ConvaBI application. If you received this, your email settings are working correctly!"
                         msg.attach(MIMEText(body, 'plain'))
 
                         # Connect to SMTP server
@@ -4429,22 +5037,223 @@ def send_smtp_email(to_email, subject, body, attachment_path=None):
 
 # --- Enhanced CSS with Purple Gradient Theme ---
 
+def show_unified_data_setup_page():
+    """Unified data setup page combining data integration and semantic enhancement"""
+    st.title("📊 Data Setup & Intelligence")
+    st.markdown("**Complete data pipeline: Connect → Integrate → Enhance → Query**")
+    
+    if not st.session_state.logged_in_user:
+        st.error("Please log in to access data setup features.")
+        st.session_state.page = 'login'
+        st.rerun()
+        return
+
+    # Initialize integration engine
+    integration_engine = data_integration.data_integration_engine
+    summary = integration_engine.get_data_sources_summary()
+    
+    # Load or initialize semantic layer
+    semantic_layer = st.session_state.get('semantic_layer')
+    if not semantic_layer:
+        try:
+            semantic_layer = semantic_layer_ui.load_or_create_semantic_layer()
+            st.session_state.semantic_layer = semantic_layer
+        except:
+            from semantic_layer import SemanticLayer
+            semantic_layer = SemanticLayer()
+            st.session_state.semantic_layer = semantic_layer
+    
+    # Progress indicator
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        sources_status = "✅" if summary['total_sources'] > 0 else "⏳"
+        st.metric("1. Data Sources", f"{sources_status} {summary['total_sources']}")
+    with col2:
+        etl_status = "✅" if summary['total_etl_operations'] > 0 else "⏳"
+        st.metric("2. ETL Operations", f"{etl_status} {summary['total_etl_operations']}")
+    with col3:
+        semantic_status = "✅" if semantic_layer and semantic_layer.tables else "⏳"
+        semantic_count = len(semantic_layer.tables) if semantic_layer and semantic_layer.tables else 0
+        st.metric("3. Intelligence", f"{semantic_status} {semantic_count}")
+    with col4:
+        ready_status = "✅" if summary['total_sources'] > 0 and semantic_count > 0 else "⏳"
+        st.metric("4. Ready", ready_status)
+    
+    st.markdown("---")
+    
+    # Main tabs combining both workflows
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Connect Data", "🔗 Transform & Join", "🧠 Enhance Intelligence", "🎯 Ready to Query"])
+    
+    with tab1:
+        st.subheader("📊 Connect Your Data Sources")
+        data_integration_ui.show_data_sources_management(integration_engine)
+    
+    with tab2:
+        st.subheader("🔗 Transform & Join Data")
+        if summary['total_sources'] > 0:
+            # Show AI suggested joins first
+            data_integration_ui.show_ai_suggested_joins(integration_engine)
+            st.markdown("---")
+            # Then ETL operations
+            data_integration_ui.show_etl_operations(integration_engine)
+        else:
+            st.info("🔗 Add data sources first to enable transformations and joins")
+            if st.button("← Go to Connect Data", key="goto_connect_from_transform"):
+                st.session_state.active_tab = 0
+                st.rerun()
+    
+    with tab3:
+        st.subheader("🧠 Enhance with Business Intelligence")
+        if summary['total_sources'] > 0:
+            # Auto-generation section
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.markdown("#### 🤖 AI-Powered Metadata Generation")
+                st.info("Transform your raw data schema into business-intelligent metadata that dramatically improves AI query accuracy.")
+                
+                if not semantic_layer.tables:
+                    if st.button("🚀 Auto-Generate Business Metadata", type="primary", key="auto_generate_unified"):
+                        with st.spinner("🔍 Analyzing data sources and generating business context..."):
+                            try:
+                                success = semantic_layer.auto_generate_metadata_from_data_integration(integration_engine)
+                                if success:
+                                    # Save to database
+                                    conn = database.get_db_connection()
+                                    if conn:
+                                        try:
+                                            saved = semantic_layer.save_to_database(conn)
+                                            if saved:
+                                                st.session_state.semantic_layer = semantic_layer
+                                                st.success("🎉 Business metadata generated and saved!")
+                                                st.balloons()
+                                                st.rerun()
+                                            else:
+                                                st.error("Failed to save semantic metadata to database")
+                                        finally:
+                                            conn.close()
+                                    else:
+                                        st.error("Could not connect to database")
+                                else:
+                                    st.error("Failed to generate semantic metadata")
+                            except Exception as e:
+                                st.error(f"Error during metadata generation: {e}")
+                else:
+                    st.success("✅ Business metadata already generated!")
+                    if st.button("🔄 Regenerate Metadata", key="regenerate_unified"):
+                        # Clear existing and regenerate
+                        semantic_layer = semantic_layer_ui.load_or_create_semantic_layer()
+                        semantic_layer.tables.clear()
+                        semantic_layer.relationships.clear()
+                        st.session_state.semantic_layer = semantic_layer
+                        st.rerun()
+            
+            with col2:
+                if semantic_layer and semantic_layer.tables:
+                    st.markdown("#### 📊 Current Status")
+                    st.metric("Enhanced Tables", len(semantic_layer.tables))
+                    st.metric("Relationships", len(semantic_layer.relationships))
+                    st.metric("Business Metrics", len(semantic_layer.metrics))
+            
+            # Quick fixes and enhancements
+            if semantic_layer and semantic_layer.tables:
+                st.markdown("---")
+                semantic_layer_ui.show_analytics_quick_fix()
+                
+                # Mini configuration interface
+                st.markdown("---")
+                st.markdown("#### ⚙️ Quick Configuration")
+                table_names = list(semantic_layer.tables.keys())
+                if table_names:
+                    selected_table = st.selectbox("Configure table:", table_names, key="quick_config_table")
+                    if selected_table:
+                        table_info = semantic_layer.tables[selected_table]
+                        st.write(f"**Business Purpose:** {table_info.business_purpose}")
+                        st.write(f"**Columns:** {len(table_info.columns)}")
+                        
+                        if st.button(f"🔧 Advanced Configuration", key=f"advanced_config_{selected_table}"):
+                            # Store the selected table and redirect
+                            st.session_state.selected_semantic_table = selected_table
+                            st.info("Use the legacy 'Semantic Layer' page for advanced configuration (Admin can access via direct URL)")
+        else:
+            st.info("🧠 Add data sources first to enable intelligence enhancement")
+            if st.button("← Go to Connect Data", key="goto_connect_from_intelligence"):
+                st.session_state.active_tab = 0
+                st.rerun()
+    
+    with tab4:
+        st.subheader("🎯 Ready to Query!")
+        
+        if summary['total_sources'] > 0 and semantic_layer and semantic_layer.tables:
+            st.success("🎉 **Your data is ready for AI-powered querying!**")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("#### 📊 What You've Built:")
+                st.write(f"• **{summary['total_sources']}** connected data sources")
+                st.write(f"• **{summary['total_etl_operations']}** ETL transformations")
+                st.write(f"• **{len(semantic_layer.tables)}** business-enhanced tables")
+                st.write(f"• **{len(semantic_layer.relationships)}** intelligent relationships")
+                
+                st.markdown("#### 🚀 Next Steps:")
+                if st.button("▶️ Start Asking Questions", type="primary", key="goto_query_from_ready"):
+                    st.session_state.app_page = 'query'
+                    st.rerun()
+                
+                if st.button("📊 Create Dashboard", key="goto_dashboard_from_ready"):
+                    st.session_state.app_page = 'dashboard'
+                    st.rerun()
+            
+            with col2:
+                st.markdown("#### 🧪 Test Query Examples:")
+                
+                # Generate sample queries based on semantic layer
+                sample_queries = []
+                for table_name, table_info in semantic_layer.tables.items():
+                    if table_info.common_queries:
+                        sample_queries.extend(table_info.common_queries[:2])
+                
+                if not sample_queries:
+                    sample_queries = [
+                        "What is the total revenue by region?",
+                        "Show me the top 5 customers by sales",
+                        "How many orders were placed last month?",
+                        "What's the profit margin by category?"
+                    ]
+                
+                for i, query in enumerate(sample_queries[:4]):
+                    if st.button(f"💬 {query}", key=f"sample_query_{i}"):
+                        st.session_state.app_page = 'query'
+                        st.session_state.test_query = query
+                        st.rerun()
+        
+        elif summary['total_sources'] > 0:
+            st.warning("⚠️ **Almost Ready!** You have data sources but need to enhance them with business intelligence.")
+            if st.button("🧠 Enhance Intelligence", key="goto_intelligence_from_ready"):
+                st.session_state.active_tab = 2  # Go to intelligence tab
+                st.rerun()
+        
+        else:
+            st.info("📊 **Get Started!** Connect your first data source to begin.")
+            if st.button("📊 Connect Data", key="goto_connect_from_ready"):
+                st.session_state.active_tab = 0  # Go to connect tab
+                st.rerun()
+
 def show_main_application():
     """Main application interface with sidebar navigation and proper page routing"""
     
     # Initialize page state if not set
     if 'app_page' not in st.session_state:
-        st.session_state.app_page = 'data_integration'
+        st.session_state.app_page = 'data_setup'
     
     # Sidebar Navigation
     with st.sidebar:
-        st.markdown("### DBChat Navigation")
+        st.markdown("### ConvaBI Navigation")
         st.markdown(f"**Welcome, {st.session_state.logged_in_user}!**")
         st.markdown("---")
         
-        # Navigation buttons
-        if st.button("Data Integration & ETL", use_container_width=True):
-            st.session_state.app_page = 'data_integration'
+        # Navigation buttons - OPTIMIZED FLOW
+        if st.button("📊 Data Setup & Intelligence", use_container_width=True):
+            st.session_state.app_page = 'data_setup'
             st.rerun()
             
         if st.button("Ask Questions", use_container_width=True):
@@ -4492,7 +5301,7 @@ def show_main_application():
         
         st.markdown("---")
         
-        # Status indicators
+        # Status indicators with enhanced information
         st.markdown("**Status**")
         
         # LLM status
@@ -4501,13 +5310,21 @@ def show_main_application():
             st.success(f"✅ LLM Ready")
         else:
             st.info(f"🔧 LLM: Configure in Admin Settings")
-            
-        # Show data status if any data is loaded
-        if st.session_state.get('data') is not None:
-            st.success(f"📊 Data Loaded: {st.session_state.connection_type or 'Unknown'}")
-        else:
-            st.info("📥 Ready for Data Integration")
         
+        # Data & Intelligence status
+        integration_engine = data_integration.data_integration_engine
+        summary = integration_engine.get_data_sources_summary()
+        semantic_layer = st.session_state.get('semantic_layer')
+        
+        if summary['total_sources'] > 0:
+            if semantic_layer and semantic_layer.tables:
+                table_count = len(semantic_layer.tables)
+                st.success(f"🧠 Data Intelligence: {summary['total_sources']} sources, {table_count} enhanced")
+            else:
+                st.warning(f"📊 Data: {summary['total_sources']} sources (needs enhancement)")
+        else:
+            st.info("📥 Ready for Data Setup")
+            
         st.markdown("---")
         
         # Logout button
@@ -4515,8 +5332,8 @@ def show_main_application():
             logout()
     
     # Main content area based on selected page
-    if st.session_state.app_page == 'data_integration':
-        data_integration_ui.show_data_integration_page()
+    if st.session_state.app_page == 'data_setup':
+        show_unified_data_setup_page()
     elif st.session_state.app_page == 'query':
         show_query_screen()
     elif st.session_state.app_page == 'dashboard':
@@ -4532,8 +5349,8 @@ def show_main_application():
     elif st.session_state.app_page == 'email_settings' and is_admin:
         show_email_settings_page()
     else:
-        # Default to data integration
-        data_integration_ui.show_data_integration_page()
+        # Default to unified data setup
+        show_unified_data_setup_page()
 
 if __name__ == "__main__":
     load_custom_css()

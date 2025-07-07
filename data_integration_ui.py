@@ -89,7 +89,13 @@ def show_data_sources_management(integration_engine):
                     )
                     
                     st.success(f"✅ Added CSV data source '{source_name}' with {len(df)} rows and {len(df.columns)} columns")
+                    st.info(f"Source ID: {source_id}")
                     st.dataframe(df.head())
+                    
+                    # Debug info
+                    current_summary = integration_engine.get_data_sources_summary()
+                    st.write(f"Total sources now: {current_summary['total_sources']}")
+                    
                     st.rerun()
                     
                 except Exception as e:
@@ -132,9 +138,10 @@ def show_data_sources_management(integration_engine):
                                 )
                                 
                                 st.success(f"✅ Added database table '{table_name}' with {len(table_df)} rows")
+                                st.write(f"Source ID: {source_id}")
                                 
                             except Exception as e:
-                                st.warning(f"⚠️ Could not load data from table '{table_name}': {e}")
+                                st.warning(f"⚠️ Could not import table '{table_name}': {e}")
                     
                     st.rerun()
                     
@@ -246,8 +253,10 @@ def show_data_sources_management(integration_engine):
                         try:
                             pass  # Connection test successful
                         finally:
-                            if hasattr(connection_test, 'close'):
+                            try:
                                 connection_test.close()
+                            except (AttributeError, Exception):
+                                pass
 
                         # Fetch schema using SQLAlchemy Inspector
                         inspector = inspect(engine)
@@ -362,7 +371,15 @@ def show_data_sources_management(integration_engine):
                             st.error(f"Could not preview data: {e}")
                     
                     if st.button(f"Remove Source", key=f"remove_{source_info['id']}", type="secondary"):
-                        st.warning("⚠️ Remove functionality not yet implemented")
+                        try:
+                            success = integration_engine.remove_data_source(source_info['id'])
+                            if success:
+                                st.success(f"✅ Removed data source '{source_info['name']}'")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Failed to remove data source '{source_info['name']}'")
+                        except Exception as e:
+                            st.error(f"❌ Error removing data source: {e}")
 
 def show_ai_suggested_joins(integration_engine):
     """UI for AI-suggested joins between data sources"""

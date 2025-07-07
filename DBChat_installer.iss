@@ -1,22 +1,22 @@
-; DBChat Installer Script for Inno Setup
-; This script creates a professional, self-contained installer for the DBChat application.
+; ConvaBI Installer Script for Inno Setup
+; This script creates a professional, self-contained installer for the ConvaBI application.
 
 [Setup]
 ; --- Application Identity ---
-AppId={{DBChat-App-ID}}
-AppName=DBChat
+AppId={{ConvaBI-App-ID}}
+AppName=ConvaBI
 AppVersion=2.0
-AppVerName=DBChat 2.0
-AppPublisher=DBChat Project
+AppVerName=ConvaBI 2.0
+AppPublisher=ConvaBI Project
 AppPublisherURL=https://github.com/
 AppSupportURL=https://github.com/
-DefaultDirName={autopf}\DBChat
+DefaultDirName={autopf}\ConvaBI
 
 ; --- Installer Settings ---
-DefaultGroupName=DBChat
+DefaultGroupName=ConvaBI
 DisableProgramGroupPage=yes
 OutputDir=installer
-OutputBaseFilename=DBChat_v2_Setup
+OutputBaseFilename=ConvaBI_v2_Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -30,19 +30,19 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; --- Main Application Files ---
-; This command recursively includes all files from the PyInstaller output directory ('dist/DBChat').
-Source: "dist\DBChat\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; This command recursively includes all files from the PyInstaller output directory ('dist/ConvaBI').
+Source: "dist\ConvaBI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 ; --- Start Menu and Desktop Icons ---
-Name: "{group}\DBChat"; Filename: "{app}\DBChat.exe"
-Name: "{group}\{cm:UninstallProgram,DBChat}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\DBChat"; Filename: "{app}\DBChat.exe"; Tasks: desktopicon
+Name: "{group}\ConvaBI"; Filename: "{app}\ConvaBI.exe"
+Name: "{group}\{cm:UninstallProgram,ConvaBI}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\ConvaBI"; Filename: "{app}\ConvaBI.exe"; Tasks: desktopicon
 
 [Run]
 ; --- Post-Installation ---
 ; Launch the application after the installation is complete.
-Filename: "{app}\DBChat.exe"; Description: "{cm:LaunchProgram,DBChat}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\ConvaBI.exe"; Description: "{cm:LaunchProgram,ConvaBI}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; --- Uninstallation ---
