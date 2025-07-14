@@ -1,0 +1,279 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Query History - ConvaBI{% endblock %}
+
+{% block extra_css %}
+<link href="{% static 'css/query.css' %}" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'core:home' %}">Home</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'core:query' %}">Query</a></li>
+                    <li class="breadcrumb-item active">History</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">
+                <i class="fas fa-history text-primary me-2"></i>
+                Query History
+            </h1>
+            <p class="text-muted mb-0">View your past queries and results</p>
+        </div>
+        <div>
+            <a href="{% url 'core:query' %}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i>New Query
+            </a>
+        </div>
+    </div>
+
+    <!-- Query History -->
+    <div class="row">
+        <div class="col-12">
+            {% if queries %}
+                <div class="query-history-panel">
+                    <div class="history-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-list me-2"></i>Recent Queries
+                        </h5>
+                        <small class="text-muted">{{ queries|length }} queries found</small>
+                    </div>
+                    
+                    {% for query in queries %}
+                        <div class="history-item" onclick="viewQueryDetails('{{ query.id }}')">
+                            <div class="history-query">
+                                {{ query.natural_query|truncatechars:100 }}
+                            </div>
+                            <div class="history-metadata">
+                                <span>
+                                    <i class="fas fa-calendar me-1"></i>
+                                    {{ query.created_at|date:"M d, Y H:i" }}
+                                </span>
+                                <span>
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    Status: 
+                                    <span class="badge bg-{% if query.status == 'completed' %}success{% elif query.status == 'error' %}danger{% elif query.status == 'processing' %}warning{% else %}secondary{% endif %}">
+                                        {{ query.status|title }}
+                                    </span>
+                                </span>
+                                {% if query.execution_time %}
+                                    <span>
+                                        <i class="fas fa-clock me-1"></i>
+                                        {{ query.execution_time|floatformat:2 }}s
+                                    </span>
+                                {% endif %}
+                                {% if query.generated_sql %}
+                                    <span>
+                                        <i class="fas fa-code me-1"></i>
+                                        SQL Generated
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <!-- Empty State -->
+                <div class="text-center py-5">
+                    <i class="fas fa-history fa-4x text-muted mb-4"></i>
+                    <h4 class="text-muted">No Queries Yet</h4>
+                    <p class="text-muted mb-4">
+                        You haven't made any queries yet. Start by asking a question about your data!
+                    </p>
+                    <a href="{% url 'core:query' %}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-search me-2"></i>Ask Your First Question
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Query Details Modal -->
+<div class="modal fade" id="queryDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Query Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="queryDetailsContent">
+                    <!-- Query details will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="rerunQuery()">
+                    <i class="fas fa-redo me-1"></i>Rerun Query
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentQueryId = null;
+
+function viewQueryDetails(queryId) {
+    currentQueryId = queryId;
+    
+    // Show loading state
+    document.getElementById('queryDetailsContent').innerHTML = `
+        <div class="text-center p-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 mb-0">Loading query details...</p>
+        </div>
+    `;
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('queryDetailsModal'));
+    modal.show();
+    
+    // Load query details (this would typically fetch from an API)
+    setTimeout(() => {
+        // For now, show basic information
+        // In a real implementation, this would fetch detailed query information
+        const query = getQueryFromList(queryId);
+        if (query) {
+            displayQueryDetails(query);
+        } else {
+            document.getElementById('queryDetailsContent').innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Query details not available.
+                </div>
+            `;
+        }
+    }, 500);
+}
+
+function getQueryFromList(queryId) {
+    // Find query in the current page (this is a simplified approach)
+    const queries = {{ queries|safe|default:"[]" }};
+    return queries.find(q => q.id == queryId);
+}
+
+function displayQueryDetails(query) {
+    const content = `
+        <div class="row">
+            <div class="col-12">
+                <h6>Natural Language Query</h6>
+                <div class="bg-light p-3 rounded mb-3">
+                    ${query.natural_query || 'N/A'}
+                </div>
+            </div>
+        </div>
+        
+        ${query.generated_sql ? `
+            <div class="row">
+                <div class="col-12">
+                    <h6>Generated SQL</h6>
+                    <div class="generated-sql">
+                        ${query.generated_sql}
+                    </div>
+                </div>
+            </div>
+        ` : ''}
+        
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Query Information</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <td><strong>Status:</strong></td>
+                        <td>
+                            <span class="badge bg-${getStatusColor(query.status)}">
+                                ${query.status.charAt(0).toUpperCase() + query.status.slice(1)}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Created:</strong></td>
+                        <td>${new Date(query.created_at).toLocaleString()}</td>
+                    </tr>
+                    ${query.execution_time ? `
+                        <tr>
+                            <td><strong>Execution Time:</strong></td>
+                            <td>${query.execution_time.toFixed(2)} seconds</td>
+                        </tr>
+                    ` : ''}
+                </table>
+            </div>
+            <div class="col-md-6">
+                ${query.error_message ? `
+                    <h6>Error Details</h6>
+                    <div class="alert alert-danger">
+                        ${query.error_message}
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('queryDetailsContent').innerHTML = content;
+}
+
+function getStatusColor(status) {
+    switch(status) {
+        case 'completed': return 'success';
+        case 'error': return 'danger';
+        case 'processing': return 'warning';
+        default: return 'secondary';
+    }
+}
+
+function rerunQuery() {
+    if (!currentQueryId) return;
+    
+    const query = getQueryFromList(currentQueryId);
+    if (query && query.natural_query) {
+        // Redirect to query page with the original query
+        const queryText = encodeURIComponent(query.natural_query);
+        window.location.href = `/query/?q=${queryText}`;
+    } else {
+        ConvaBI.showToast('Unable to rerun query - query text not available', 'warning');
+    }
+}
+
+// Add search functionality
+function searchQueries() {
+    const searchTerm = document.getElementById('querySearch').value.toLowerCase();
+    const historyItems = document.querySelectorAll('.history-item');
+    
+    historyItems.forEach(item => {
+        const queryText = item.querySelector('.history-query').textContent.toLowerCase();
+        if (queryText.includes(searchTerm)) {
+            item.style.display = 'block';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+// Add filter functionality
+function filterByStatus(status) {
+    const historyItems = document.querySelectorAll('.history-item');
+    
+    historyItems.forEach(item => {
+        const statusBadge = item.querySelector('.badge');
+        const itemStatus = statusBadge ? statusBadge.textContent.toLowerCase() : '';
+        
+        if (status === 'all' || itemStatus === status.toLowerCase()) {
+            item.style.display = 'block';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+</script>
+{% endblock %} 

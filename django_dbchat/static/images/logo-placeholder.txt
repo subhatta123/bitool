@@ -1,0 +1,18 @@
+ConvaBI Logo Placeholder
+=========================
+
+To add your ConvaBI logo:
+
+1. Save your logo image as: static/images/convabi-logo.png
+2. Recommended dimensions: 64x64px or higher (square format works best)
+3. Format: PNG with transparent background preferred
+
+The logo will automatically appear in:
+- Navigation bar (32px height)
+- Home page hero section (64px height)
+- Loading and error pages
+
+If the logo file is not found, the text "ConvaBI" will be displayed instead.
+
+Current logo reference in templates:
+{% static 'images/convabi-logo.png' %} 

@@ -1,0 +1,1 @@
+# Tests package for ConvaBI Django application 

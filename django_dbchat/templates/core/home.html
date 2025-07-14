@@ -1,0 +1,569 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}ConvaBI - Conversational Business Intelligence Platform{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Hero Section with ConvaBI Branding -->
+    <div class="row align-items-center min-vh-50 bg-gradient-primary text-white">
+        <div class="col-lg-6">
+            <div class="px-4 py-4">
+                <div class="d-flex align-items-center mb-3">
+                    <img src="{% static 'images/convabi-logo.png' %}" alt="ConvaBI" height="48" class="me-3" onerror="this.style.display='none';" style="filter: brightness(0) invert(1);">
+                    <h1 class="display-5 fw-bold mb-0">ConvaBI</h1>
+                </div>
+                <h2 class="h4 mb-3">Conversational Business Intelligence</h2>
+                <p class="lead mb-4">
+                    Transform your data into insights with our 5-step guided workflow
+                </p>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="px-4">
+                <div class="bg-white bg-opacity-10 rounded-lg p-3">
+                    <h5 class="mb-3"><i class="fas fa-magic me-2"></i>What's New</h5>
+                    <div class="small">
+                        <div class="mb-2">
+                            <i class="fas fa-exchange-alt text-warning me-2"></i>
+                            <strong>Enhanced ETL with Data Type Transformation</strong>
+                        </div>
+                        <div class="mb-2">
+                            <i class="fas fa-brain text-info me-2"></i>
+                            <strong>AI-Powered Schema Alignment</strong>
+                        </div>
+                        <div class="mb-2">
+                            <i class="fas fa-comments text-success me-2"></i>
+                            <strong>Natural Language Query Interface</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if user.is_authenticated %}
+        <!-- Workflow Progress Section -->
+        <div class="row py-4 bg-light">
+            <div class="col-12">
+                <div class="text-center mb-4">
+                    <h3 class="fw-bold">Your ConvaBI Journey</h3>
+                    <p class="text-muted">Follow these steps to unlock insights from your data</p>
+                </div>
+                
+                <!-- Visual Workflow -->
+                <div class="workflow-container">
+                    <div class="workflow-steps">
+                        <!-- Step 1: Data Sources -->
+                        <div class="workflow-step {% if stats.data_sources > 0 %}completed{% else %}active{% endif %}" onclick="navigateToStep(1)">
+                            <div class="step-circle">
+                                <span class="step-number">1</span>
+                                {% if stats.data_sources > 0 %}
+                                    <i class="fas fa-check step-check"></i>
+                                {% endif %}
+                            </div>
+                            <div class="step-content">
+                                <h6 class="step-title">Data Sources</h6>
+                                <p class="step-description">Connect your data</p>
+                                <div class="step-stats">
+                                    <span class="badge bg-primary">{{ stats.data_sources|default:0 }}</span> connected
+                                </div>
+                            </div>
+                            <div class="step-icon">
+                                <i class="fas fa-database fa-2x"></i>
+                            </div>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="workflow-arrow">
+                            <i class="fas fa-arrow-right"></i>
+                        </div>
+
+                        <!-- Step 2: ETL -->
+                        <div class="workflow-step {% if stats.etl_operations > 0 %}completed{% elif stats.data_sources > 0 %}active{% endif %}" onclick="navigateToStep(2)">
+                            <div class="step-circle">
+                                <span class="step-number">2</span>
+                                {% if stats.etl_operations > 0 %}
+                                    <i class="fas fa-check step-check"></i>
+                                {% endif %}
+                            </div>
+                            <div class="step-content">
+                                <h6 class="step-title">ETL Operations</h6>
+                                <p class="step-description">Transform & integrate</p>
+                                <div class="step-stats">
+                                    <span class="badge bg-warning">{{ stats.etl_operations|default:0 }}</span> operations
+                                </div>
+                            </div>
+                            <div class="step-icon">
+                                <i class="fas fa-magic fa-2x"></i>
+                            </div>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="workflow-arrow">
+                            <i class="fas fa-arrow-right"></i>
+                        </div>
+
+                        <!-- Step 3: Semantic Layer -->
+                        <div class="workflow-step {% if stats.semantic_tables > 0 %}completed{% elif stats.etl_operations > 0 or stats.data_sources > 0 %}active{% endif %}" onclick="navigateToStep(3)">
+                            <div class="step-circle">
+                                <span class="step-number">3</span>
+                                {% if stats.semantic_tables > 0 %}
+                                    <i class="fas fa-check step-check"></i>
+                                {% endif %}
+                            </div>
+                            <div class="step-content">
+                                <h6 class="step-title">Semantic Layer</h6>
+                                <p class="step-description">Add business context</p>
+                                <div class="step-stats">
+                                    <span class="badge bg-info">{{ stats.semantic_tables|default:0 }}</span> tables
+                                </div>
+                            </div>
+                            <div class="step-icon">
+                                <i class="fas fa-brain fa-2x"></i>
+                            </div>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="workflow-arrow">
+                            <i class="fas fa-arrow-right"></i>
+                        </div>
+
+                        <!-- Step 4: Query -->
+                        <div class="workflow-step {% if stats.total_queries > 0 %}completed{% elif stats.semantic_tables > 0 or stats.data_sources > 0 %}active{% endif %}" onclick="navigateToStep(4)">
+                            <div class="step-circle">
+                                <span class="step-number">4</span>
+                                {% if stats.total_queries > 0 %}
+                                    <i class="fas fa-check step-check"></i>
+                                {% endif %}
+                            </div>
+                            <div class="step-content">
+                                <h6 class="step-title">Query Data</h6>
+                                <p class="step-description">Ask in natural language</p>
+                                <div class="step-stats">
+                                    <span class="badge bg-success">{{ stats.total_queries|default:0 }}</span> queries
+                                </div>
+                            </div>
+                            <div class="step-icon">
+                                <i class="fas fa-comments fa-2x"></i>
+                            </div>
+                        </div>
+
+                        <!-- Arrow -->
+                        <div class="workflow-arrow">
+                            <i class="fas fa-arrow-right"></i>
+                        </div>
+
+                        <!-- Step 5: Dashboard -->
+                        <div class="workflow-step {% if stats.dashboards > 0 %}completed{% elif stats.total_queries > 0 %}active{% endif %}" onclick="navigateToStep(5)">
+                            <div class="step-circle">
+                                <span class="step-number">5</span>
+                                {% if stats.dashboards > 0 %}
+                                    <i class="fas fa-check step-check"></i>
+                                {% endif %}
+                            </div>
+                            <div class="step-content">
+                                <h6 class="step-title">Dashboards</h6>
+                                <p class="step-description">Visualize & share</p>
+                                <div class="step-stats">
+                                    <span class="badge bg-secondary">{{ stats.dashboards|default:0 }}</span> created
+                                </div>
+                            </div>
+                            <div class="step-icon">
+                                <i class="fas fa-chart-bar fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="progress-container mt-4">
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-gradient-primary" role="progressbar" style="width: {{ progress_percentage }}%"></div>
+                    </div>
+                    <div class="progress-text mt-2 text-center">
+                        <small class="text-muted">{{ progress_percentage }}% Complete</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Next Step Action -->
+        <div class="row py-4">
+            <div class="col-12">
+                <div class="text-center">
+                    {% if request.license_info.permissions.can_manage_data_sources %}
+                        {% if stats.data_sources == 0 %}
+                            <h4 class="mb-3">🚀 Let's Get Started!</h4>
+                            <p class="text-muted mb-4">Connect your first data source to begin your journey with ConvaBI</p>
+                            <a href="{% url 'datasets:list' %}" class="btn btn-success btn-lg">
+                                <i class="fas fa-plus me-2"></i>Connect Data Source
+                            </a>
+                        {% elif stats.etl_operations == 0 %}
+                            <h4 class="mb-3">✨ Time for Data Transformation!</h4>
+                            <p class="text-muted mb-4">Your data is connected. Now let's transform and clean it for analysis.</p>
+                            <a href="{% url 'datasets:integration' %}" class="btn btn-warning btn-lg">
+                                <i class="fas fa-magic me-2"></i>Start ETL Operations
+                            </a>
+                        {% elif stats.semantic_tables == 0 %}
+                            <h4 class="mb-3">🧠 Add Business Intelligence!</h4>
+                            <p class="text-muted mb-4">Add business context and meanings to help AI understand your data better.</p>
+                            <a href="{% url 'datasets:semantic' %}" class="btn btn-info btn-lg">
+                                <i class="fas fa-brain me-2"></i>Build Semantic Layer
+                            </a>
+                        {% elif stats.total_queries == 0 %}
+                            <h4 class="mb-3">💬 Ask Your First Question!</h4>
+                            <p class="text-muted mb-4">Your data is ready! Start asking questions in natural language.</p>
+                            <a href="{% url 'core:query' %}" class="btn btn-success btn-lg">
+                                <i class="fas fa-comments me-2"></i>Query Your Data
+                            </a>
+                        {% elif stats.dashboards == 0 %}
+                            <h4 class="mb-3">📊 Create Your Dashboard!</h4>
+                            <p class="text-muted mb-4">Turn your insights into beautiful dashboards to share with your team.</p>
+                            <a href="{% url 'dashboards:list' %}" class="btn btn-secondary btn-lg">
+                                <i class="fas fa-chart-bar me-2"></i>Create Dashboard
+                            </a>
+                        {% else %}
+                            <h4 class="mb-3">🎉 You're All Set!</h4>
+                            <p class="text-muted mb-4">You've completed the ConvaBI workflow. Keep exploring and discovering insights!</p>
+                            <div class="d-flex justify-content-center gap-3">
+                                <a href="{% url 'core:query' %}" class="btn btn-primary">
+                                    <i class="fas fa-search me-2"></i>New Query
+                                </a>
+                                <a href="{% url 'dashboards:list' %}" class="btn btn-outline-primary">
+                                    <i class="fas fa-chart-bar me-2"></i>View Dashboards
+                                </a>
+                            </div>
+                        {% endif %}
+                    {% else %}
+                        <!-- Viewer License - Limited Workflow -->
+                        {% if stats.total_queries == 0 %}
+                            <h4 class="mb-3">💬 Start Querying Data!</h4>
+                            <p class="text-muted mb-4">Ask questions about your data in natural language.</p>
+                            <a href="{% url 'core:query' %}" class="btn btn-success btn-lg">
+                                <i class="fas fa-comments me-2"></i>Query Your Data
+                            </a>
+                        {% elif stats.dashboards == 0 %}
+                            <h4 class="mb-3">📊 Create Your Dashboard!</h4>
+                            <p class="text-muted mb-4">Turn your insights into beautiful dashboards.</p>
+                            <a href="{% url 'dashboards:list' %}" class="btn btn-secondary btn-lg">
+                                <i class="fas fa-chart-bar me-2"></i>Create Dashboard
+                            </a>
+                        {% else %}
+                            <h4 class="mb-3">🎉 Ready to Explore!</h4>
+                            <p class="text-muted mb-4">Continue querying data and creating dashboards.</p>
+                            <div class="d-flex justify-content-center gap-3">
+                                <a href="{% url 'core:query' %}" class="btn btn-primary">
+                                    <i class="fas fa-search me-2"></i>New Query
+                                </a>
+                                <a href="{% url 'dashboards:list' %}" class="btn btn-outline-primary">
+                                    <i class="fas fa-chart-bar me-2"></i>View Dashboards
+                                </a>
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Source Quick Access -->
+        {% if stats.data_sources > 0 %}
+            <div class="row py-4 bg-light">
+                <div class="col-12">
+                    <h4 class="mb-4">🔗 Your Connected Data Sources</h4>
+                    <div class="row">
+                        {% if recent_data_sources %}
+                            {% for source in recent_data_sources %}
+                                <div class="col-lg-3 col-md-4 col-sm-6 mb-3">
+                                    <div class="card h-100 data-source-card" onclick="navigateToDataSource('{{ source.id }}')">
+                                        <div class="card-body text-center">
+                                            <div class="data-source-icon mb-2">
+                                                {% if source.source_type == 'csv' %}
+                                                    <i class="fas fa-file-csv fa-2x text-orange"></i>
+                                                {% elif source.source_type == 'postgresql' %}
+                                                    <i class="fas fa-elephant fa-2x text-blue"></i>
+                                                {% elif source.source_type == 'mysql' %}
+                                                    <i class="fas fa-database fa-2x text-blue"></i>
+                                                {% else %}
+                                                    <i class="fas fa-database fa-2x text-secondary"></i>
+                                                {% endif %}
+                                            </div>
+                                            <h6 class="card-title">{{ source.name }}</h6>
+                                            <p class="card-text small text-muted">{{ source.source_type|title }}</p>
+                                            <div class="mt-2">
+                                                <span class="badge bg-{% if source.status == 'active' %}success{% else %}danger{% endif %}">
+                                                    {{ source.status|title }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                        
+                        <!-- Add More Data Sources (Creator only) -->
+                        {% if request.license_info.permissions.can_manage_data_sources %}
+                            <div class="col-lg-3 col-md-4 col-sm-6 mb-3">
+                                <div class="card h-100 border-dashed" onclick="window.location.href='{% url 'datasets:list' %}'">
+                                    <div class="card-body text-center d-flex align-items-center justify-content-center">
+                                        <div>
+                                            <i class="fas fa-plus fa-2x text-muted mb-2"></i>
+                                            <h6 class="text-muted">Add Data Source</h6>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
+    {% else %}
+        <!-- Call to Action for Anonymous Users -->
+        <div class="row py-5 bg-light">
+            <div class="col-12 text-center">
+                <h3 class="mb-4">Ready to Transform Your Data?</h3>
+                <p class="lead mb-4">Join ConvaBI and start making data-driven decisions with natural language queries</p>
+                <a href="{% url 'accounts:login' %}" class="btn btn-primary btn-lg me-3">
+                    <i class="fas fa-sign-in-alt me-2"></i>Login
+                </a>
+                <a href="{% url 'accounts:register' %}" class="btn btn-outline-primary btn-lg">
+                    <i class="fas fa-user-plus me-2"></i>Register
+                </a>
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.min-vh-50 {
+    min-height: 50vh;
+}
+
+.bg-gradient-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.workflow-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+.workflow-steps {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 20px;
+}
+
+.workflow-step {
+    flex: 1;
+    min-width: 180px;
+    max-width: 220px;
+    background: white;
+    border-radius: 15px;
+    padding: 20px 15px;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    position: relative;
+    border: 3px solid transparent;
+}
+
+.workflow-step:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+
+.workflow-step.active {
+    border-color: #007bff;
+    background: linear-gradient(135deg, #e3f2fd 0%, #f8f9ff 100%);
+}
+
+.workflow-step.completed {
+    border-color: #28a745;
+    background: linear-gradient(135deg, #d4edda 0%, #f8fff9 100%);
+}
+
+.step-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #e9ecef;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 15px;
+    position: relative;
+}
+
+.workflow-step.active .step-circle {
+    background: #007bff;
+    color: white;
+}
+
+.workflow-step.completed .step-circle {
+    background: #28a745;
+    color: white;
+}
+
+.step-number {
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.step-check {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.step-title {
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+}
+
+.step-description {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.step-stats {
+    font-size: 12px;
+    margin-bottom: 15px;
+}
+
+.step-icon {
+    color: #dee2e6;
+}
+
+.workflow-step.active .step-icon {
+    color: #007bff;
+}
+
+.workflow-step.completed .step-icon {
+    color: #28a745;
+}
+
+.workflow-arrow {
+    color: #dee2e6;
+    font-size: 24px;
+    margin: 0 10px;
+    flex-shrink: 0;
+}
+
+.progress-container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.data-source-card {
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.data-source-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    border-color: #007bff;
+}
+
+.border-dashed {
+    border: 2px dashed #dee2e6 !important;
+}
+
+.border-dashed:hover {
+    border-color: #007bff !important;
+    background-color: #f8f9fa;
+}
+
+.feature-card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    transition: all 0.3s ease;
+    border: 1px solid #f0f0f0;
+}
+
+.feature-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+}
+
+.text-orange { color: #ff9800; }
+.text-blue { color: #2196f3; }
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .workflow-steps {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .workflow-arrow {
+        transform: rotate(90deg);
+        margin: 10px 0;
+    }
+    
+    .workflow-step {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 992px) {
+    .workflow-steps {
+        justify-content: center;
+    }
+    
+    .workflow-step {
+        flex: 0 0 auto;
+    }
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function navigateToStep(step) {
+    const urls = {
+        1: '{% url "datasets:list" %}',
+        2: '{% url "datasets:list" %}', 
+        3: '{% url "datasets:semantic" %}',
+        4: '{% url "core:query" %}',
+        5: '{% url "dashboards:list" %}'
+    };
+    
+    if (urls[step]) {
+        window.location.href = urls[step];
+    }
+}
+
+function navigateToDataSource(sourceId) {
+    window.location.href = `/datasets/${sourceId}/`;
+}
+
+// Add smooth scrolling for workflow
+document.addEventListener('DOMContentLoaded', function() {
+    const workflowSteps = document.querySelectorAll('.workflow-step');
+    
+    workflowSteps.forEach(step => {
+        step.addEventListener('click', function() {
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                this.style.transform = '';
+            }, 150);
+        });
+    });
+});
+</script>
+{% endblock %} 

@@ -1,0 +1,2772 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Data Transformation & ETL - ConvaBI{% endblock %}
+
+{% block extra_css %}
+<style>
+    .integration-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .integration-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .data-source-chip {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        margin: 0.25rem;
+        background-color: #e9ecef;
+        border-radius: 1rem;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .data-source-chip:hover {
+        background-color: #007bff;
+        color: white;
+    }
+    .data-source-chip.selected {
+        background-color: #28a745;
+        color: white;
+    }
+    .operation-preview {
+        background: #f8f9fa;
+        border: 2px dashed #dee2e6;
+        border-radius: 0.5rem;
+        padding: 2rem;
+        text-align: center;
+        min-height: 200px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    .join-diagram {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 2rem;
+        margin: 2rem 0;
+    }
+    .table-box {
+        background: #fff;
+        border: 2px solid #007bff;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        min-width: 150px;
+        text-align: center;
+    }
+    .join-arrow {
+        font-size: 2rem;
+        color: #007bff;
+    }
+    .step-indicator {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 2rem;
+    }
+    .step {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        background: #e9ecef;
+        border-radius: 2rem;
+        margin: 0 0.5rem;
+        transition: all 0.3s;
+    }
+    .step.active {
+        background: #007bff;
+        color: white;
+    }
+    .step.completed {
+        background: #28a745;
+        color: white;
+    }
+    .step-number {
+        background: rgba(255,255,255,0.3);
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 0.5rem;
+        font-weight: bold;
+    }
+    .error-recovery-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .error-recovery-content {
+        background: white;
+        border-radius: 12px;
+        max-width: 95%;
+        max-height: 90%;
+        overflow-y: auto;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        animation: modalSlideIn 0.3s ease;
+    }
+    
+    @keyframes modalSlideIn {
+        from { opacity: 0; transform: scale(0.9) translateY(-20px); }
+        to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    
+    .error-header {
+        background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+        color: white;
+        padding: 20px 30px;
+        border-radius: 12px 12px 0 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .error-header h3 {
+        margin: 0;
+        font-size: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .close-modal {
+        background: none;
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 5px;
+        border-radius: 50%;
+        transition: background-color 0.2s;
+    }
+    
+    .close-modal:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+    
+    .error-body {
+        padding: 30px;
+    }
+    
+    .error-summary {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 25px;
+    }
+    
+    .error-summary h4 {
+        color: #856404;
+        margin: 0 0 10px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .quick-fixes {
+        background: #d1ecf1;
+        border: 1px solid #bee5eb;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 25px;
+    }
+    
+    .quick-fixes h4 {
+        color: #0c5460;
+        margin: 0 0 15px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .quick-fix-item {
+        background: white;
+        border: 1px solid #b3d9e0;
+        border-radius: 6px;
+        padding: 12px 15px;
+        margin-bottom: 10px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .column-error-details {
+        margin-bottom: 30px;
+        border: 1px solid #e9ecef;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    
+    .column-error-header {
+        background: #f8f9fa;
+        padding: 15px 20px;
+        border-bottom: 1px solid #e9ecef;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .column-error-header h5 {
+        margin: 0;
+        color: #495057;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .error-badge {
+        background: #dc3545;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+    
+    .column-error-body {
+        padding: 20px;
+    }
+    
+    .failed-rows-section {
+        background: #f8f9fa;
+        border-radius: 6px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .failed-rows-section h6 {
+        margin: 0 0 10px 0;
+        color: #495057;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+    
+    .failed-value {
+        background: #fff5f5;
+        border: 1px solid #fed7d7;
+        border-radius: 4px;
+        padding: 8px 12px;
+        margin: 5px 5px 5px 0;
+        display: inline-block;
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+        color: #c53030;
+    }
+    
+    .fix-suggestion {
+        background: #f0fff4;
+        border: 1px solid #c6f6d5;
+        border-radius: 6px;
+        padding: 12px 15px;
+        margin-bottom: 10px;
+        color: #22543d;
+    }
+    
+    .fix-suggestion strong {
+        color: #2f855a;
+    }
+    
+    .action-buttons {
+        display: flex;
+        gap: 15px;
+        justify-content: flex-end;
+        padding: 20px 30px;
+        background: #f8f9fa;
+        border-top: 1px solid #e9ecef;
+    }
+    
+    .btn-retry {
+        background: linear-gradient(135deg, #4CAF50, #45a049);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 6px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .btn-retry:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+    }
+    
+    .btn-cancel {
+        background: #6c757d;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 6px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    
+    .btn-cancel:hover {
+        background: #5a6268;
+    }
+    
+    .data-quality-insight {
+        background: #e7f3ff;
+        border: 1px solid #b3d9ff;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .insight-stat {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-right: 20px;
+        font-weight: 500;
+        color: #0056b3;
+    }
+    
+    .expandable-section {
+        border: 1px solid #e9ecef;
+        border-radius: 6px;
+        margin-bottom: 15px;
+    }
+    
+    .expandable-header {
+        background: #f8f9fa;
+        padding: 12px 15px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        transition: background-color 0.2s;
+    }
+    
+    .expandable-header:hover {
+        background: #e9ecef;
+    }
+    
+    .expandable-content {
+        padding: 15px;
+        display: none;
+    }
+    
+    .expandable-content.expanded {
+        display: block;
+    }
+    
+    .toggle-icon {
+        transition: transform 0.3s;
+    }
+    
+    .toggle-icon.rotated {
+        transform: rotate(180deg);
+    }
+
+    /* Date format helper */
+    .date-format-helper {
+        background: #fff3e0;
+        border: 1px solid #ffcc80;
+        border-radius: 8px;
+        padding: 15px;
+        margin-top: 15px;
+    }
+    
+    .format-example {
+        display: inline-block;
+        background: white;
+        border: 1px solid #ffcc80;
+        border-radius: 4px;
+        padding: 6px 10px;
+        margin: 5px 5px 5px 0;
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+        color: #e65100;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Enhanced Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'core:home' %}">Home</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'datasets:list' %}">Data Sources</a></li>
+                    <li class="breadcrumb-item active">Data Transformation & ETL</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">
+                <i class="fas fa-magic text-primary me-2"></i>
+                Data Transformation & ETL
+            </h1>
+            <p class="text-muted mb-0">Transform data types and integrate multiple data sources with advanced ETL operations</p>
+        </div>
+    </div>
+
+    <!-- ETL Operation Builder -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs" id="etlTabs" role="tablist">
+                        <li class="nav-item">
+                            <a class="nav-link active" id="transform-tab" data-bs-toggle="tab" href="#transform" role="tab">
+                                <i class="fas fa-exchange-alt me-1"></i>Data Type Transformation
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="join-tab" data-bs-toggle="tab" href="#join" role="tab">
+                                <i class="fas fa-link me-1"></i>Join Operations
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="union-tab" data-bs-toggle="tab" href="#union" role="tab">
+                                <i class="fas fa-layer-group me-1"></i>Union Operations
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="aggregate-tab" data-bs-toggle="tab" href="#aggregate" role="tab">
+                                <i class="fas fa-calculator me-1"></i>Aggregations
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-body">
+                    <div class="tab-content" id="etlTabContent">
+                        
+                        <!-- Data Type Transformation Tab -->
+                        <div class="tab-pane fade show active" id="transform" role="tabpanel">
+                            <h5><i class="fas fa-exchange-alt me-2"></i>Data Type Transformation</h5>
+                            <p class="text-muted">Change data types of columns before sending to semantic layer</p>
+                            
+                            <form id="transformForm">
+                                {% csrf_token %}
+                                <!-- Data Source Selection -->
+                                <div class="row mb-4">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Select Data Source</label>
+                                        <select class="form-select" id="transformDataSource" onchange="loadDataSourceSchema(this.value, 'transform')">
+                                            <option value="">Choose a data source...</option>
+                                            {% for source in data_sources %}
+                                            <option value="{{ source.id }}">{{ source.name }} ({{ source.source_type }})</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Operation Name</label>
+                                        <input type="text" class="form-control" id="transformOperationName" placeholder="e.g., Clean Sales Data Types">
+                                    </div>
+                                </div>
+
+                                <!-- Column Transformations -->
+                                <div id="transformationRules" style="display: none;">
+                                    <h6>Column Type Transformations</h6>
+                                    <div class="alert alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        Select columns and their target data types. ConvaBI will automatically handle the conversion.
+                                    </div>
+                                    
+                                    <div id="columnTransformations">
+                                        <!-- Column transformation rules will be populated here -->
+                                    </div>
+
+
+
+
+
+                                    <div class="mt-4 text-end">
+                                        <button type="button" class="btn btn-primary" onclick="executeTransformation()">
+                                            <i class="fas fa-play me-1"></i>Apply Transformations
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Join Operations Tab (Enhanced) -->
+                        <div class="tab-pane fade" id="join" role="tabpanel">
+                            <h5><i class="fas fa-link me-2"></i>Join Operations</h5>
+                            <p class="text-muted">Combine data from multiple sources with intelligent column type handling</p>
+                            
+                            <form id="joinForm">
+                                {% csrf_token %}
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Left Data Source</label>
+                                        <select class="form-select" id="leftDataSource" onchange="loadDataSourceSchema(this.value, 'left')">
+                                            <option value="">Select left table...</option>
+                                            {% for source in data_sources %}
+                                            <option value="{{ source.id }}">{{ source.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Right Data Source</label>
+                                        <select class="form-select" id="rightDataSource" onchange="loadDataSourceSchema(this.value, 'right')">
+                                            <option value="">Select right table...</option>
+                                            {% for source in data_sources %}
+                                            <option value="{{ source.id }}">{{ source.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Join Type</label>
+                                        <select class="form-select" id="joinType">
+                                            <option value="inner">Inner Join</option>
+                                            <option value="left">Left Join</option>
+                                            <option value="right">Right Join</option>
+                                            <option value="outer">Full Outer Join</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Join Conditions -->
+                                <div id="joinConditions" style="display: none;">
+                                    <h6>Join Conditions & Type Alignment</h6>
+                                    <div class="alert alert-warning">
+                                        <i class="fas fa-exclamation-triangle me-2"></i>
+                                        ConvaBI will automatically handle data type mismatches in join conditions.
+                                    </div>
+                                    <div id="joinConditionsList">
+                                        <!-- Join conditions will be populated here -->
+                                    </div>
+                                </div>
+
+                                <div class="mt-4 text-end">
+                                    <button type="button" class="btn btn-primary" onclick="executeJoin()" disabled id="joinExecuteBtn">
+                                        <i class="fas fa-link me-1"></i>Execute Join
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Union Operations Tab -->
+                        <div class="tab-pane fade" id="union" role="tabpanel">
+                            <h5><i class="fas fa-layer-group me-2"></i>Union Operations</h5>
+                            <p class="text-muted">Combine rows from multiple sources with automatic schema alignment</p>
+                            
+                            <form id="unionForm">
+                                {% csrf_token %}
+                                <div class="row mb-3">
+                                    <div class="col-md-8">
+                                        <label class="form-label">Select Data Sources to Union</label>
+                                        <div class="row" id="unionDataSources">
+                                            {% for source in data_sources %}
+                                            <div class="col-md-6 mb-2">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" value="{{ source.id }}" id="union_{{ source.id }}" onchange="updateUnionPreview()">
+                                                    <label class="form-check-label" for="union_{{ source.id }}">
+                                                        {{ source.name }} ({{ source.source_type }})
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Union Type</label>
+                                        <select class="form-select" id="unionTypeSelect">
+                                            <option value="UNION ALL" selected>UNION ALL (Keep all rows)</option>
+                                            <option value="UNION">UNION (Remove duplicates)</option>
+                                        </select>
+                                        <small class="form-text text-muted">
+                                            <strong>UNION ALL:</strong> Combines all rows (recommended)<br>
+                                            <strong>UNION:</strong> Removes duplicate rows
+                                        </small>
+                                    </div>
+                                </div>
+
+                                <!-- Schema Alignment -->
+                                <div id="unionSchemaAlignment" style="display: none;">
+                                    <h6>Schema Alignment & Type Harmonization</h6>
+                                    <div class="alert alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        ConvaBI will harmonize column types across all selected sources.
+                                    </div>
+                                    <div id="unionColumnMapping">
+                                        <!-- Column mapping will be shown here -->
+                                    </div>
+                                </div>
+
+                                <div class="mt-4 text-end">
+                                    <button type="button" class="btn btn-primary" onclick="executeUnion()" disabled id="unionExecuteBtn">
+                                        <i class="fas fa-layer-group me-1"></i>Execute Union
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Aggregation Tab -->
+                        <div class="tab-pane fade" id="aggregate" role="tabpanel">
+                            <h5><i class="fas fa-calculator me-2"></i>Aggregation Operations</h5>
+                            <p class="text-muted">Create aggregated views with proper data type handling</p>
+                            
+                            <form id="aggregateForm">
+                                {% csrf_token %}
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">Select Data Source</label>
+                                        <select class="form-select" id="aggregateDataSource" onchange="loadDataSourceSchema(this.value, 'aggregate')">
+                                            <option value="">Choose data source...</option>
+                                            {% for source in data_sources %}
+                                            <option value="{{ source.id }}">{{ source.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Output Table Name</label>
+                                        <input type="text" class="form-control" id="aggregateOutputName" placeholder="e.g., monthly_sales_summary">
+                                    </div>
+                                </div>
+
+                                <div id="aggregateConfig" style="display: none;">
+                                    <!-- Group By Columns -->
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Group By Columns</label>
+                                            <div id="groupByColumns">
+                                                <!-- Checkboxes for grouping columns -->
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Aggregation Functions</label>
+                                            <div id="aggregationFunctions">
+                                                <!-- Aggregation function selectors -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-4 text-end">
+                                    <button type="button" class="btn btn-primary" onclick="executeAggregation()" disabled id="aggregateExecuteBtn">
+                                        <i class="fas fa-calculator me-1"></i>Execute Aggregation
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Enhanced Error Recovery Modal -->
+    <div id="errorRecoveryModal" class="error-recovery-modal" style="display: none;">
+        <div class="error-recovery-content">
+            <div class="error-header">
+                <h3>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    ETL Transformation Errors Detected
+                </h3>
+                <button class="close-modal" onclick="closeErrorModal()">×</button>
+            </div>
+            
+            <div class="error-body">
+                <!-- Error Summary -->
+                <div class="error-summary">
+                    <h4>
+                        <i class="fas fa-info-circle"></i>
+                        Error Summary
+                    </h4>
+                    <div id="errorSummaryContent">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- Quick Fixes -->
+                <div class="quick-fixes">
+                    <h4>
+                        <i class="fas fa-tools"></i>
+                        Quick Fixes
+                    </h4>
+                    <div id="quickFixesContent">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- Data Quality Insights -->
+                <div class="data-quality-insight">
+                    <h5 style="margin-bottom: 10px;">
+                        <i class="fas fa-chart-line"></i>
+                        Data Quality Insights
+                    </h5>
+                    <div id="dataQualityContent">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- Column-Specific Errors -->
+                <div id="columnErrorsContainer">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+                
+                <!-- Date Format Helper (for date errors) -->
+                <div id="dateFormatHelper" class="date-format-helper" style="display: none;">
+                    <h5>
+                        <i class="fas fa-calendar-alt"></i>
+                        Date Format Guide
+                    </h5>
+                    <p>Select the format that matches your data:</p>
+                    <div id="formatExamples">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- Expandable Sections -->
+                <div class="expandable-section">
+                    <div class="expandable-header" onclick="toggleExpandable('recommendedActions')">
+                        <span>
+                            <i class="fas fa-list-ul"></i>
+                            Recommended Actions
+                        </span>
+                        <i class="fas fa-chevron-down toggle-icon" id="recommendedActions-icon"></i>
+                    </div>
+                    <div class="expandable-content" id="recommendedActions-content">
+                        <div id="recommendedActionsContent">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="expandable-section">
+                    <div class="expandable-header" onclick="toggleExpandable('alternativeApproaches')">
+                        <span>
+                            <i class="fas fa-lightbulb"></i>
+                            Alternative Approaches
+                        </span>
+                        <i class="fas fa-chevron-down toggle-icon" id="alternativeApproaches-icon"></i>
+                    </div>
+                    <div class="expandable-content" id="alternativeApproaches-content">
+                        <div id="alternativeApproachesContent">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="action-buttons">
+                <button class="btn-cancel" onclick="closeErrorModal()">
+                    <i class="fas fa-times"></i>
+                    Close
+                </button>
+                <button class="btn-retry" onclick="retryWithFixedSettings()">
+                    <i class="fas fa-redo"></i>
+                    Apply Fixes & Retry
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Workflow Navigation -->
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-2">
+                                <i class="fas fa-route me-2"></i>ConvaBI Workflow Navigation
+                            </h6>
+                            <small class="text-muted">Continue your data journey</small>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex justify-content-end gap-2">
+                                <a href="{% url 'datasets:list' %}" class="btn btn-outline-secondary btn-sm">
+                                    <i class="fas fa-arrow-left me-1"></i>Back to Data Sources
+                                </a>
+                                <a href="{% url 'datasets:semantic' %}" class="btn btn-outline-info btn-sm">
+                                    <i class="fas fa-brain me-1"></i>Next: Semantic Layer
+                                </a>
+                                <a href="{% url 'core:query' %}" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-comments me-1"></i>Query Data
+                                </a>
+                                <a href="{% url 'dashboards:list' %}" class="btn btn-outline-success btn-sm">
+                                    <i class="fas fa-chart-bar me-1"></i>Dashboards
+                                </a>
+                                <a href="{% url 'core:home' %}" class="btn btn-outline-warning btn-sm">
+                                    <i class="fas fa-home me-1"></i>Home
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Data type transformation functionality
+const DATA_TYPES = {
+    'string': 'Text/String',
+    'integer': 'Integer Number',
+    'float': 'Decimal Number',
+    'boolean': 'True/False',
+    'date': 'Date',
+    'datetime': 'Date & Time',
+    'json': 'JSON Object'
+};
+
+let currentSchemas = {};
+
+// Ensure ConvaBI exists for alerts
+if (typeof ConvaBI === 'undefined') {
+    window.ConvaBI = {
+        showAlert: function(type, message) {
+            console.log(`${type.toUpperCase()}: ${message}`);
+            alert(`${type.toUpperCase()}: ${message}`);
+        }
+    };
+}
+
+function loadDataSourceSchema(dataSourceId, context) {
+    if (!dataSourceId) {
+        // Clear schema if data source is deselected
+        if (currentSchemas[context]) {
+            delete currentSchemas[context];
+            if (context === 'left' || context === 'right') {
+                updateJoinConditions();
+            }
+        }
+        return;
+    }
+    
+    console.log(`🔄 Loading schema for ${context}: ${dataSourceId}`);
+    
+    // Show loading state
+    const loadingHtml = '<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading schema...</div>';
+    
+    fetch(`/datasets/api/data-sources/${dataSourceId}/schema/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log(`✅ Schema loaded for ${context}:`, data.schema);
+                currentSchemas[context] = data.schema;
+                
+                if (context === 'transform') {
+                    showTransformationRules(data.schema);
+                } else if (context === 'left' || context === 'right') {
+                    console.log(`🔗 Updating join conditions. Current schemas:`, Object.keys(currentSchemas));
+                    updateJoinConditions();
+                } else if (context === 'aggregate') {
+                    showAggregateConfig(data.schema);
+                }
+            } else {
+                console.error(`❌ Failed to load schema for ${context}:`, data.error);
+                ConvaBI.showAlert('danger', 'Failed to load schema: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error(`❌ Error loading schema for ${context}:`, error);
+            ConvaBI.showAlert('danger', 'Error loading data source schema');
+        });
+}
+
+function showTransformationRules(schema) {
+    const container = document.getElementById('columnTransformations');
+    const transformationRules = document.getElementById('transformationRules');
+    
+    let html = '<div class="table-responsive"><table class="table table-sm">';
+    html += '<thead><tr><th>Column</th><th>Current Type</th><th>Target Type</th><th>Sample Values</th></tr></thead><tbody>';
+    
+    Object.entries(schema).forEach(([columnName, columnInfo]) => {
+        const currentType = columnInfo.type || 'unknown';
+        const sampleValues = (columnInfo.sample_values || []).slice(0, 3).join(', ');
+        
+        html += `
+            <tr id="transform_${columnName}">
+                <td><strong>${columnName}</strong></td>
+                <td><span class="badge bg-secondary">${currentType}</span></td>
+                <td>
+                    <select class="form-select form-select-sm" name="target_type_${columnName}" onchange="showDateFormatIfNeeded('${columnName}', this.value)">
+                        <option value="">No change</option>
+                        ${Object.entries(DATA_TYPES).map(([key, label]) => 
+                            `<option value="${key}" ${key === currentType ? 'selected' : ''}>${label}</option>`
+                        ).join('')}
+                    </select>
+                    
+                    <!-- Date format selector (hidden by default) -->
+                    <div id="dateFormat_${columnName}" class="mt-2" style="display: none;">
+                        <label class="form-label text-primary">⚠️ Date Format (IMPORTANT):</label>
+                        <select class="form-select form-select-sm" name="date_format_${columnName}">
+                            <option value="">Auto-detect</option>
+                            <option value="%d-%m-%Y" style="background-color: #d4edda;">🎯 DD-MM-YYYY (31-12-2023) - RECOMMENDED</option>
+                            <option value="%m/%d/%Y">MM/DD/YYYY (12/31/2023)</option>
+                            <option value="%d/%m/%Y">DD/MM/YYYY (31/12/2023)</option>
+                            <option value="%Y-%m-%d">YYYY-MM-DD (2023-12-31)</option>
+                            <option value="%m-%d-%Y">MM-DD-YYYY (12-31-2023)</option>
+                        </select>
+                        <small class="text-success">✅ For your Superstore data, use DD-MM-YYYY format</small>
+                    </div>
+                </td>
+                <td><small class="text-muted">${sampleValues}</small></td>
+            </tr>
+        `;
+    });
+    
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+    transformationRules.style.display = 'block';
+}
+
+
+
+function testTransformation(columnName) {
+    ConvaBI.showAlert('info', `Testing transformation for column: ${columnName}. This feature will validate the transformation before applying.`);
+}
+
+
+
+
+
+function executeTransformation() {
+    const dataSourceId = document.getElementById('transformDataSource').value;
+    const operationName = document.getElementById('transformOperationName').value || 'Data Type Transformation';
+    
+    if (!dataSourceId) {
+        ConvaBI.showAlert('warning', 'Please select a data source first');
+        return;
+    }
+    
+    // Collect transformations from the form
+    const transformations = {};
+    const selects = document.querySelectorAll('[name^="target_type_"]');
+    
+    selects.forEach(select => {
+        const columnName = select.name.replace('target_type_', '');
+        const targetType = select.value;
+        if (targetType && targetType !== '' && targetType !== 'No change') {
+            transformations[columnName] = targetType;
+            
+            // Add date format if date type is selected
+            if (targetType === 'date') {
+                const dateFormatSelect = document.querySelector(`[name="date_format_${columnName}"]`);
+                if (dateFormatSelect && dateFormatSelect.value) {
+                    transformations[`${columnName}_date_format`] = dateFormatSelect.value;
+                }
+            }
+        }
+    });
+    
+    if (Object.keys(transformations).length === 0) {
+        ConvaBI.showAlert('warning', 'Please select at least one column to transform');
+        return;
+    }
+    
+    // Show loading state
+    const executeBtn = document.querySelector('button[onclick="executeTransformation()"]');
+    const originalText = executeBtn.innerHTML;
+    executeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Applying Transformations...';
+    executeBtn.disabled = true;
+    
+    // Execute transformation using our new API endpoint
+    fetch('/datasets/api/etl/transform/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': ConvaBI.getCsrfToken()
+        },
+        body: JSON.stringify({
+            data_source_id: dataSourceId,
+            operation_name: operationName,
+            transformations: transformations
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            ConvaBI.showAlert('success', data.message);
+            // Refresh the schema to show updated types
+            loadDataSourceSchema(dataSourceId, 'transform');
+            
+            if (data.workflow_updated) {
+                ConvaBI.showAlert('info', 'ETL workflow step completed! You can now proceed to semantic layer generation.');
+            }
+        } else if (data.file_missing) {
+            // Show CSV file not found modal
+            showCsvFileNotFoundModal();
+        } else if (data.recovery_mode) {
+            // ENHANCED: Show detailed error analysis and recovery options
+            showTransformationErrorDialog(data);
+        } else {
+            ConvaBI.showAlert('danger', data.error || 'Transformation failed');
+        }
+    })
+    .catch(error => {
+        console.error('Error executing transformation:', error);
+        
+        // Check if this is a CSV file not found error
+        if (error.message && error.message.includes('CSV file not found')) {
+            showCsvFileNotFoundModal();
+        } else {
+            ConvaBI.showAlert('danger', 'Error executing transformation: ' + error.message);
+        }
+    })
+    .finally(() => {
+        executeBtn.innerHTML = originalText;
+        executeBtn.disabled = false;
+    });
+}
+
+function collectTransformations() {
+    const transformations = [];
+    const rows = document.querySelectorAll('#columnTransformations tbody tr');
+    
+    rows.forEach(row => {
+        const columnName = row.querySelector('td:first-child strong')?.textContent || 
+                          row.querySelector('td:first-child input')?.value;
+        const targetTypeSelect = row.querySelector('select[name^="target_type_"], select:not([name])');
+        const targetType = targetTypeSelect?.value;
+        
+        if (columnName && targetType) {
+            const currentType = row.querySelector('.badge').textContent;
+            transformations.push({
+                column: columnName,
+                from_type: currentType,
+                to_type: targetType
+            });
+        }
+    });
+    
+    return transformations;
+}
+
+// Enhanced ConvaBI object for this module
+window.ConvaBI = window.ConvaBI || {};
+Object.assign(ConvaBI, {
+    showLoading: function(message) {
+        // Implementation for loading state
+        console.log('Loading:', message);
+    },
+    
+    hideLoading: function() {
+        // Implementation to hide loading
+        console.log('Loading hidden');
+    },
+    
+    showAlert: function(type, message) {
+        // Create and show alert
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        const container = document.querySelector('.container-fluid');
+        container.insertBefore(alertDiv, container.firstChild);
+    },
+    
+    getCsrfToken: function() {
+        return document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    }
+});
+
+// Show date format selector when date type is selected
+function showDateFormatIfNeeded(columnName, targetType) {
+    const dateFormatDiv = document.getElementById(`dateFormat_${columnName}`);
+    if (dateFormatDiv) {
+        if (targetType === 'date') {
+            dateFormatDiv.style.display = 'block';
+            // Auto-select the recommended DD-MM-YYYY format for Superstore data
+            const formatSelect = dateFormatDiv.querySelector('select');
+            if (formatSelect && !formatSelect.value) {
+                formatSelect.value = '%d-%m-%Y';
+            }
+        } else {
+            dateFormatDiv.style.display = 'none';
+        }
+    }
+}
+
+// Additional functions for join, union, and aggregate operations
+function updateJoinConditions() {
+    const leftSchema = currentSchemas.left;
+    const rightSchema = currentSchemas.right;
+    
+    console.log('🔗 updateJoinConditions called');
+    console.log('Left schema:', leftSchema);
+    console.log('Right schema:', rightSchema);
+    
+    const joinConditionsDiv = document.getElementById('joinConditions');
+    const conditionsList = document.getElementById('joinConditionsList');
+    const executeBtn = document.getElementById('joinExecuteBtn');
+    
+    if (!leftSchema || !rightSchema) {
+        // Hide join conditions if either schema is missing
+        console.log('⚠️ One or both schemas missing, hiding join conditions');
+        if (joinConditionsDiv) joinConditionsDiv.style.display = 'none';
+        if (executeBtn) executeBtn.disabled = true;
+        return;
+    }
+    
+    // Extract column names from schema (handle both array and object formats)
+    let leftColumns = [];
+    let rightColumns = [];
+    
+    try {
+        if (Array.isArray(leftSchema)) {
+            leftColumns = leftSchema.map(col => col.name || col);
+        } else if (typeof leftSchema === 'object') {
+            leftColumns = Object.keys(leftSchema);
+        }
+        
+        if (Array.isArray(rightSchema)) {
+            rightColumns = rightSchema.map(col => col.name || col);
+        } else if (typeof rightSchema === 'object') {
+            rightColumns = Object.keys(rightSchema);
+        }
+        
+        console.log('📋 Left columns:', leftColumns);
+        console.log('📋 Right columns:', rightColumns);
+        
+        if (leftColumns.length === 0 || rightColumns.length === 0) {
+            console.warn('⚠️ No columns found in schemas');
+            ConvaBI.showAlert('warning', 'No columns found in one or both data sources');
+            return;
+        }
+        
+        // Create column selectors for join conditions
+        let conditionsHtml = `
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Left Table Column</label>
+                    <select class="form-select" id="leftJoinColumn">
+                        <option value="">Select column...</option>
+                        ${leftColumns.map(col => `<option value="${col}">${col}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Right Table Column</label>
+                    <select class="form-select" id="rightJoinColumn">
+                        <option value="">Select column...</option>
+                        ${rightColumns.map(col => `<option value="${col}">${col}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                Select the columns to join on. ConvaBI will automatically handle data type alignment during the join operation.
+            </div>
+        `;
+        
+        // Update the UI
+        if (conditionsList) {
+            conditionsList.innerHTML = conditionsHtml;
+        }
+        
+        // Show the join conditions section
+        if (joinConditionsDiv) {
+            joinConditionsDiv.style.display = 'block';
+        }
+        
+        // Enable execute button when both schemas are loaded
+        if (executeBtn) {
+            executeBtn.disabled = false;
+        }
+        
+        console.log('✅ Join conditions UI updated successfully');
+        
+    } catch (error) {
+        console.error('❌ Error updating join conditions:', error);
+        ConvaBI.showAlert('danger', 'Error processing schema data for join conditions');
+    }
+}
+
+function executeJoin() {
+    console.log('🔧 Executing join operation...');
+    
+    // Get form data
+    const leftSourceSelect = document.getElementById('leftDataSource');
+    const rightSourceSelect = document.getElementById('rightDataSource');
+    const joinTypeSelect = document.getElementById('joinType');
+    
+    if (!leftSourceSelect || !rightSourceSelect || !joinTypeSelect) {
+        ConvaBI.showAlert('danger', 'Required form elements not found. Please refresh the page.');
+        return;
+    }
+    
+    const leftSourceId = leftSourceSelect.value;
+    const rightSourceId = rightSourceSelect.value;
+    const joinType = joinTypeSelect.value;
+    
+    // Validate inputs
+    if (!leftSourceId || !rightSourceId) {
+        ConvaBI.showAlert('warning', 'Please select both left and right data sources');
+        return;
+    }
+    
+    if (leftSourceId === rightSourceId) {
+        ConvaBI.showAlert('warning', 'Left and right data sources must be different');
+        return;
+    }
+    
+    // Get join columns (these should be populated by loadDataSourceSchema)
+    const leftColumnSelect = document.querySelector('#leftJoinColumn');
+    const rightColumnSelect = document.querySelector('#rightJoinColumn');
+    
+    if (!leftColumnSelect || !rightColumnSelect) {
+        ConvaBI.showAlert('warning', 'Please load schemas first to select join columns');
+        return;
+    }
+    
+    const leftColumn = leftColumnSelect.value;
+    const rightColumn = rightColumnSelect.value;
+    
+    if (!leftColumn || !rightColumn) {
+        ConvaBI.showAlert('warning', 'Please select join columns for both data sources');
+        return;
+    }
+    
+    // Show loading state
+    const executeBtn = document.getElementById('joinExecuteBtn');
+    const originalText = executeBtn.innerHTML;
+    executeBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Executing...';
+    executeBtn.disabled = true;
+    
+    // Prepare request data
+    const requestData = {
+        left_source_id: leftSourceId,
+        right_source_id: rightSourceId,
+        left_column: leftColumn,
+        right_column: rightColumn,
+        join_type: joinType,
+        operation_name: `Join_${new Date().toISOString().slice(0, 19).replace(/:/g, '')}`
+    };
+    
+    console.log('Join request data:', requestData);
+    
+    // Execute join operation
+    fetch('/datasets/api/etl/join/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            ConvaBI.showAlert('success', data.message);
+            console.log('✅ Join operation successful:', data);
+            
+            // Show intermediate results
+            showEtlResults(data.operation_id, 'Join Results');
+            
+        } else {
+            ConvaBI.showAlert('danger', `Join operation failed: ${data.error}`);
+            console.error('❌ Join operation failed:', data);
+        }
+    })
+    .catch(error => {
+        console.error('❌ Error executing join:', error);
+        ConvaBI.showAlert('danger', `Error executing join operation: ${error.message}`);
+    })
+    .finally(() => {
+        // Restore button state
+        executeBtn.innerHTML = originalText;
+        executeBtn.disabled = false;
+    });
+}
+
+function updateUnionPreview() {
+    const checkedSources = document.querySelectorAll('#unionDataSources input:checked');
+    if (checkedSources.length >= 2) {
+        document.getElementById('unionSchemaAlignment').style.display = 'block';
+        document.getElementById('unionExecuteBtn').disabled = false;
+    }
+}
+
+function executeUnion() {
+    console.log('🔧 Executing union operation...');
+    
+    // Get selected data sources
+    const checkedBoxes = document.querySelectorAll('#unionDataSources input:checked');
+    
+    if (checkedBoxes.length < 2) {
+        ConvaBI.showAlert('warning', 'Please select at least 2 data sources for union operation');
+        return;
+    }
+    
+    const sourceIds = Array.from(checkedBoxes).map(checkbox => checkbox.value);
+    const unionType = document.getElementById('unionTypeSelect').value;
+    
+    // Show loading state
+    const executeBtn = document.getElementById('unionExecuteBtn');
+    const originalText = executeBtn.innerHTML;
+    executeBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Executing...';
+    executeBtn.disabled = true;
+    
+    // Prepare request data
+    const requestData = {
+        source_ids: sourceIds,
+        union_type: unionType,
+        operation_name: `Union_${new Date().toISOString().slice(0, 19).replace(/:/g, '')}`
+    };
+    
+    console.log('Union request data:', requestData);
+    
+    // Execute union operation
+    fetch('/datasets/api/etl/union/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            ConvaBI.showAlert('success', data.message);
+            console.log('✅ Union operation successful:', data);
+            
+            // Show intermediate results
+            showEtlResults(data.operation_id, 'Union Results');
+            
+        } else {
+            ConvaBI.showAlert('danger', `Union operation failed: ${data.error}`);
+            console.error('❌ Union operation failed:', data);
+        }
+    })
+    .catch(error => {
+        console.error('❌ Error executing union:', error);
+        ConvaBI.showAlert('danger', `Error executing union operation: ${error.message}`);
+    })
+    .finally(() => {
+        // Restore button state
+        executeBtn.innerHTML = originalText;
+        executeBtn.disabled = false;
+    });
+}
+
+function showAggregateConfig(schema) {
+    const configDiv = document.getElementById('aggregateConfig');
+    const groupByDiv = document.getElementById('groupByColumns');
+    const aggregationDiv = document.getElementById('aggregationFunctions');
+    
+    if (!schema) return;
+    
+    const columns = Object.keys(schema);
+    
+    // Create group by checkboxes
+    let groupByHtml = '';
+    columns.forEach(col => {
+        groupByHtml += `
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="${col}" id="groupBy_${col}">
+                <label class="form-check-label" for="groupBy_${col}">
+                    ${col}
+                </label>
+            </div>
+        `;
+    });
+    groupByDiv.innerHTML = groupByHtml;
+    
+    // Create aggregation function selectors
+    let aggregationHtml = '';
+    columns.forEach(col => {
+        const colType = schema[col]?.type || 'string';
+        const isNumeric = ['integer', 'float', 'number'].includes(colType.toLowerCase());
+        
+        aggregationHtml += `
+            <div class="mb-2">
+                <label class="form-label small">${col}</label>
+                <select class="form-select form-select-sm" data-column="${col}">
+                    <option value="">No aggregation</option>
+                    <option value="COUNT">COUNT</option>
+                    ${isNumeric ? `
+                        <option value="SUM">SUM</option>
+                        <option value="AVG">AVERAGE</option>
+                        <option value="MIN">MIN</option>
+                        <option value="MAX">MAX</option>
+                    ` : `
+                        <option value="MIN">MIN</option>
+                        <option value="MAX">MAX</option>
+                    `}
+                </select>
+            </div>
+        `;
+    });
+    aggregationDiv.innerHTML = aggregationHtml;
+    
+    configDiv.style.display = 'block';
+    document.getElementById('aggregateExecuteBtn').disabled = false;
+}
+
+function executeAggregation() {
+    console.log('🔧 Executing aggregation operation...');
+    
+    // Get form data
+    const sourceSelect = document.getElementById('aggregateDataSource');
+    const outputNameInput = document.getElementById('aggregateOutputName');
+    
+    if (!sourceSelect || !outputNameInput) {
+        ConvaBI.showAlert('danger', 'Required form elements not found. Please refresh the page.');
+        return;
+    }
+    
+    const sourceId = sourceSelect.value;
+    const outputName = outputNameInput.value.trim();
+    
+    // Validate inputs
+    if (!sourceId) {
+        ConvaBI.showAlert('warning', 'Please select a data source');
+        return;
+    }
+    
+    if (!outputName) {
+        ConvaBI.showAlert('warning', 'Please provide an output table name');
+        return;
+    }
+    
+    // Get group by columns
+    const groupByCheckboxes = document.querySelectorAll('#groupByColumns input:checked');
+    const groupByColumns = Array.from(groupByCheckboxes).map(cb => cb.value);
+    
+    // Get aggregation functions
+    const aggFunctionSelects = document.querySelectorAll('#aggregationFunctions select');
+    const aggregateFunctions = {};
+    
+    aggFunctionSelects.forEach(select => {
+        if (select.value && select.dataset.column) {
+            aggregateFunctions[select.dataset.column] = select.value;
+        }
+    });
+    
+    // Validate that we have either group by or aggregation functions
+    if (groupByColumns.length === 0 && Object.keys(aggregateFunctions).length === 0) {
+        ConvaBI.showAlert('warning', 'Please select either group by columns or aggregation functions');
+        return;
+    }
+    
+    // Show loading state
+    const executeBtn = document.getElementById('aggregateExecuteBtn');
+    const originalText = executeBtn.innerHTML;
+    executeBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Executing...';
+    executeBtn.disabled = true;
+    
+    // Prepare request data
+    const requestData = {
+        source_id: sourceId,
+        group_by_columns: groupByColumns,
+        aggregate_functions: aggregateFunctions,
+        operation_name: outputName
+    };
+    
+    console.log('Aggregation request data:', requestData);
+    
+    // Execute aggregation operation
+    fetch('/datasets/api/etl/aggregate/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            ConvaBI.showAlert('success', data.message);
+            console.log('✅ Aggregation operation successful:', data);
+            
+            // Show intermediate results
+            showEtlResults(data.operation_id, 'Aggregation Results');
+            
+        } else {
+            ConvaBI.showAlert('danger', `Aggregation operation failed: ${data.error}`);
+            console.error('❌ Aggregation operation failed:', data);
+        }
+    })
+    .catch(error => {
+        console.error('❌ Error executing aggregation:', error);
+        ConvaBI.showAlert('danger', `Error executing aggregation operation: ${error.message}`);
+    })
+    .finally(() => {
+        // Restore button state
+        executeBtn.innerHTML = originalText;
+        executeBtn.disabled = false;
+    });
+}
+
+// ================================
+// ENHANCED ERROR RECOVERY SYSTEM
+// ================================
+
+let currentErrorData = null;
+
+function showTransformationErrorDialog(errorData) {
+    currentErrorData = errorData;
+    
+    let html = `
+        <div class="alert alert-warning">
+            <h6><i class="fas fa-info-circle me-2"></i>Transformation Summary</h6>
+            <p><strong>${errorData.successful_columns}</strong> of <strong>${errorData.total_columns}</strong> transformations succeeded.</p>
+        </div>
+        
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card border-success">
+                    <div class="card-header bg-success text-white">
+                        <h6 class="mb-0"><i class="fas fa-check me-2"></i>Successful Transformations</h6>
+                    </div>
+                    <div class="card-body">
+    `;
+    
+    if (errorData.partial_results && errorData.partial_results.length > 0) {
+        html += '<ul class="list-unstyled mb-0">';
+        errorData.partial_results.forEach(result => {
+            if (result.success) {
+                html += `<li class="text-success"><i class="fas fa-check-circle me-2"></i><strong>${result.column}</strong>: ${result.from_type} → ${result.to_type}</li>`;
+            }
+        });
+        html += '</ul>';
+    } else {
+        html += '<p class="text-muted">No transformations succeeded.</p>';
+    }
+    
+    html += `
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card border-danger">
+                    <div class="card-header bg-danger text-white">
+                        <h6 class="mb-0"><i class="fas fa-times me-2"></i>Failed Transformations</h6>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-unstyled mb-0">
+    `;
+    
+    errorData.failed_transformations.forEach(failed => {
+        html += `<li class="text-danger"><i class="fas fa-times-circle me-2"></i><strong>${failed.column}</strong>: ${failed.error}</li>`;
+    });
+    
+    html += `
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="accordion" id="errorDetailsAccordion">
+    `;
+    
+    // Detailed error analysis for each failed transformation
+    errorData.error_analysis.forEach((analysis, index) => {
+        html += `
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#error${index}">
+                        <i class="fas fa-tools me-2"></i>Fix: <strong>${analysis.column}</strong> 
+                        <span class="badge bg-danger ms-2">${analysis.target_type}</span>
+                    </button>
+                </h2>
+                <div id="error${index}" class="accordion-collapse collapse">
+                    <div class="accordion-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Problem Details</h6>
+                                <p class="text-danger"><strong>Error:</strong> ${analysis.error}</p>
+                                <p><strong>Data Info:</strong></p>
+                                <ul>
+                                    <li>Total rows: ${analysis.total_rows}</li>
+                                    <li>Non-null rows: ${analysis.non_null_rows}</li>
+                                    <li>Unique values: ${analysis.unique_values}</li>
+                                </ul>
+                                
+                                <h6>Sample Values</h6>
+                                <div class="border p-2 bg-light">
+                                    <small class="font-monospace">${analysis.sample_values.join(', ')}</small>
+                                </div>
+        `;
+        
+        // Show specific analysis for date failures
+        if (analysis.detected_formats) {
+            html += `
+                                <h6 class="mt-3">Detected Date Formats</h6>
+                                <div class="mb-2">
+                                    ${analysis.detected_formats.map(format => `<span class="badge bg-info me-1">${format}</span>`).join('')}
+                                </div>
+            `;
+        }
+        
+        // Show non-numeric samples for numeric failures  
+        if (analysis.non_numeric_samples) {
+            html += `
+                                <h6 class="mt-3">Non-numeric Values Found</h6>
+                                <div class="border p-2 bg-light">
+                                    <small class="font-monospace text-danger">${analysis.non_numeric_samples.join(', ')}</small>
+                                </div>
+            `;
+        }
+        
+        html += `
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Suggested Solutions</h6>
+                                <ul class="list-group list-group-flush">
+        `;
+        
+        analysis.suggestions.forEach(suggestion => {
+            html += `<li class="list-group-item"><i class="fas fa-lightbulb text-warning me-2"></i>${suggestion}</li>`;
+        });
+        
+        html += `
+                                </ul>
+                                
+                                <h6 class="mt-3">Fix This Column</h6>
+                                <div class="mb-3">
+                                    <label class="form-label">Choose corrected target type:</label>
+                                    <select class="form-select" id="fix_${analysis.column}" onchange="updateFixSuggestion('${analysis.column}')">
+                                        <option value="">Keep original type (skip transformation)</option>
+                                        ${Object.entries(DATA_TYPES).map(([key, label]) => 
+                                            `<option value="${key}" ${key === analysis.target_type ? 'selected' : ''}>${label}</option>`
+                                        ).join('')}
+                                    </select>
+                                </div>
+        `;
+        
+        // Add date format picker for date columns
+        if (analysis.target_type === 'date' && analysis.detected_formats) {
+            html += `
+                                <div class="mb-3" id="dateFormat_${analysis.column}">
+                                    <label class="form-label">Date Format:</label>
+                                    <select class="form-select" id="dateFormatSelect_${analysis.column}">
+                                        <option value="">Auto-detect</option>
+                                        <option value="%Y-%m-%d">YYYY-MM-DD</option>
+                                        <option value="%m/%d/%Y">MM/DD/YYYY</option>
+                                        <option value="%d/%m/%Y">DD/MM/YYYY</option>
+                                        <option value="%m-%d-%Y">MM-DD-YYYY</option>
+                                        <option value="%d-%m-%Y">DD-MM-YYYY</option>
+                                    </select>
+                                </div>
+            `;
+        }
+        
+        html += `
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    
+    document.getElementById('errorAnalysisContent').innerHTML = html;
+    
+    const modal = new bootstrap.Modal(document.getElementById('errorRecoveryModal'));
+    modal.show();
+}
+
+function updateFixSuggestion(columnName) {
+    const select = document.getElementById(`fix_${columnName}`);
+    const dateFormatDiv = document.getElementById(`dateFormat_${columnName}`);
+    
+    if (dateFormatDiv) {
+        dateFormatDiv.style.display = select.value === 'date' ? 'block' : 'none';
+    }
+}
+
+function proceedWithPartialResults() {
+    // Apply only the successful transformations
+    if (currentErrorData && currentErrorData.partial_results) {
+        const successfulTransformations = currentErrorData.partial_results.filter(r => r.success);
+        
+        ConvaBI.showAlert('success', 
+            `Applied ${successfulTransformations.length} successful transformations. ` +
+            `${currentErrorData.failed_transformations.length} columns were skipped due to errors.`
+        );
+        
+        // Refresh the schema
+        const dataSourceId = document.getElementById('transformDataSource').value;
+        loadDataSourceSchema(dataSourceId, 'transform');
+        
+        // Close modal
+        bootstrap.Modal.getInstance(document.getElementById('errorRecoveryModal')).hide();
+    }
+}
+
+function retryWithFixedSettings() {
+    if (!currentErrorData) return;
+    
+    // Collect the fixed transformations
+    const fixedTransformations = {};
+    const dateFormats = {};
+    
+    currentErrorData.error_analysis.forEach(analysis => {
+        const fixSelect = document.getElementById(`fix_${analysis.column}`);
+        const targetType = fixSelect.value;
+        
+        if (targetType) {
+            fixedTransformations[analysis.column] = targetType;
+            
+            // Add date format if specified
+            if (targetType === 'date') {
+                const dateFormatSelect = document.getElementById(`dateFormatSelect_${analysis.column}`);
+                if (dateFormatSelect && dateFormatSelect.value) {
+                    dateFormats[analysis.column + '_date_format'] = dateFormatSelect.value;
+                }
+            }
+        }
+    });
+    
+    // Merge with original transformations, applying fixes
+    const originalTransformations = currentErrorData.data_summary ? 
+        Object.fromEntries(currentErrorData.data_summary.columns_analyzed.map(col => [col, 'string'])) : {};
+    
+    const finalTransformations = { ...originalTransformations, ...fixedTransformations, ...dateFormats };
+    
+    // Retry the ETL transformation with fixed settings
+    fetch('/datasets/api/etl/transform/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+            data_source_id: currentErrorData.data_summary ? currentErrorData.data_summary.data_source_id : null,
+            transformations: finalTransformations,
+            operation_name: 'Corrected Data Type Transformation'
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            ConvaBI.showAlert('success', 'Transformations applied successfully after corrections!');
+            closeErrorModal();
+            // Refresh the page or update UI
+            location.reload();
+        } else {
+            if (data.automatic_error_recovery) {
+                // Still have errors, show updated error modal
+                showErrorRecoveryModal(data);
+                ConvaBI.showAlert('warning', 'Some issues still remain. Please review the new error details.');
+            } else {
+                ConvaBI.showAlert('danger', data.error || 'Transformation still failed');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error retrying transformation:', error);
+        ConvaBI.showAlert('danger', 'Error retrying transformation. Please try again.');
+    });
+}
+
+function closeErrorModal() {
+    document.getElementById('errorRecoveryModal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+    currentErrorData = null;
+}
+
+function showErrorRecoveryModal(errorResponse) {
+    currentErrorData = errorResponse;
+    
+    // Populate error summary
+    populateErrorSummary(errorResponse);
+    
+    // Populate quick fixes
+    populateQuickFixes(errorResponse.recovery_guidance);
+    
+    // Populate data quality insights
+    populateDataQualityInsights(errorResponse.recovery_guidance.data_quality_insights);
+    
+    // Populate column-specific errors
+    populateColumnErrors(errorResponse.detailed_row_errors, errorResponse.recovery_guidance);
+    
+    // Show date format helper if needed
+    showDateFormatHelper(errorResponse.recovery_guidance);
+    
+    // Populate expandable sections
+    populateRecommendedActions(errorResponse.recovery_guidance.recommended_actions);
+    populateAlternativeApproaches(errorResponse.recovery_guidance.alternative_approaches);
+    
+    // Show modal
+    document.getElementById('errorRecoveryModal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function populateErrorSummary(errorResponse) {
+    const content = document.getElementById('errorSummaryContent');
+    content.innerHTML = `
+        <p><strong>Failed Transformations:</strong> ${errorResponse.failed_transformations.length} out of ${errorResponse.total_columns} columns</p>
+        <p><strong>Successful Transformations:</strong> ${errorResponse.successful_columns} columns</p>
+        <p><strong>Status:</strong> ${errorResponse.error}</p>
+    `;
+}
+
+function populateQuickFixes(guidance) {
+    const content = document.getElementById('quickFixesContent');
+    if (guidance.quick_fixes && guidance.quick_fixes.length > 0) {
+        content.innerHTML = guidance.quick_fixes.map(fix => `
+            <div class="quick-fix-item">
+                <i class="fas fa-magic" style="color: #28a745;"></i>
+                ${fix}
+            </div>
+        `).join('');
+    } else {
+        content.innerHTML = '<p>No automatic quick fixes available. See column-specific guidance below.</p>';
+    }
+}
+
+function populateDataQualityInsights(insights) {
+    const content = document.getElementById('dataQualityContent');
+    content.innerHTML = `
+        <span class="insight-stat">
+            <i class="fas fa-table"></i>
+            ${insights.total_rows.toLocaleString()} total rows
+        </span>
+        <span class="insight-stat">
+            <i class="fas fa-percentage"></i>
+            ${insights.overall_null_percentage}% null values
+        </span>
+        <span class="insight-stat">
+            <i class="fas fa-exclamation-triangle"></i>
+            ${insights.problematic_columns} problematic columns
+        </span>
+        <span class="insight-stat">
+            <i class="fas fa-check-circle"></i>
+            ${insights.success_columns} successful columns
+        </span>
+    `;
+}
+
+function populateColumnErrors(detailedErrors, guidance) {
+    const container = document.getElementById('columnErrorsContainer');
+    
+    if (!detailedErrors || Object.keys(detailedErrors).length === 0) {
+        container.innerHTML = '<p>No detailed error information available.</p>';
+        return;
+    }
+    
+    container.innerHTML = Object.entries(detailedErrors).map(([columnName, errorDetails]) => {
+        const advice = guidance.column_specific_advice[columnName] || {};
+        
+        return `
+            <div class="column-error-details">
+                <div class="column-error-header">
+                    <h5>
+                        <i class="fas fa-columns"></i>
+                        Column: ${columnName}
+                        <span class="error-badge">${errorDetails.target_type}</span>
+                    </h5>
+                </div>
+                <div class="column-error-body">
+                    <p><strong>Problem:</strong> ${advice.problem_summary || 'Conversion failed'}</p>
+                    
+                    ${errorDetails.failed_values && errorDetails.failed_values.length > 0 ? `
+                        <div class="failed-rows-section">
+                            <h6>
+                                <i class="fas fa-times-circle"></i>
+                                Failed Values (first ${Math.min(errorDetails.failed_values.length, 10)})
+                            </h6>
+                            <div>
+                                ${errorDetails.failed_values.slice(0, 10).map(value => `
+                                    <span class="failed-value">"${value}"</span>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    ${advice.quick_fix ? `
+                        <div class="fix-suggestion">
+                            <strong>Quick Fix:</strong> ${advice.quick_fix}
+                        </div>
+                    ` : ''}
+                    
+                    ${advice.sample_fixes && advice.sample_fixes.length > 0 ? `
+                        <div>
+                            <h6>Sample Fixes:</h6>
+                            ${advice.sample_fixes.map(fix => `
+                                <div class="fix-suggestion">${fix}</div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                    
+                    ${errorDetails.success_rate !== undefined ? `
+                        <p><strong>Success Rate:</strong> ${errorDetails.success_rate.toFixed(1)}% 
+                           (${errorDetails.total_failures} failures out of ${errorDetails.total_failures + (errorDetails.converted_count || 0)} attempts)</p>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function showDateFormatHelper(guidance) {
+    const helper = document.getElementById('dateFormatHelper');
+    
+    if (guidance.date_format_help) {
+        const examples = document.getElementById('formatExamples');
+        examples.innerHTML = Object.entries(guidance.date_format_help.format_examples).map(([format, example]) => `
+            <span class="format-example" onclick="selectDateFormat('${format}')" style="cursor: pointer;">
+                ${format}: ${example}
+            </span>
+        `).join('');
+        
+        helper.style.display = 'block';
+    } else {
+        helper.style.display = 'none';
+    }
+}
+
+function populateRecommendedActions(actions) {
+    const content = document.getElementById('recommendedActionsContent');
+    if (actions && actions.length > 0) {
+        content.innerHTML = `
+            <ol>
+                ${actions.map(action => `<li>${action}</li>`).join('')}
+            </ol>
+        `;
+    }
+}
+
+function populateAlternativeApproaches(approaches) {
+    const content = document.getElementById('alternativeApproachesContent');
+    if (approaches && approaches.length > 0) {
+        content.innerHTML = `
+            <ul>
+                ${approaches.map(approach => `<li>${approach}</li>`).join('')}
+            </ul>
+        `;
+    }
+}
+
+function toggleExpandable(sectionId) {
+    const content = document.getElementById(sectionId + '-content');
+    const icon = document.getElementById(sectionId + '-icon');
+    
+    if (content.classList.contains('expanded')) {
+        content.classList.remove('expanded');
+        icon.classList.remove('rotated');
+    } else {
+        content.classList.add('expanded');
+        icon.classList.add('rotated');
+    }
+}
+
+function selectDateFormat(format) {
+    // Highlight selected format and update ETL settings
+    document.querySelectorAll('.format-example').forEach(el => {
+        el.style.background = 'white';
+        el.style.borderColor = '#ffcc80';
+    });
+    
+    event.target.style.background = '#e8f5e8';
+    event.target.style.borderColor = '#4caf50';
+    
+    // Store selected format for retry
+    if (!window.selectedDateFormat) window.selectedDateFormat = {};
+    
+    // Apply to all date columns
+    if (currentErrorData && currentErrorData.detailed_row_errors) {
+        Object.keys(currentErrorData.detailed_row_errors).forEach(columnName => {
+            if (currentErrorData.detailed_row_errors[columnName].target_type === 'date') {
+                window.selectedDateFormat[columnName] = format;
+            }
+        });
+    }
+    
+    showToast(`Selected ${format} format for date columns`, 'success');
+}
+
+// ================================
+// INTERMEDIATE RESULTS DISPLAY
+// ================================
+
+function showEtlResults(operationId, title) {
+    console.log(`📊 Loading ETL results for operation: ${operationId}`);
+    
+    // Create and show results modal
+    const resultsModal = createEtlResultsModal(title);
+    document.body.appendChild(resultsModal);
+    
+    const modal = new bootstrap.Modal(resultsModal);
+    modal.show();
+    
+    // Load results data
+    loadEtlResultsData(operationId, resultsModal);
+    
+    // Clean up modal when closed
+    resultsModal.addEventListener('hidden.bs.modal', () => {
+        resultsModal.remove();
+    });
+}
+
+function createEtlResultsModal(title) {
+    const modalHtml = `
+        <div class="modal fade" id="etlResultsModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="fas fa-table me-2"></i>${title}
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="etlResultsContent">
+                            <div class="text-center">
+                                <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                                <p>Loading intermediate table results...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary" id="downloadResultsBtn" onclick="downloadEtlResults()">
+                            <i class="fas fa-download me-1"></i>Download CSV
+                        </button>
+                        <button type="button" class="btn btn-success" id="useForTransformBtn" onclick="useResultsForTransformation()">
+                            <i class="fas fa-arrow-right me-1"></i>Use for Next Transformation
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = modalHtml;
+    return tempDiv.firstElementChild;
+}
+
+function loadEtlResultsData(operationId, modalElement) {
+    fetch(`/datasets/api/etl/results/${operationId}/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayEtlResults(data, modalElement);
+            } else {
+                showEtlError(data.error, modalElement);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading ETL results:', error);
+            showEtlError(`Failed to load results: ${error.message}`, modalElement);
+        });
+}
+
+function displayEtlResults(data, modalElement) {
+    const contentDiv = modalElement.querySelector('#etlResultsContent');
+    
+    // Store data globally for download and transformation use
+    window.currentEtlResults = data;
+    
+    let html = `
+        <div class="mb-4">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card border-primary">
+                        <div class="card-body text-center">
+                            <h5 class="card-title text-primary">
+                                <i class="fas fa-table me-2"></i>Result Summary
+                            </h5>
+                            <p class="mb-1"><strong>Operation:</strong> ${data.operation_name}</p>
+                            <p class="mb-1"><strong>Type:</strong> ${data.operation_type.toUpperCase()}</p>
+                            <p class="mb-1"><strong>Rows:</strong> ${data.row_count.toLocaleString()}</p>
+                            <p class="mb-0"><strong>Columns:</strong> ${data.columns.length}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card border-info">
+                        <div class="card-body text-center">
+                            <h5 class="card-title text-info">
+                                <i class="fas fa-database me-2"></i>Storage Details
+                            </h5>
+                            <p class="mb-1"><strong>Table:</strong> ${data.output_table_name}</p>
+                            <p class="mb-1"><strong>Status:</strong> ${data.status}</p>
+                            <p class="mb-1"><strong>Created:</strong> ${new Date(data.created_at).toLocaleDateString()}</p>
+                            <p class="mb-0"><strong>Showing:</strong> ${data.displayed_rows} of ${data.row_count} rows</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="mb-4">
+            <h6><i class="fas fa-columns me-2"></i>Column Information</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Column Name</th>
+                            <th>Data Type</th>
+                            <th>Non-Null Count</th>
+                            <th>Sample Values</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+    
+    data.columns.forEach(col => {
+        html += `
+            <tr>
+                <td><strong>${col.name}</strong></td>
+                <td><span class="badge bg-secondary">${col.type}</span></td>
+                <td>${col.non_null_count}</td>
+                <td><small class="text-muted">${col.sample_values.join(', ')}</small></td>
+            </tr>
+        `;
+    });
+    
+    html += `
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="mb-4">
+            <h6><i class="fas fa-eye me-2"></i>Data Preview (First ${data.displayed_rows} rows)</h6>
+            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                <table class="table table-sm table-striped table-hover">
+                    <thead class="table-dark sticky-top">
+                        <tr>
+    `;
+    
+    // Add column headers
+    data.columns.forEach(col => {
+        html += `<th>${col.name}</th>`;
+    });
+    
+    html += `
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+    
+    // Add data rows
+    data.data.forEach((row, index) => {
+        html += '<tr>';
+        data.columns.forEach(col => {
+            const value = row[col.name];
+            const displayValue = value === null ? '<em class="text-muted">null</em>' : value;
+            html += `<td>${displayValue}</td>`;
+        });
+        html += '</tr>';
+    });
+    
+    html += `
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle me-2"></i>
+            <strong>Intermediate Table Created Successfully!</strong>
+            <p class="mb-0 mt-2">
+                This intermediate result table can now be used for further data transformations, 
+                added to dashboards, or used in additional ETL operations.
+            </p>
+        </div>
+    `;
+    
+    contentDiv.innerHTML = html;
+}
+
+function showEtlError(errorMessage, modalElement) {
+    const contentDiv = modalElement.querySelector('#etlResultsContent');
+    contentDiv.innerHTML = `
+        <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>Error Loading Results</strong>
+            <p class="mb-0 mt-2">${errorMessage}</p>
+        </div>
+    `;
+}
+
+function downloadEtlResults() {
+    if (!window.currentEtlResults) {
+        ConvaBI.showAlert('warning', 'No results data available for download');
+        return;
+    }
+    
+    const data = window.currentEtlResults;
+    
+    // Convert to CSV
+    const headers = data.columns.map(col => col.name);
+    const csvContent = [
+        headers.join(','),
+        ...data.data.map(row => 
+            headers.map(header => {
+                const value = row[header];
+                // Escape commas and quotes in CSV
+                return value === null ? '' : `"${String(value).replace(/"/g, '""')}"`;
+            }).join(',')
+        )
+    ].join('\n');
+    
+    // Download CSV file
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${data.operation_name}_results.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    
+    ConvaBI.showAlert('success', 'Results downloaded as CSV file');
+}
+
+function useResultsForTransformation() {
+    if (!window.currentEtlResults) {
+        ConvaBI.showAlert('warning', 'No results data available');
+        return;
+    }
+    
+    const operationId = window.currentEtlResults.operation_id;
+    
+    if (!operationId) {
+        ConvaBI.showAlert('warning', 'Operation ID not available');
+        return;
+    }
+    
+    // Show loading state
+    const useBtn = document.getElementById('useForTransformBtn');
+    const originalText = useBtn.innerHTML;
+    useBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Creating Data Source...';
+    useBtn.disabled = true;
+    
+    // Call backend to create new data source from ETL result
+    fetch('/datasets/api/etl/create-source-from-result/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': ConvaBI.getCsrfToken()
+        },
+        body: JSON.stringify({
+            operation_id: operationId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            ConvaBI.showAlert('success', data.message);
+            
+            // Close the modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('etlResultsModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show success details
+            setTimeout(() => {
+                ConvaBI.showAlert('info', 
+                    `Data source "${data.data_source_name}" is ready for further transformations. ` +
+                    `Table contains ${data.row_count} rows. Redirecting to transformation interface...`
+                );
+                
+                // Redirect to integration page with the new data source pre-selected
+                setTimeout(() => {
+                    window.location.href = data.redirect_url;
+                }, 2000);
+            }, 1000);
+            
+        } else {
+            ConvaBI.showAlert('danger', data.error || 'Failed to create data source from results');
+        }
+    })
+    .catch(error => {
+        console.error('Error creating data source from ETL result:', error);
+        ConvaBI.showAlert('danger', 'Error creating data source: ' + error.message);
+    })
+    .finally(() => {
+        // Restore button state
+        useBtn.innerHTML = originalText;
+        useBtn.disabled = false;
+    });
+}
+
+function retryWithFixedSettings() {
+    // Apply the suggested fixes and retry the transformation
+    if (!currentErrorData) return;
+    
+    showToast('Applying fixes and retrying transformation...', 'info');
+    
+    // Collect fixed transformations
+    const fixedTransformations = {};
+    const dateFormats = window.selectedDateFormat || {};
+    
+    // Apply fixes based on error analysis
+    if (currentErrorData.recovery_guidance && currentErrorData.recovery_guidance.column_specific_advice) {
+        Object.entries(currentErrorData.recovery_guidance.column_specific_advice).forEach(([columnName, advice]) => {
+            if (advice.quick_fix) {
+                // Apply automatic fixes
+                if (advice.quick_fix.includes("Change target type from 'integer' to 'float'")) {
+                    fixedTransformations[columnName] = 'float';
+                } else if (advice.quick_fix.includes("Change target type") && advice.quick_fix.includes("to 'string'")) {
+                    fixedTransformations[columnName] = 'string';
+                } else if (advice.quick_fix.includes("DD-MM-YYYY")) {
+                    fixedTransformations[columnName] = 'date';
+                    dateFormats[columnName + '_date_format'] = '%d-%m-%Y';
+                }
+            }
+        });
+    }
+    
+    // Merge with original transformations, applying fixes
+    const originalTransformations = currentErrorData.data_summary ? 
+        Object.fromEntries(currentErrorData.data_summary.columns_analyzed.map(col => [col, 'string'])) : {};
+    
+    const finalTransformations = { ...originalTransformations, ...fixedTransformations, ...dateFormats };
+    
+    // Retry the ETL transformation with fixed settings
+    fetch('/datasets/api/etl/transform/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+            data_source_id: currentErrorData.data_summary ? currentErrorData.data_summary.data_source_id : null,
+            transformations: finalTransformations,
+            operation_name: 'Corrected Data Type Transformation'
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Transformation completed successfully!', 'success');
+            closeErrorModal();
+            // Refresh the page or update UI
+            location.reload();
+        } else {
+            if (data.automatic_error_recovery) {
+                // Still have errors, show updated error modal
+                showErrorRecoveryModal(data);
+                showToast('Some issues remain. Please review the updated guidance.', 'warning');
+            } else {
+                showToast('Transformation failed: ' + (data.error || 'Unknown error'), 'error');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error retrying transformation:', error);
+        showToast('Error retrying transformation. Please try again.', 'error');
+    });
+}
+
+function closeErrorModal() {
+    document.getElementById('errorRecoveryModal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+    currentErrorData = null;
+}
+
+function showToast(message, type = 'info') {
+    // Simple toast notification
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type === 'error' ? 'danger' : type} position-fixed`;
+    toast.style.cssText = 'top: 20px; right: 20px; z-index: 2000; min-width: 300px;';
+    toast.innerHTML = `
+        <div class="d-flex align-items-center">
+            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+            ${message}
+        </div>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 5000);
+}
+
+// Enhanced ETL transformation function that handles errors automatically
+function performETLTransformation(dataSourceId, transformations) {
+    showLoadingSpinner('Performing ETL transformation...');
+    
+    fetch('/datasets/api/etl/transform/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+            data_source_id: dataSourceId,
+            transformations: transformations,
+            operation_name: 'Data Type Transformation'
+        })
+    })
+    .then(response => {
+        hideLoadingSpinner();
+        
+        // ENHANCED: Handle both success and error responses properly
+        if (response.ok) {
+            return response.json();
+        } else if (response.status === 400 || response.status === 200) {
+            // Handle recoverable errors (400) and success with warnings (200)
+            return response.json();
+        } else {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+    })
+    .then(data => {
+        console.log('ETL Response:', data); // Debug logging
+        
+        if (data.success) {
+            showToast('ETL transformation completed successfully!', 'success');
+            // Handle success - refresh UI or redirect
+            if (typeof loadDataSourceDetails === 'function') {
+                loadDataSourceDetails(dataSourceId);
+            } else {
+                location.reload();
+            }
+        } else {
+            // Check for enhanced error recovery
+            if (data.automatic_error_recovery || data.validation_failed) {
+                console.log('Showing enhanced error recovery modal');
+                showErrorRecoveryModal(data);
+            } else {
+                // Fallback to simple error message
+                showToast('Transformation failed: ' + (data.error || 'Unknown error'), 'error');
+                console.error('ETL Error (no recovery):', data);
+            }
+        }
+    })
+    .catch(error => {
+        hideLoadingSpinner();
+        console.error('ETL transformation error:', error);
+        showToast('Error performing transformation: ' + error.message, 'error');
+    });
+}
+
+// Helper functions for loading spinner
+function showLoadingSpinner(message = 'Processing...') {
+    // Create or show loading indicator
+    let spinner = document.getElementById('etlLoadingSpinner');
+    if (!spinner) {
+        spinner = document.createElement('div');
+        spinner.id = 'etlLoadingSpinner';
+        spinner.innerHTML = `
+            <div class="position-fixed top-50 start-50 translate-middle" style="z-index: 9999;">
+                <div class="card shadow-lg text-center p-4">
+                    <div class="spinner-border text-primary mb-3" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <div id="loadingMessage">${message}</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(spinner);
+    } else {
+        document.getElementById('loadingMessage').textContent = message;
+        spinner.style.display = 'block';
+    }
+}
+
+function hideLoadingSpinner() {
+    const spinner = document.getElementById('etlLoadingSpinner');
+    if (spinner) {
+        spinner.style.display = 'none';
+    }
+}
+
+function showErrorRecoveryModal(errorResponse) {
+    currentErrorData = errorResponse;
+    
+    console.log('Populating error modal with:', errorResponse); // Debug logging
+    
+    // Populate error summary
+    populateErrorSummary(errorResponse);
+    
+    // Populate quick fixes
+    if (errorResponse.recovery_guidance) {
+        populateQuickFixes(errorResponse.recovery_guidance);
+        
+        // Populate data quality insights
+        if (errorResponse.recovery_guidance.data_quality_insights) {
+            populateDataQualityInsights(errorResponse.recovery_guidance.data_quality_insights);
+        }
+        
+        // Show date format helper if needed
+        showDateFormatHelper(errorResponse.recovery_guidance);
+        
+        // Populate expandable sections
+        populateRecommendedActions(errorResponse.recovery_guidance.recommended_actions);
+        populateAlternativeApproaches(errorResponse.recovery_guidance.alternative_approaches);
+    }
+    
+    // Populate column-specific errors
+    if (errorResponse.detailed_row_errors) {
+        populateColumnErrors(errorResponse.detailed_row_errors, errorResponse.recovery_guidance || {});
+    } else if (errorResponse.validation_failed) {
+        // Handle validation failure case
+        populateValidationErrors(errorResponse);
+    }
+    
+    // Add special handling for validation failures
+    if (errorResponse.validation_failed && errorResponse.can_proceed_anyway) {
+        addProceedAnywayOption();
+    }
+    
+    // Show modal
+    document.getElementById('errorRecoveryModal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function populateValidationErrors(errorResponse) {
+    const container = document.getElementById('columnErrorsContainer');
+    
+    if (errorResponse.data_summary && errorResponse.data_summary.high_null_columns) {
+        const highNullColumns = errorResponse.data_summary.high_null_columns;
+        
+        container.innerHTML = `
+            <div class="column-error-details">
+                <div class="column-error-header">
+                    <h5>
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Validation Issues Detected
+                        <span class="error-badge">High Null Rates</span>
+                    </h5>
+                </div>
+                <div class="column-error-body">
+                    <p><strong>Issue:</strong> High null rates detected in your data (this is common with real-world datasets)</p>
+                    
+                    <div class="failed-rows-section">
+                        <h6>
+                            <i class="fas fa-info-circle"></i>
+                            Columns with High Null Rates
+                        </h6>
+                        <p>These columns have more than 80% null values:</p>
+                        <div>
+                            ${highNullColumns.map(col => `
+                                <span class="failed-value">${col}</span>
+                            `).join('')}
+                        </div>
+                    </div>
+                    
+                    <div class="fix-suggestion">
+                        <strong>This is Normal:</strong> Many real-world datasets have high null rates. Your transformations were actually successful!
+                    </div>
+                    
+                    <div class="fix-suggestion">
+                        <strong>Options:</strong>
+                        <ul>
+                            <li>Proceed anyway - null values are legitimate business data</li>
+                            <li>Use string types to preserve the data as-is</li>
+                            <li>Clean the source data before import</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else {
+        container.innerHTML = `
+            <div class="column-error-details">
+                <div class="column-error-body">
+                    <p>Validation failed but no specific column errors were provided.</p>
+                    <p>Check the transformation results for more details.</p>
+                </div>
+            </div>
+        `;
+    }
+}
+
+function addProceedAnywayOption() {
+    const actionButtons = document.querySelector('.action-buttons');
+    
+    // Add "Proceed Anyway" button
+    const proceedButton = document.createElement('button');
+    proceedButton.className = 'btn btn-warning me-2';
+    proceedButton.innerHTML = '<i class="fas fa-forward"></i> Proceed Anyway';
+    proceedButton.onclick = proceedWithValidationWarnings;
+    
+    // Insert before the retry button
+    const retryButton = actionButtons.querySelector('.btn-retry');
+    actionButtons.insertBefore(proceedButton, retryButton);
+}
+
+function proceedWithValidationWarnings() {
+    if (!currentErrorData) return;
+    
+    showToast('Proceeding with validation warnings...', 'info');
+    
+    // Force proceed by updating workflow status
+    fetch('/datasets/api/force-proceed-etl/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+            data_source_id: currentErrorData.data_summary?.data_source_id,
+            force_proceed: true,
+            transformation_results: currentErrorData.transformation_results
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('ETL completed with warnings. You can now proceed to the semantic layer.', 'success');
+            closeErrorModal();
+            location.reload();
+        } else {
+            showToast('Failed to proceed: ' + (data.error || 'Unknown error'), 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error proceeding anyway:', error);
+        showToast('Error trying to proceed. Please try again.', 'error');
+    });
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', function(event) {
+    const modal = document.getElementById('errorRecoveryModal');
+    if (event.target === modal) {
+        closeErrorModal();
+    }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeErrorModal();
+    }
+});
+
+// Add function to show CSV file not found modal
+function showCsvFileNotFoundModal() {
+    const modalHtml = `
+        <div class="modal fade" id="csvNotFoundModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning text-dark">
+                        <h5 class="modal-title">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            CSV File Not Found
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <h6><i class="fas fa-info-circle me-2"></i>What happened?</h6>
+                            <p class="mb-0">The original CSV file was deleted when you removed a previous data source. However, your column information and schema are still intact!</p>
+                        </div>
+                        
+                        <h6><i class="fas fa-tools me-2"></i>How to fix this:</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="card border-success">
+                                    <div class="card-header bg-success text-white">
+                                        <strong>Option 1: Re-upload CSV File</strong>
+                                    </div>
+                                    <div class="card-body">
+                                        <p>Upload the same CSV file again to restore your data.</p>
+                                        <ol>
+                                            <li>Go to <strong>Data Sources</strong> page</li>
+                                            <li>Click <strong>Add Data Source</strong></li>
+                                            <li>Upload your <code>Sample - Superstore2.csv</code> file</li>
+                                            <li>Return here to continue transformations</li>
+                                        </ol>
+                                        <a href="/datasets/" class="btn btn-success btn-sm">
+                                            <i class="fas fa-upload me-1"></i>Go to Data Sources
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card border-secondary">
+                                    <div class="card-header bg-secondary text-white">
+                                        <strong>Option 2: Start Fresh</strong>
+                                    </div>
+                                    <div class="card-body">
+                                        <p>Delete this data source and create a new one.</p>
+                                        <ol>
+                                            <li>Delete the current data source</li>
+                                            <li>Upload CSV file as a new data source</li>
+                                            <li>Configure transformations again</li>
+                                        </ol>
+                                        <button class="btn btn-secondary btn-sm" onclick="deleteCurrentDataSource()">
+                                            <i class="fas fa-trash me-1"></i>Delete & Start Over
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-3 p-3 bg-light rounded">
+                            <h6><i class="fas fa-lightbulb text-warning me-2"></i>Pro Tip:</h6>
+                            <p class="mb-0">In the future, avoid deleting data sources if you plan to use the same CSV file multiple times. Instead, create different data sources with unique names.</p>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <a href="/datasets/" class="btn btn-primary">
+                            <i class="fas fa-upload me-1"></i>Upload CSV File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Remove existing modal if present
+    const existingModal = document.getElementById('csvNotFoundModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Add modal to body
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('csvNotFoundModal'));
+    modal.show();
+}
+
+function deleteCurrentDataSource() {
+    if (confirm('Are you sure you want to delete this data source? This action cannot be undone.')) {
+        const dataSourceId = document.getElementById('transformDataSource').value;
+        if (dataSourceId) {
+            fetch(`/datasets/${dataSourceId}/`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': ConvaBI.getCsrfToken()
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    ConvaBI.showAlert('success', 'Data source deleted successfully. Redirecting to upload page...');
+                    setTimeout(() => {
+                        window.location.href = '/datasets/';
+                    }, 2000);
+                } else {
+                    ConvaBI.showAlert('danger', 'Error deleting data source: ' + data.error);
+                }
+            })
+            .catch(error => {
+                ConvaBI.showAlert('danger', 'Error deleting data source: ' + error.message);
+            });
+        }
+    }
+}
+</script>
+{% endblock %} 

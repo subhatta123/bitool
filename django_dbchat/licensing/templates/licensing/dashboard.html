@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}License Management Dashboard - ConvaBI{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>
+                    <i class="fas fa-key"></i> License Management Dashboard
+                </h2>
+                <div class="btn-group" role="group">
+                    <a href="{% url 'licensing:create_license' %}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Create License
+                    </a>
+                    <a href="{% url 'licensing:assign_license' %}" class="btn btn-success">
+                        <i class="fas fa-user-plus"></i> Assign License
+                    </a>
+                    <a href="{% url 'licensing:license_list' %}" class="btn btn-info">
+                        <i class="fas fa-list"></i> All Licenses
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5>Total Licenses</h5>
+                            <h3>{{ total_licenses }}</h3>
+                        </div>
+                        <div>
+                            <i class="fas fa-key fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5>Active Licenses</h5>
+                            <h3>{{ active_licenses }}</h3>
+                        </div>
+                        <div>
+                            <i class="fas fa-check-circle fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5>Assigned Users</h5>
+                            <h3>{{ active_user_licenses }}</h3>
+                        </div>
+                        <div>
+                            <i class="fas fa-users fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card bg-danger text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h5>Expiring Soon</h5>
+                            <h3>{{ expiring_soon }}</h3>
+                        </div>
+                        <div>
+                            <i class="fas fa-exclamation-triangle fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- License Type Distribution -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-pie"></i> License Type Distribution</h5>
+                </div>
+                <div class="card-body">
+                    {% if license_types %}
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>License Type</th>
+                                        <th>Count</th>
+                                        <th>Percentage</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for type_data in license_types %}
+                                    <tr>
+                                        <td>
+                                            <span class="badge badge-{% if type_data.license_type == 'creator' %}primary{% else %}info{% endif %}">
+                                                {{ type_data.license_type|title }}
+                                            </span>
+                                        </td>
+                                        <td>{{ type_data.count }}</td>
+                                        <td>
+                                            {% widthratio type_data.count total_licenses 100 %}%
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No licenses created yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-clock"></i> Recent License Activities</h5>
+                </div>
+                <div class="card-body">
+                    {% if recent_validations %}
+                        <div style="max-height: 300px; overflow-y: auto;">
+                            {% for validation in recent_validations %}
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div>
+                                    <strong>{{ validation.license_code }}</strong>
+                                    {% if validation.user %}
+                                        <small>by {{ validation.user.username }}</small>
+                                    {% endif %}
+                                </div>
+                                <div>
+                                    {% if validation.validation_result %}
+                                        <span class="badge bg-success">Success</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Failed</span>
+                                    {% endif %}
+                                    <small class="text-muted">{{ validation.timestamp|date:"M d, H:i" }}</small>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No recent activities.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Assignments -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-user-check"></i> Recent License Assignments</h5>
+                </div>
+                <div class="card-body">
+                    {% if recent_assignments %}
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>License Code</th>
+                                        <th>License Type</th>
+                                        <th>Assigned By</th>
+                                        <th>Assigned At</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for assignment in recent_assignments %}
+                                    <tr>
+                                        <td>{{ assignment.user.username }}</td>
+                                        <td>
+                                            <a href="{% url 'licensing:license_detail' assignment.license.license_code %}">
+                                                {{ assignment.license.license_code }}
+                                            </a>
+                                        </td>
+                                        <td>
+                                            <span class="badge badge-{% if assignment.license.license_type == 'creator' %}primary{% else %}info{% endif %}">
+                                                {{ assignment.license.license_type|title }}
+                                            </span>
+                                        </td>
+                                        <td>{{ assignment.assigned_by }}</td>
+                                        <td>{{ assignment.assigned_at|date:"M d, Y H:i" }}</td>
+                                        <td>
+                                            {% if assignment.is_active %}
+                                                <span class="badge bg-success">Active</span>
+                                            {% else %}
+                                                <span class="badge bg-danger">Inactive</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <a href="{% url 'licensing:user_licenses' assignment.user.username %}" 
+                                               class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i> View
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No recent assignments.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

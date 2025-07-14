@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete User - ConvaBI{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-danger text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-trash me-2"></i>
+                        Delete User
+                    </h4>
+                </div>
+                
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Warning!</strong> This action cannot be undone.
+                    </div>
+                    
+                    <p>Are you sure you want to delete the user:</p>
+                    
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3" 
+                                     style="width: 50px; height: 50px;">
+                                    {{ object.username|first|upper }}
+                                </div>
+                                <div>
+                                    <h5 class="mb-1">{{ object.username }}</h5>
+                                    {% if object.get_full_name %}
+                                        <p class="mb-1 text-muted">{{ object.get_full_name }}</p>
+                                    {% endif %}
+                                    {% if object.email %}
+                                        <p class="mb-0 text-muted">{{ object.email }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <h6>This will also delete:</h6>
+                        <ul class="text-muted">
+                            <li>All user preferences and settings</li>
+                            <li>User's query history and logs</li>
+                            <li>User's dashboards (ownership will be transferred)</li>
+                            <li>User's data source connections</li>
+                        </ul>
+                    </div>
+                    
+                    <form method="post" class="mt-4">
+                        {% csrf_token %}
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'accounts:user_management' %}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-danger">
+                                <i class="fas fa-trash"></i> Yes, Delete User
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

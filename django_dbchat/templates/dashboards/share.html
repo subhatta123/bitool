@@ -1,0 +1,243 @@
+{% extends 'base.html' %}
+
+{% block title %}Share Dashboard - {{ dashboard.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-gradient-primary text-white">
+                    <h3 class="mb-0">
+                        <i class="fas fa-share-alt me-2"></i>
+                        Share Dashboard: {{ dashboard.name }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <!-- Currently Shared Users -->
+                    <div class="mb-4">
+                        <h5>Currently Shared With</h5>
+                        {% if shared_users %}
+                            <div class="list-group">
+                                {% for share in dashboard_shares %}
+                                    <div class="list-group-item">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div class="flex-grow-1">
+                                                <div class="d-flex align-items-center">
+                                                    <i class="fas fa-user me-2"></i>
+                                                    <div>
+                                                        <strong>{{ share.user.username }}</strong>
+                                                        {% if share.user.email %}
+                                                            <small class="text-muted d-block">({{ share.user.email }})</small>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <select class="form-select form-select-sm" 
+                                                        onchange="updatePermission('{{ share.user.id }}', this.value)"
+                                                        style="width: auto;">
+                                                    <option value="view" {% if share.permission == 'view' %}selected{% endif %}>
+                                                        View Only
+                                                    </option>
+                                                    <option value="edit" {% if share.permission == 'edit' %}selected{% endif %}>
+                                                        Can Edit
+                                                    </option>
+                                                    <option value="admin" {% if share.permission == 'admin' %}selected{% endif %}>
+                                                        Admin
+                                                    </option>
+                                                </select>
+                                                <button class="btn btn-sm btn-outline-danger" 
+                                                        onclick="removeUser('{{ share.user.id }}', '{{ share.user.username }}')">
+                                                    <i class="fas fa-times"></i> Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted">This dashboard is not shared with anyone yet.</p>
+                        {% endif %}
+                    </div>
+
+                    <!-- Add New User -->
+                    <div class="mb-4">
+                        <h5>Share with New User</h5>
+                        <div class="row">
+                            <div class="col-md-5">
+                                <label for="userSelect" class="form-label">Select User</label>
+                                <select class="form-select" id="userSelect">
+                                    <option value="">Select a user to share with...</option>
+                                    {% for user in all_users %}
+                                        {% if user not in shared_users %}
+                                            <option value="{{ user.id }}">
+                                                {{ user.username }}
+                                                {% if user.email %}({{ user.email }}){% endif %}
+                                            </option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="permissionSelect" class="form-label">Permission Level</label>
+                                <select class="form-select" id="permissionSelect">
+                                    <option value="view">View Only</option>
+                                    <option value="edit" selected>Can Edit</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 d-flex align-items-end">
+                                <button class="btn btn-primary w-100" onclick="addUser()">
+                                    <i class="fas fa-plus"></i> Add User
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Permission Level Descriptions -->
+                        <div class="mt-3">
+                            <small class="text-muted">
+                                <strong>View Only:</strong> Can view dashboards and data<br>
+                                <strong>Can Edit:</strong> Can add/edit charts and modify dashboard layout<br>
+                                <strong>Admin:</strong> Full access including sharing permissions
+                            </small>
+                        </div>
+                    </div>
+
+
+
+                    <!-- Actions -->
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'dashboards:detail' dashboard.pk %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Dashboard
+                        </a>
+                        <div>
+                            <a href="{% url 'dashboards:export' dashboard.pk %}" class="btn btn-outline-success">
+                                <i class="fas fa-download"></i> Export Dashboard
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const dashboardId = '{{ dashboard.id }}';
+
+function addUser() {
+    const userSelect = document.getElementById('userSelect');
+    const permissionSelect = document.getElementById('permissionSelect');
+    const userId = userSelect.value;
+    const permission = permissionSelect.value;
+    const userName = userSelect.options[userSelect.selectedIndex].text;
+    
+    if (!userId) {
+        alert('Please select a user to share with');
+        return;
+    }
+    
+    fetch(`/dashboards/${dashboardId}/share/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+            action: 'add_user',
+            user_id: userId,
+            permission: permission
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-success alert-dismissible fade show';
+            alertDiv.innerHTML = `
+                <i class="fas fa-check-circle me-2"></i>Successfully shared dashboard with ${userName.split('(')[0].trim()} (${permission} permission)
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.card-body').insertBefore(alertDiv, document.querySelector('.card-body').firstChild);
+            
+            // Reload page after brief delay to show message
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            alert('Error sharing dashboard: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error sharing dashboard');
+    });
+}
+
+function updatePermission(userId, permission) {
+    fetch(`/dashboards/${dashboardId}/share/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+            action: 'update_permission',
+            user_id: userId,
+            permission: permission
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show brief success indication
+            const select = event.target;
+            const originalBg = select.style.backgroundColor;
+            select.style.backgroundColor = '#d4edda';
+            setTimeout(() => {
+                select.style.backgroundColor = originalBg;
+            }, 1000);
+        } else {
+            alert('Error updating permission: ' + data.error);
+            // Reload to reset the dropdown
+            location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error updating permission');
+        location.reload();
+    });
+}
+
+function removeUser(userId, userName) {
+    if (confirm(`Remove ${userName} from this dashboard?`)) {
+        fetch(`/dashboards/${dashboardId}/share/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                action: 'remove_user',
+                user_id: userId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error removing user: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error removing user');
+        });
+    }
+}
+</script>
+
+{% csrf_token %}
+{% endblock %} 

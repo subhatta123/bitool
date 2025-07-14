@@ -1,0 +1,403 @@
+{% extends 'base.html' %}
+
+{% block title %}User Management - ConvaBI{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-gradient-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h3 class="mb-0">
+                                <i class="fas fa-users me-2"></i>
+                                User Management
+                            </h3>
+                            <p class="mb-0">Manage system users and permissions</p>
+                        </div>
+                        <a href="{% url 'accounts:user_create' %}" class="btn btn-success">
+                            <i class="fas fa-plus"></i> Add New User
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="card-body">
+                    <!-- User Statistics -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-primary text-white h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between">
+                                        <div>
+                                            <h4 class="mb-0">{{ total_users }}</h4>
+                                            <p class="mb-0">Total Users</p>
+                                        </div>
+                                        <i class="fas fa-users fa-2x opacity-50"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-success text-white h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between">
+                                        <div>
+                                            <h4 class="mb-0">{{ active_users }}</h4>
+                                            <p class="mb-0">Active Users</p>
+                                        </div>
+                                        <i class="fas fa-user-check fa-2x opacity-50"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-warning text-white h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between">
+                                        <div>
+                                            <h4 class="mb-0">{{ admin_users }}</h4>
+                                            <p class="mb-0">Admin Users</p>
+                                        </div>
+                                        <i class="fas fa-user-shield fa-2x opacity-50"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-info text-white h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between">
+                                        <div>
+                                            <h4 class="mb-0">{{ total_users|add:"-1"|add:active_users }}</h4>
+                                            <p class="mb-0">Inactive Users</p>
+                                        </div>
+                                        <i class="fas fa-user-times fa-2x opacity-50"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Search and Filter Controls -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <form method="get" class="d-flex">
+                                <input type="text" name="search" class="form-control me-2" 
+                                       placeholder="Search users..." value="{{ search_query }}">
+                                <input type="hidden" name="role" value="{{ selected_role }}">
+                                <button type="submit" class="btn btn-outline-primary">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </form>
+                        </div>
+                        <div class="col-md-3">
+                            <form method="get">
+                                <input type="hidden" name="search" value="{{ search_query }}">
+                                <select name="role" class="form-select" onchange="this.form.submit()">
+                                    <option value="">All Roles</option>
+                                    {% for role in role_choices %}
+                                        <option value="{{ role }}" {% if role == selected_role %}selected{% endif %}>
+                                            {{ role|title }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </form>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="{% url 'accounts:user_management' %}" class="btn btn-outline-secondary w-100">
+                                <i class="fas fa-refresh"></i> Clear Filters
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Users Table -->
+                    {% if users %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Email</th>
+                                        <th>Roles</th>
+                                        <th>Status</th>
+                                        <th>Last Login</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for user in users %}
+                                        <tr>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <div class="avatar-sm bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-2">
+                                                        {{ user.username|first|upper }}
+                                                    </div>
+                                                    <div>
+                                                        <strong>{{ user.username }}</strong>
+                                                        {% if user.get_full_name %}
+                                                            <br><small class="text-muted">{{ user.get_full_name }}</small>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>{{ user.email|default:'-' }}</td>
+                                            <td>
+                                                {% if user.is_superuser %}
+                                                    <span class="badge bg-danger">Super Admin</span>
+                                                {% elif user.roles %}
+                                                    {% for role in user.roles %}
+                                                        <span class="badge bg-{% if role == 'admin' %}warning{% elif role == 'user' %}primary{% else %}secondary{% endif %}">
+                                                            {{ role|title }}
+                                                        </span>
+                                                    {% endfor %}
+                                                {% else %}
+                                                    <span class="badge bg-light text-dark">No Role</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if user.is_active %}
+                                                    <span class="badge bg-success">Active</span>
+                                                {% else %}
+                                                    <span class="badge bg-danger">Inactive</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if user.last_login %}
+                                                    {{ user.last_login|timesince }} ago
+                                                {% else %}
+                                                    <span class="text-muted">Never</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div class="dropdown">
+                                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                                            type="button" data-bs-toggle="dropdown">
+                                                        Actions
+                                                    </button>
+                                                    <ul class="dropdown-menu">
+                                                        <li>
+                                                            <a class="dropdown-item" href="{% url 'accounts:user_edit' user.pk %}">
+                                                                <i class="fas fa-edit"></i> Edit User
+                                                            </a>
+                                                        </li>
+                                                        {% if user != request.user %}
+                                                            <li>
+                                                                <button class="dropdown-item" onclick="toggleUserActive({{ user.pk }}, {{ user.is_active|yesno:'false,true' }})">
+                                                                    <i class="fas fa-{% if user.is_active %}pause{% else %}play{% endif %}"></i> 
+                                                                    {% if user.is_active %}Deactivate{% else %}Activate{% endif %}
+                                                                </button>
+                                                            </li>
+                                                            <li>
+                                                                <button class="dropdown-item" onclick="resetPassword({{ user.pk }}, '{{ user.username }}')">
+                                                                    <i class="fas fa-key"></i> Reset Password
+                                                                </button>
+                                                            </li>
+                                                            <li><hr class="dropdown-divider"></li>
+                                                            <li>
+                                                                <a class="dropdown-item text-danger" href="{% url 'accounts:user_delete' user.pk %}">
+                                                                    <i class="fas fa-trash"></i> Delete User
+                                                                </a>
+                                                            </li>
+                                                        {% endif %}
+                                                    </ul>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Pagination -->
+                        {% if is_paginated %}
+                            <nav aria-label="User pagination">
+                                <ul class="pagination justify-content-center">
+                                    {% if page_obj.has_previous %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_role %}&role={{ selected_role }}{% endif %}">
+                                                <i class="fas fa-angle-double-left"></i>
+                                            </a>
+                                        </li>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_role %}&role={{ selected_role }}{% endif %}">
+                                                <i class="fas fa-angle-left"></i>
+                                            </a>
+                                        </li>
+                                    {% endif %}
+                                    
+                                    <li class="page-item active">
+                                        <span class="page-link">
+                                            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                                        </span>
+                                    </li>
+                                    
+                                    {% if page_obj.has_next %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_role %}&role={{ selected_role }}{% endif %}">
+                                                <i class="fas fa-angle-right"></i>
+                                            </a>
+                                        </li>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_role %}&role={{ selected_role }}{% endif %}">
+                                                <i class="fas fa-angle-double-right"></i>
+                                            </a>
+                                        </li>
+                                    {% endif %}
+                                </ul>
+                            </nav>
+                        {% endif %}
+                    {% else %}
+                        <!-- Empty State -->
+                        <div class="text-center py-5">
+                            <i class="fas fa-users fa-4x text-muted mb-3"></i>
+                            {% if search_query or selected_role %}
+                                <h4 class="text-muted">No Users Found</h4>
+                                <p class="text-muted">No users match your search criteria.</p>
+                                <a href="{% url 'accounts:user_management' %}" class="btn btn-primary">
+                                    Clear Filters
+                                </a>
+                            {% else %}
+                                <h4 class="text-muted">No Users Yet</h4>
+                                <p class="text-muted">Create the first user to get started.</p>
+                                <a href="{% url 'accounts:user_create' %}" class="btn btn-primary">
+                                    <i class="fas fa-plus"></i> Add First User
+                                </a>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Password Reset Modal -->
+<div class="modal fade" id="passwordResetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Reset Password</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Reset password for user: <strong id="resetUsername"></strong></p>
+                <div class="mb-3">
+                    <label for="newPassword" class="form-label">New Password</label>
+                    <input type="password" class="form-control" id="newPassword" minlength="8" required>
+                    <div class="form-text">Password must be at least 8 characters long.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmPasswordReset">Reset Password</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentUserId = null;
+
+function toggleUserActive(userId, activate) {
+    const action = activate ? 'activate' : 'deactivate';
+    
+    if (confirm(`Are you sure you want to ${action} this user?`)) {
+        fetch(`/accounts/users/${userId}/toggle-active/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', `User ${action}d successfully`);
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showAlert('danger', data.error || `Failed to ${action} user`);
+            }
+        })
+        .catch(error => {
+            showAlert('danger', 'Error: ' + error.message);
+        });
+    }
+}
+
+function resetPassword(userId, username) {
+    currentUserId = userId;
+    document.getElementById('resetUsername').textContent = username;
+    document.getElementById('newPassword').value = '';
+    new bootstrap.Modal(document.getElementById('passwordResetModal')).show();
+}
+
+document.getElementById('confirmPasswordReset').addEventListener('click', function() {
+    const newPassword = document.getElementById('newPassword').value;
+    
+    if (newPassword.length < 8) {
+        showAlert('danger', 'Password must be at least 8 characters long');
+        return;
+    }
+    
+    fetch(`/accounts/users/${currentUserId}/reset-password/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({new_password: newPassword})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', 'Password reset successfully');
+            bootstrap.Modal.getInstance(document.getElementById('passwordResetModal')).hide();
+        } else {
+            showAlert('danger', data.error || 'Failed to reset password');
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'Error: ' + error.message);
+    });
+});
+
+// Utility functions
+function getCsrfToken() {
+    return document.querySelector('[name=csrfmiddlewaretoken]').value;
+}
+
+function showAlert(type, message) {
+    const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    const alertContainer = document.createElement('div');
+    alertContainer.innerHTML = alertHtml;
+    document.body.insertBefore(alertContainer.firstElementChild, document.body.firstChild);
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        const alert = document.querySelector('.alert');
+        if (alert) {
+            alert.remove();
+        }
+    }, 5000);
+}
+</script>
+
+<style>
+.avatar-sm {
+    width: 35px;
+    height: 35px;
+    font-size: 14px;
+}
+
+.opacity-50 {
+    opacity: 0.5;
+}
+</style>
+{% endblock %} 

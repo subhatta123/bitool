@@ -1,0 +1,1 @@
+# Core app for query functionality and LLM integration 

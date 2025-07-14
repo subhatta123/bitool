@@ -1,0 +1,251 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Login - ConvaBI{% endblock %}
+
+{% block extra_css %}
+<style>
+    .login-container {
+        background: white;
+        border-radius: var(--border-radius-xl);
+        box-shadow: var(--shadow-lg);
+        overflow: hidden;
+        max-width: 400px;
+        margin: 2rem auto;
+    }
+    
+    .login-header {
+        background: var(--gradient-primary);
+        color: white;
+        padding: 2rem;
+        text-align: center;
+    }
+    
+    .login-form {
+        padding: 2rem;
+    }
+    
+    .login-footer {
+        background: var(--bg-gradient-light);
+        padding: 1rem 2rem;
+        text-align: center;
+        border-top: 1px solid #e9ecef;
+    }
+    
+    .form-floating {
+        margin-bottom: 1.5rem;
+    }
+    
+    .form-floating > .form-control {
+        height: calc(3.5rem + 2px);
+        padding: 1rem 0.75rem;
+    }
+    
+    .form-floating > label {
+        padding: 1rem 0.75rem;
+    }
+    
+    .btn-login {
+        width: 100%;
+        padding: 1rem;
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-top: 1rem;
+    }
+    
+    .social-login {
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #e9ecef;
+    }
+    
+    .social-btn {
+        width: 100%;
+        margin-bottom: 0.5rem;
+        padding: 0.75rem;
+    }
+    
+    .brand-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        background: var(--gradient-accent);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row min-vh-100 align-items-center justify-content-center">
+        <div class="col-12">
+            <!-- Login Card -->
+            <div class="login-container">
+                <!-- Header -->
+                <div class="login-header">
+                    <div class="brand-icon">
+                        <i class="fas fa-database"></i>
+                    </div>
+                    <h2 class="mb-0 fw-bold">Welcome to ConvaBI</h2>
+                    <p class="mb-0 opacity-75">AI-Powered Database Interface</p>
+                </div>
+                
+                <!-- Login Form -->
+                <div class="login-form">
+                    <form method="post" id="loginForm">
+                        {% csrf_token %}
+                        
+                        <!-- Username Field -->
+                        <div class="form-floating">
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="id_username" 
+                                   name="username" 
+                                   placeholder="Username"
+                                   required
+                                   autocomplete="username">
+                            <label for="id_username">
+                                <i class="fas fa-user me-2"></i>Username
+                            </label>
+                        </div>
+                        
+                        <!-- Password Field -->
+                        <div class="form-floating">
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="id_password" 
+                                   name="password" 
+                                   placeholder="Password"
+                                   required
+                                   autocomplete="current-password">
+                            <label for="id_password">
+                                <i class="fas fa-lock me-2"></i>Password
+                            </label>
+                        </div>
+                        
+                        <!-- Remember Me -->
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="rememberMe" name="remember_me">
+                            <label class="form-check-label" for="rememberMe">
+                                Remember me
+                            </label>
+                        </div>
+                        
+                        <!-- Login Button -->
+                        <button type="submit" class="btn btn-primary btn-login">
+                            <i class="fas fa-sign-in-alt me-2"></i>
+                            Sign In
+                        </button>
+                    </form>
+                    
+                    <!-- Demo Credentials -->
+                    <div class="alert alert-info mt-3" role="alert">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Demo Credentials:</strong><br>
+                        Username: <code>admin</code><br>
+                        Password: <code>admin123</code>
+                    </div>
+                </div>
+                
+                <!-- Footer -->
+                <div class="login-footer">
+                    <p class="mb-0 text-muted">
+                        <small>
+                            Don't have an account? Contact your administrator.
+                        </small>
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Features Section -->
+            <div class="row mt-5">
+                <div class="col-md-4 mb-3">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body text-center">
+                            <div class="text-primary mb-3">
+                                <i class="fas fa-comments fa-2x"></i>
+                            </div>
+                            <h5 class="card-title">Natural Language Queries</h5>
+                            <p class="card-text text-muted">
+                                Ask questions in plain English and get SQL results instantly.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4 mb-3">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body text-center">
+                            <div class="text-primary mb-3">
+                                <i class="fas fa-chart-line fa-2x"></i>
+                            </div>
+                            <h5 class="card-title">Interactive Dashboards</h5>
+                            <p class="card-text text-muted">
+                                Create and share beautiful dashboards with cross-filtering.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4 mb-3">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body text-center">
+                            <div class="text-primary mb-3">
+                                <i class="fas fa-database fa-2x"></i>
+                            </div>
+                            <h5 class="card-title">Multi-Source Integration</h5>
+                            <p class="card-text text-muted">
+                                Connect to multiple databases and data sources seamlessly.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Focus on username field
+    $('#id_username').focus();
+    
+    // Form submission handling
+    $('#loginForm').on('submit', function(e) {
+        const submitBtn = $(this).find('button[type="submit"]');
+        
+        // Show loading state
+        submitBtn.prop('disabled', true);
+        submitBtn.html('<i class="fas fa-spinner fa-spin me-2"></i>Signing in...');
+        
+        // Let form submit normally
+        // The disabled state will be reset on page reload
+    });
+    
+    // Demo credentials quick fill
+    $('.alert-info').on('click', function() {
+        $('#id_username').val('admin');
+        $('#id_password').val('admin123');
+        $('#id_username').focus();
+    });
+    
+    // Add enter key support
+    $(document).on('keypress', function(e) {
+        if (e.which === 13) { // Enter key
+            $('#loginForm').submit();
+        }
+    });
+    
+    // Animate feature cards on load
+    $('.card').each(function(index) {
+        $(this).css('opacity', '0');
+        $(this).animate({
+            opacity: 1
+        }, 500 + (index * 100));
+    });
+});
+</script>
+{% endblock %} 

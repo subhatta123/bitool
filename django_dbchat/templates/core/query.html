@@ -1,0 +1,464 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}ConvaBI - Query Data{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/query.css' %}">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Main Query Interface -->
+        <div class="col-lg-9">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">
+                        <i class="fas fa-database me-2"></i>
+                        Natural Language Query Interface
+                    </h4>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-light btn-sm" id="dataPreviewBtn" title="View data structure and sample data">
+                            <i class="fas fa-table"></i> Data Preview
+                        </button>
+                        <button type="button" class="btn btn-outline-light btn-sm" id="toggleHistoryBtn">
+                            <i class="fas fa-history"></i> History
+                        </button>
+                        <button type="button" class="btn btn-outline-light btn-sm" id="clearQueryBtn">
+                            <i class="fas fa-eraser"></i> Clear
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Data Source Selection -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="dataSourceSelect" class="form-label">Data Source</label>
+                            {% if data_sources|length == 0 %}
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    No data sources connected. <a href="{% url 'datasets:list' %}" class="alert-link">Connect a data source</a> to get started.
+                                </div>
+                            {% else %}
+                                <select class="form-select" id="dataSourceSelect">
+                                    <option value="">Select a data source...</option>
+                                    {% for source in data_sources %}
+                                    <option value="{{ source.id }}" {% if source.id|stringformat:'s' == selected_data_source_id|stringformat:'s' %}selected{% endif %}>{{ source.name }} ({{ source.source_type }})</option>
+                                    {% endfor %}
+                                </select>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Connection Status</label>
+                            <div id="connectionStatus" class="alert alert-secondary py-2">
+                                <i class="fas fa-circle text-secondary"></i> 
+                                {% if data_sources|length == 0 %}No data source connected{% else %}No data source selected{% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Query Input -->
+                    <div class="mb-3">
+                        <label for="naturalQueryInput" class="form-label">
+                            Ask a question about your data
+                            <small class="text-muted">(in natural language)</small>
+                        </label>
+                        <div class="input-group">
+                            <textarea 
+                                class="form-control" 
+                                id="naturalQueryInput" 
+                                rows="3" 
+                                placeholder="e.g., Show me the total sales by region for the last quarter..."
+                                style="resize: vertical;"></textarea>
+                            <button class="btn btn-primary" type="button" id="submitQueryBtn" disabled>
+                                <i class="fas fa-search me-1"></i>
+                                Ask AI
+                            </button>
+                        </div>
+                        <div class="form-text">
+                            Examples: "Show revenue by month", "Which customers have the highest orders?", "Compare sales across regions"
+                        </div>
+                    </div>
+
+                    <!-- Query Processing Status -->
+                    <div id="queryProcessing" class="alert alert-info d-none">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-2" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <span id="processingText">Processing your query...</span>
+                        </div>
+                    </div>
+
+                    <!-- Enhanced Clarification Dialog -->
+                    <div id="clarificationSection" class="card border-info d-none">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0">
+                                <i class="fas fa-robot me-2"></i>
+                                AI Assistant needs clarification
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex align-items-start mb-3">
+                                <div class="flex-shrink-0">
+                                    <div class="bg-info text-white rounded-circle p-2" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-robot"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="bg-light p-3 rounded position-relative">
+                                        <div id="clarificationQuestion" class="mb-0"></div>
+                                        <div class="position-absolute top-0 start-0 translate-middle">
+                                            <div class="bg-light" style="width: 10px; height: 10px; transform: rotate(45deg);"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Quick Response Buttons -->
+                            <div id="quickResponseButtons" class="mb-3 d-none">
+                                <small class="text-muted d-block mb-2">Quick responses:</small>
+                                <div class="d-flex flex-wrap gap-2" id="quickButtonsContainer">
+                                    <!-- Quick response buttons will be generated here -->
+                                </div>
+                            </div>
+                            
+                            <!-- Custom Response Input -->
+                            <div class="d-flex align-items-start">
+                                <div class="flex-shrink-0">
+                                    <div class="bg-primary text-white rounded-circle p-2" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-user"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="input-group">
+                                        <textarea 
+                                            class="form-control" 
+                                            id="clarificationInput" 
+                                            rows="2"
+                                            placeholder="Type your response here or use the quick responses above..."
+                                            style="resize: vertical;"></textarea>
+                                        <button class="btn btn-primary" type="button" id="submitClarificationBtn">
+                                            <i class="fas fa-paper-plane me-1"></i>
+                                            Send
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Conversation History -->
+                            <div id="conversationHistory" class="mt-3 d-none">
+                                <hr>
+                                <small class="text-muted">Conversation history:</small>
+                                <div id="conversationItems" class="mt-2">
+                                    <!-- Previous conversation items will appear here -->
+                                </div>
+                            </div>
+                            
+                            <!-- Help Text -->
+                            <div class="mt-3">
+                                <small class="text-muted">
+                                    <i class="fas fa-lightbulb me-1"></i>
+                                    <strong>Tip:</strong> Be specific with your requirements. For example: "Show me the top 5 customers by total sales amount in the South region for 2023"
+                                </small>
+                            </div>
+                            
+                            <!-- Debug Info (temporary) -->
+                            <div class="mt-2 d-none" id="debugInfo">
+                                <small class="text-muted">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    If you experience issues, try refreshing the page (Ctrl+F5) to clear cache.
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Query Results Section -->
+                    <div id="queryResults" class="d-none">
+                        <!-- Generated SQL -->
+                        <div class="card mt-3">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-code"></i> Generated SQL</span>
+                                <button class="btn btn-sm btn-outline-secondary" id="copySqlBtn">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <pre id="generatedSql" class="bg-light p-3 border rounded"></pre>
+                            </div>
+                        </div>
+
+                        <!-- Data Results -->
+                        <div class="card mt-3">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-table"></i> Results</span>
+                                <div class="btn-group">
+                                    <button class="btn btn-sm btn-outline-success" id="exportDataBtn">
+                                        <i class="fas fa-download"></i> Export
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary" id="addToDashboardBtn">
+                                        <i class="fas fa-plus"></i> Add to Dashboard
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="dataTableContainer">
+                                    <!-- Data table will be inserted here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Chart Visualization -->
+                        <div class="card mt-3">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-chart-bar"></i> Visualization</span>
+                                <div class="btn-group">
+                                    <select class="form-select form-select-sm" id="chartTypeSelect">
+                                        <option value="bar">Bar Chart</option>
+                                        <option value="line">Line Chart</option>
+                                        <option value="pie">Pie Chart</option>
+                                        <option value="scatter">Scatter Plot</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="chartContainer" style="height: 400px;">
+                                    <!-- Chart will be rendered here -->
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <label for="xAxisSelect" class="form-label">X-Axis</label>
+                                        <select class="form-select" id="xAxisSelect">
+                                            <option value="">Auto-detect</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="yAxisSelect" class="form-label">Y-Axis</label>
+                                        <select class="form-select" id="yAxisSelect">
+                                            <option value="">Auto-detect</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-3">
+            <!-- Query Progress Tracker -->
+            <div class="card shadow-sm mb-3" id="queryProgressCard" style="display: none;">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-tasks"></i>
+                        Query Progress
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="progress-steps">
+                        <div class="progress-step" id="step-parse">
+                            <div class="progress-step-icon">
+                                <i class="fas fa-language"></i>
+                            </div>
+                            <div class="progress-step-text">
+                                <small class="text-muted">Step 1</small>
+                                <div>Understanding Query</div>
+                            </div>
+                            <div class="progress-step-status">
+                                <i class="fas fa-circle text-muted"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="progress-step" id="step-sql">
+                            <div class="progress-step-icon">
+                                <i class="fas fa-code"></i>
+                            </div>
+                            <div class="progress-step-text">
+                                <small class="text-muted">Step 2</small>
+                                <div>Generating SQL</div>
+                            </div>
+                            <div class="progress-step-status">
+                                <i class="fas fa-circle text-muted"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="progress-step" id="step-execute">
+                            <div class="progress-step-icon">
+                                <i class="fas fa-database"></i>
+                            </div>
+                            <div class="progress-step-text">
+                                <small class="text-muted">Step 3</small>
+                                <div>Executing Query</div>
+                            </div>
+                            <div class="progress-step-status">
+                                <i class="fas fa-circle text-muted"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="progress-step" id="step-results">
+                            <div class="progress-step-icon">
+                                <i class="fas fa-chart-bar"></i>
+                            </div>
+                            <div class="progress-step-text">
+                                <small class="text-muted">Step 4</small>
+                                <div>Formatting Results</div>
+                            </div>
+                            <div class="progress-step-status">
+                                <i class="fas fa-circle text-muted"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Overall Progress Bar -->
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <small class="text-muted">Overall Progress</small>
+                            <small class="text-muted" id="progressPercentage">0%</small>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar bg-primary" role="progressbar" id="overallProgressBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Estimated Time -->
+                    <div class="mt-2 text-center">
+                        <small class="text-muted" id="estimatedTime">Estimated time: ~5-10 seconds</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Source Info -->
+            <div class="card shadow-sm mt-3" id="dataSourceInfo" style="display: none;">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-info-circle"></i>
+                        Data Source Info
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div id="dataSourceDetails">
+                        <!-- Data source information will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Data Preview Modal -->
+<div class="modal fade" id="dataPreviewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-table me-2"></i>
+                    Data Preview & Schema Information
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="dataPreviewContent">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2">Loading data preview...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="copySchemaBtn">
+                    <i class="fas fa-copy"></i> Copy Schema
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add to Dashboard Modal -->
+<div class="modal fade" id="addToDashboardModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add to Dashboard</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addToDashboardForm">
+                    <div class="mb-3">
+                        <label for="dashboardSelect" class="form-label">Select Dashboard</label>
+                        <select class="form-select" id="dashboardSelect" required>
+                            <option value="">Choose a dashboard...</option>
+                            <option value="new">Create New Dashboard</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="newDashboardNameGroup" style="display: none;">
+                        <label for="newDashboardName" class="form-label">New Dashboard Name</label>
+                        <input type="text" class="form-control" id="newDashboardName" placeholder="My Dashboard">
+                    </div>
+                    <div class="mb-3">
+                        <label for="chartTitle" class="form-label">Chart Title</label>
+                        <input type="text" class="form-control" id="chartTitle" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="chartDescription" class="form-label">Description (optional)</label>
+                        <textarea class="form-control" id="chartDescription" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmAddToDashboard">Add to Dashboard</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/query.js' %}?v=2.1"></script>
+<script>
+    // Initialize query interface
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check for URL parameters to pre-fill query
+        const urlParams = new URLSearchParams(window.location.search);
+        const prefilledQuery = urlParams.get('q');
+        
+        if (prefilledQuery) {
+            const queryInput = document.getElementById('naturalQueryInput');
+            if (queryInput) {
+                queryInput.value = decodeURIComponent(prefilledQuery);
+                
+                // Show a nice notification
+                const alert = document.createElement('div');
+                alert.className = 'alert alert-info alert-dismissible fade show mt-3';
+                alert.innerHTML = `
+                    <i class="fas fa-edit me-2"></i>
+                    Query loaded for modification. Make your changes and click "Ask AI" to run the updated query.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                
+                const cardBody = document.querySelector('.card-body');
+                cardBody.insertBefore(alert, cardBody.firstChild);
+                
+                // Auto-focus on the textarea
+                queryInput.focus();
+                queryInput.setSelectionRange(queryInput.value.length, queryInput.value.length);
+            }
+        }
+        
+        if (typeof queryInterface !== 'undefined') {
+            // Use the global instance created in query.js
+            console.log('Query interface initialized successfully');
+        } else {
+            console.error('Query interface not available');
+        }
+    });
+</script>
+{% endblock %} 

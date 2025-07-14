@@ -1,0 +1,279 @@
+{% extends 'base.html' %}
+
+{% block title %}User Preferences - ConvaBI{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header bg-gradient-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-cog me-2"></i>
+                        User Preferences
+                    </h4>
+                </div>
+                
+                <div class="card-body">
+                    <form id="preferencesForm">
+                        {% csrf_token %}
+                        
+                        <!-- Appearance Settings -->
+                        <div class="mb-4">
+                            <h5 class="border-bottom pb-2">
+                                <i class="fas fa-palette me-2"></i>
+                                Appearance
+                            </h5>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Theme</label>
+                                        <select class="form-select" name="theme">
+                                            <option value="light">Light</option>
+                                            <option value="dark">Dark</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="sidebar_collapsed" id="sidebar_collapsed">
+                                            <label class="form-check-label" for="sidebar_collapsed">
+                                                Collapse sidebar by default
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Notification Settings -->
+                        <div class="mb-4">
+                            <h5 class="border-bottom pb-2">
+                                <i class="fas fa-bell me-2"></i>
+                                Notifications
+                            </h5>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" name="email_notifications" id="email_notifications">
+                                        <label class="form-check-label" for="email_notifications">
+                                            Email notifications
+                                        </label>
+                                    </div>
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" name="dashboard_alerts" id="dashboard_alerts">
+                                        <label class="form-check-label" for="dashboard_alerts">
+                                            Dashboard alerts
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" name="query_completion" id="query_completion">
+                                        <label class="form-check-label" for="query_completion">
+                                            Query completion notifications
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Dashboard Settings -->
+                        <div class="mb-4">
+                            <h5 class="border-bottom pb-2">
+                                <i class="fas fa-chart-bar me-2"></i>
+                                Dashboard
+                            </h5>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Default Chart Type</label>
+                                        <select class="form-select" name="default_chart_type">
+                                            <option value="bar">Bar Chart</option>
+                                            <option value="line">Line Chart</option>
+                                            <option value="pie">Pie Chart</option>
+                                            <option value="scatter">Scatter Plot</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Auto Refresh Interval</label>
+                                        <select class="form-select" name="auto_refresh_interval">
+                                            <option value="60">1 minute</option>
+                                            <option value="300">5 minutes</option>
+                                            <option value="600">10 minutes</option>
+                                            <option value="1800">30 minutes</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Items Per Page</label>
+                                        <select class="form-select" name="items_per_page">
+                                            <option value="10">10</option>
+                                            <option value="20">20</option>
+                                            <option value="50">50</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Query Settings -->
+                        <div class="mb-4">
+                            <h5 class="border-bottom pb-2">
+                                <i class="fas fa-search me-2"></i>
+                                Query
+                            </h5>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" name="save_query_history" id="save_query_history">
+                                        <label class="form-check-label" for="save_query_history">
+                                            Save query history
+                                        </label>
+                                    </div>
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" name="auto_format_sql" id="auto_format_sql">
+                                        <label class="form-check-label" for="auto_format_sql">
+                                            Auto-format SQL queries
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Query Timeout</label>
+                                        <select class="form-select" name="query_timeout">
+                                            <option value="30">30 seconds</option>
+                                            <option value="60">1 minute</option>
+                                            <option value="120">2 minutes</option>
+                                            <option value="300">5 minutes</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'accounts:profile' %}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Back to Profile
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Save Preferences
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load current preferences
+    loadPreferences();
+    
+    // Handle form submission
+    document.getElementById('preferencesForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        savePreferences();
+    });
+});
+
+function loadPreferences() {
+    fetch('/accounts/preferences/', {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        const preferences = data.preferences;
+        
+        // Set form values from preferences
+        Object.keys(preferences).forEach(key => {
+            const element = document.querySelector(`[name="${key}"]`);
+            if (element) {
+                if (element.type === 'checkbox') {
+                    element.checked = preferences[key];
+                } else {
+                    element.value = preferences[key];
+                }
+            }
+        });
+    })
+    .catch(error => {
+        console.error('Error loading preferences:', error);
+    });
+}
+
+function savePreferences() {
+    const formData = new FormData(document.getElementById('preferencesForm'));
+    const preferences = {};
+    
+    // Convert form data to preferences object
+    for (let [key, value] of formData.entries()) {
+        if (key !== 'csrfmiddlewaretoken') {
+            preferences[key] = value;
+        }
+    }
+    
+    // Handle checkboxes (unchecked boxes won't be in FormData)
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+        preferences[checkbox.name] = checkbox.checked;
+    });
+    
+    // Save preferences
+    fetch('/accounts/preferences/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCsrfToken(),
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(preferences)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', 'Preferences saved successfully!');
+        } else {
+            showAlert('danger', data.error || 'Failed to save preferences');
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'Error saving preferences: ' + error.message);
+    });
+}
+
+function getCsrfToken() {
+    return document.querySelector('[name=csrfmiddlewaretoken]').value;
+}
+
+function showAlert(type, message) {
+    const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    const alertContainer = document.createElement('div');
+    alertContainer.innerHTML = alertHtml;
+    document.body.insertBefore(alertContainer.firstElementChild, document.body.firstChild);
+    
+    setTimeout(() => {
+        const alert = document.querySelector('.alert');
+        if (alert) {
+            alert.remove();
+        }
+    }, 5000);
+}
+</script>
+{% endblock %} 

@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Dashboard - ConvaBI{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card">
+                <div class="card-header bg-gradient-primary text-white">
+                    <h3 class="mb-0">
+                        <i class="fas fa-plus-circle me-2"></i>
+                        Create New Dashboard
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="id_name" class="form-label">Dashboard Name *</label>
+                            <input type="text" 
+                                   class="form-control {% if form.name.errors %}is-invalid{% endif %}" 
+                                   id="id_name" name="name" 
+                                   value="{{ form.name.value|default:'' }}"
+                                   placeholder="Enter dashboard name"
+                                   required>
+                            {% if form.name.errors %}
+                                <div class="invalid-feedback">
+                                    {% for error in form.name.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="id_description" class="form-label">Description</label>
+                            <textarea class="form-control {% if form.description.errors %}is-invalid{% endif %}" 
+                                      id="id_description" name="description" 
+                                      rows="3"
+                                      placeholder="Describe what this dashboard will show">{{ form.description.value|default:'' }}</textarea>
+                            {% if form.description.errors %}
+                                <div class="invalid-feedback">
+                                    {% for error in form.description.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Next Steps:</strong> After creating your dashboard, you'll be able to add charts, KPIs, tables, and other visualizations to it.
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'dashboards:list' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Create Dashboard
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Workflow Navigation -->
+                    <div class="mt-4 pt-3 border-top">
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <h6 class="text-muted mb-2">
+                                    <i class="fas fa-route me-2"></i>ConvaBI Workflow Navigation
+                                </h6>
+                                <small class="text-muted">Continue your data journey</small>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="d-flex justify-content-end gap-2">
+                                    <a href="{% url 'core:query' %}" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-comments me-1"></i>Query Data
+                                    </a>
+                                    <a href="{% url 'datasets:list' %}" class="btn btn-outline-secondary btn-sm">
+                                        <i class="fas fa-database me-1"></i>Data Sources
+                                    </a>
+                                    <a href="{% url 'datasets:integration' %}" class="btn btn-outline-warning btn-sm">
+                                        <i class="fas fa-magic me-1"></i>ETL Operations
+                                    </a>
+                                    <a href="{% url 'datasets:semantic' %}" class="btn btn-outline-info btn-sm">
+                                        <i class="fas fa-brain me-1"></i>Semantic Layer
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

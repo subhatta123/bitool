@@ -1,0 +1,348 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Share Data Source: {{ data_source.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.user-card {
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    transition: all 0.2s;
+}
+
+.user-card:hover {
+    border-color: #007bff;
+    box-shadow: 0 2px 4px rgba(0,123,255,0.25);
+}
+
+.permission-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+}
+
+.share-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2rem 0;
+    margin-bottom: 2rem;
+}
+
+.btn-outline-danger:hover {
+    color: #fff;
+    background-color: #dc3545;
+    border-color: #dc3545;
+}
+
+.alert-info {
+    background-color: #e3f2fd;
+    border-color: #90caf9;
+    color: #0d47a1;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row">
+        <div class="col-12">
+            <div class="share-header text-center">
+                <div class="container">
+                    <h2><i class="fas fa-share-alt me-2"></i>Share Data Source: {{ data_source.name }}</h2>
+                    <p class="mb-0">Manage who can access and query your data source</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Currently Shared With -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h4>Currently Shared With</h4>
+                <div id="shared-users-list">
+                    {% if shared_users %}
+                        {% for share in shared_users %}
+                            <div class="user-card d-flex justify-content-between align-items-center" data-user-id="{{ share.user.id }}">
+                                <div class="d-flex align-items-center">
+                                    <div class="me-3">
+                                        <i class="fas fa-user-circle fa-2x text-muted"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="mb-1">{{ share.user.get_full_name|default:share.user.username }}</h6>
+                                        <small class="text-muted">{{ share.user.email }}</small>
+                                        <div class="mt-1">
+                                            <span class="badge permission-badge 
+                                                {% if share.permission == 'view' %}bg-secondary
+                                                {% elif share.permission == 'query' %}bg-primary
+                                                {% elif share.permission == 'edit' %}bg-success
+                                                {% endif %}">
+                                                {% if share.permission == 'view' %}View Only
+                                                {% elif share.permission == 'query' %}Query Access
+                                                {% elif share.permission == 'edit' %}Edit Access
+                                                {% endif %}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <button class="btn btn-outline-danger btn-sm" onclick="removeUser('{{ share.user.id }}', '{{ share.user.username }}')">
+                                        <i class="fas fa-times me-1"></i>Remove
+                                    </button>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            This data source is not shared with anyone yet.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Share with New User -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h4>Share with New User</h4>
+                <div class="card">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="user-select" class="form-label">Select User</label>
+                                <select class="form-select" id="user-select">
+                                    <option value="">Choose a user...</option>
+                                    {% for user in all_users %}
+                                        <option value="{{ user.id }}">{{ user.get_full_name|default:user.username }} ({{ user.email }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="permission-select" class="form-label">Permission Level</label>
+                                <select class="form-select" id="permission-select">
+                                    <option value="view">View Only</option>
+                                    <option value="query" selected>Query Access</option>
+                                    <option value="edit">Edit Access</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button class="btn btn-primary w-100" onclick="addUser()" type="button" id="add-user-btn">
+                                    <i class="fas fa-plus me-1"></i>Add User
+                                </button>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-12">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="testButton()" type="button">
+                                    <i class="fas fa-test-tube me-1"></i>Test Button (Debug)
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <small class="text-muted">
+                                <strong>Permission Levels:</strong><br>
+                                • <strong>View Only:</strong> Can see data source details but cannot query<br>
+                                • <strong>Query Access:</strong> Can query and use the data source (recommended for viewers)<br>
+                                • <strong>Edit Access:</strong> Can modify data source settings
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Share Options -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h4>Share Options</h4>
+                <div class="d-flex gap-3">
+                    <a href="{% url 'datasets:detail' data_source.id %}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left me-1"></i>Back to Data Source
+                    </a>
+                    <button class="btn btn-outline-primary" onclick="copyShareLink()">
+                        <i class="fas fa-link me-1"></i>Copy Share Link
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notifications -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="toast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <strong class="me-auto">ConvaBI</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body" id="toast-body">
+            <!-- Message will be inserted here -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% csrf_token %}
+<script>
+let csrfToken = '{{ csrf_token }}';
+
+// DOM Ready check
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, CSRF token:', csrfToken);
+    
+    // Alternative event listener for the Add User button
+    const addUserBtn = document.getElementById('add-user-btn');
+    if (addUserBtn) {
+        addUserBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('Add User button clicked via event listener');
+            addUser();
+        });
+        console.log('Add User button event listener attached');
+    } else {
+        console.error('Add User button not found');
+    }
+});
+
+function showToast(message, isSuccess = true) {
+    const toast = document.getElementById('toast');
+    const toastBody = document.getElementById('toast-body');
+    
+    toastBody.textContent = message;
+    toast.className = `toast ${isSuccess ? 'border-success' : 'border-danger'}`;
+    
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+}
+
+function addUser() {
+    console.log('Add User button clicked'); // Debug log
+    
+    const userSelect = document.getElementById('user-select');
+    const permissionSelect = document.getElementById('permission-select');
+    
+    if (!userSelect || !permissionSelect) {
+        console.error('User select or permission select not found');
+        showToast('Form elements not found', false);
+        return;
+    }
+    
+    const userId = userSelect.value;
+    const permission = permissionSelect.value;
+    
+    console.log('User ID:', userId, 'Permission:', permission); // Debug log
+    
+    if (!userId) {
+        showToast('Please select a user', false);
+        return;
+    }
+    
+    if (!csrfToken) {
+        console.error('CSRF token not found');
+        showToast('Security token missing', false);
+        return;
+    }
+    
+    const requestData = {
+        action: 'add_user',
+        user_id: userId,
+        permission: permission
+    };
+    
+    console.log('Sending request:', requestData); // Debug log
+    
+    fetch(window.location.href, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => {
+        console.log('Response status:', response.status); // Debug log
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Response data:', data); // Debug log
+        if (data.success) {
+            showToast(data.message);
+            // Reload page to update the shared users list
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.error || 'Failed to share data source', false);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('An error occurred while sharing: ' + error.message, false);
+    });
+}
+
+function removeUser(userId, username) {
+    if (!confirm(`Are you sure you want to remove ${username} from this data source?`)) {
+        return;
+    }
+    
+    const requestData = {
+        action: 'remove_user',
+        user_id: userId
+    };
+    
+    fetch(window.location.href, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message);
+            // Remove the user card from the UI
+            const userCard = document.querySelector(`[data-user-id="${userId}"]`);
+            if (userCard) {
+                userCard.remove();
+            }
+        } else {
+            showToast(data.error || 'Failed to remove user', false);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('An error occurred while removing user', false);
+    });
+}
+
+function copyShareLink() {
+    const shareLink = `${window.location.origin}{% url 'datasets:detail' data_source.id %}`;
+    
+    navigator.clipboard.writeText(shareLink).then(() => {
+        showToast('Share link copied to clipboard!');
+    }).catch(() => {
+        showToast('Failed to copy link', false);
+    });
+}
+
+// Make functions globally available
+window.addUser = addUser;
+window.removeUser = removeUser;
+window.copyShareLink = copyShareLink;
+
+// Test function
+function testButton() {
+    console.log('Test button working!');
+    showToast('Button click detected!');
+}
+</script>
+{% endblock %} 

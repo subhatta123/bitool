@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+
+{% block title %}Export Dashboard - {{ dashboard.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-gradient-primary text-white">
+                    <h3 class="mb-0">
+                        <i class="fas fa-download me-2"></i>
+                        Export Dashboard: {{ dashboard.name }}
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <!-- Email Export -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h5 class="mb-0">
+                                        <i class="fas fa-envelope me-2"></i>
+                                        Email Export
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    <p class="text-muted">Send the dashboard as an email attachment.</p>
+                                    
+                                    <div class="mb-3">
+                                        <label for="emailRecipient" class="form-label">Recipient Email</label>
+                                        <input type="email" class="form-control" id="emailRecipient" 
+                                               placeholder="Enter email address" required>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Include:</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" 
+                                                   id="includeHtml" checked>
+                                            <label class="form-check-label" for="includeHtml">
+                                                HTML Version
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" 
+                                                   id="includePdf">
+                                            <label class="form-check-label" for="includePdf">
+                                                PDF Document
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" 
+                                                   id="includeImage" checked>
+                                            <label class="form-check-label" for="includeImage">
+                                                PNG Image
+                                            </label>
+                                        </div>
+                                    </div>
+                                    
+                                    <button class="btn btn-primary w-100" onclick="emailExport()">
+                                        <i class="fas fa-paper-plane"></i> Send Email
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Direct Download -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h5 class="mb-0">
+                                        <i class="fas fa-download me-2"></i>
+                                        Direct Download
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    <p class="text-muted">Download the dashboard directly to your computer.</p>
+                                    
+                                    <div class="mb-3">
+                                        <label for="downloadFormat" class="form-label">Format</label>
+                                        <select class="form-select" id="downloadFormat">
+                                            <option value="html">HTML</option>
+                                            <option value="pdf">PDF</option>
+                                            <option value="png">PNG Image</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <button class="btn btn-success w-100" onclick="directDownload()">
+                                        <i class="fas fa-download"></i> Download
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Export History -->
+                    <div class="mt-4">
+                        <h5>Recent Exports</h5>
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Export history will be available here to track previous exports and downloads.
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="mt-4 d-flex justify-content-between">
+                        <a href="{% url 'dashboards:detail' dashboard.pk %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Dashboard
+                        </a>
+                        <a href="{% url 'dashboards:share' dashboard.pk %}" class="btn btn-outline-primary">
+                            <i class="fas fa-share-alt"></i> Share Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-body text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 mb-0">Processing export...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const dashboardId = '{{ dashboard.id }}';
+
+function emailExport() {
+    const recipientEmail = document.getElementById('emailRecipient').value;
+    const includeHtml = document.getElementById('includeHtml').checked;
+    const includePdf = document.getElementById('includePdf').checked;
+    const includeImage = document.getElementById('includeImage').checked;
+    
+    if (!recipientEmail) {
+        alert('Please enter a recipient email address');
+        return;
+    }
+    
+    if (!includeHtml && !includePdf && !includeImage) {
+        alert('Please select at least one format to include');
+        return;
+    }
+    
+    const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    loadingModal.show();
+    
+    fetch(`/dashboards/${dashboardId}/export/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+            export_type: 'email',
+            recipient_email: recipientEmail,
+            include_html: includeHtml,
+            include_pdf: includePdf,
+            include_image: includeImage
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        loadingModal.hide();
+        if (data.success) {
+            alert('Dashboard has been sent successfully!');
+            document.getElementById('emailRecipient').value = '';
+        } else {
+            alert('Error sending dashboard: ' + data.error);
+        }
+    })
+    .catch(error => {
+        loadingModal.hide();
+        console.error('Error:', error);
+        alert('Error sending dashboard');
+    });
+}
+
+function directDownload() {
+    const format = document.getElementById('downloadFormat').value;
+    
+    const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    loadingModal.show();
+    
+    // Set a timeout to handle long-running exports
+    const timeoutId = setTimeout(() => {
+        loadingModal.hide();
+        alert('Export is taking longer than expected. Please check the logs or try again.');
+    }, 30000); // 30 seconds timeout
+    
+    fetch(`/dashboards/${dashboardId}/export/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+            export_type: 'download',
+            format: format
+        })
+    })
+    .then(response => {
+        clearTimeout(timeoutId); // Clear the timeout
+        loadingModal.hide();
+        if (response.ok && (
+            response.headers.get('content-type') === 'text/html' ||
+            response.headers.get('content-type') === 'application/pdf' ||
+            response.headers.get('content-type') === 'image/png'
+        )) {
+            return response.blob();
+        } else {
+            return response.json();
+        }
+    })
+    .then(data => {
+        if (data instanceof Blob) {
+            // Handle file download
+            const url = window.URL.createObjectURL(data);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `{{ dashboard.name }}.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } else if (data.error) {
+            alert('Error downloading dashboard: ' + data.error);
+        }
+    })
+    .catch(error => {
+        clearTimeout(timeoutId); // Clear the timeout
+        loadingModal.hide();
+        console.error('Error:', error);
+        alert('Error downloading dashboard');
+    });
+}
+</script>
+
+{% csrf_token %}
+{% endblock %} 

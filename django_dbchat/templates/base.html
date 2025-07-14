@@ -1,0 +1,268 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>{% block title %}ConvaBI - Conversational Business Intelligence Platform{% endblock %}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Plotly.js for charts -->
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    
+    <!-- Custom CSS -->
+    <link href="{% static 'css/main.css' %}" rel="stylesheet">
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-gradient-primary">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="{% url 'core:home' %}">
+                <img src="{% static 'images/convabi-logo.png' %}" alt="ConvaBI" height="32" class="me-2" onerror="this.style.display='none'; this.nextElementSibling.style.marginLeft='0';" style="filter: brightness(0) invert(1);">
+                <span class="fw-bold" style="color: #ffffff; font-size: 1.2rem;">ConvaBI</span>
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if user.is_authenticated %}
+                        {% if user.is_superuser %}
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                                    <i class="fas fa-cog me-1"></i>Admin
+                                </a>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="{% url 'accounts:user_management' %}">
+                                        <i class="fas fa-users me-1"></i>User Management
+                                    </a></li>
+                                    <li><a class="dropdown-item" href="{% url 'core:llm_config' %}">
+                                        <i class="fas fa-robot me-1"></i>LLM Configuration
+                                    </a></li>
+                                    <li><a class="dropdown-item" href="{% url 'core:email_config' %}">
+                                        <i class="fas fa-envelope me-1"></i>Email Configuration
+                                    </a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item" href="/admin/">
+                                        <i class="fas fa-tools me-1"></i>Django Admin
+                                    </a></li>
+                                </ul>
+                            </li>
+                        {% else %}
+                            <li class="nav-item">
+                                <a class="nav-link" href="{% url 'core:query' %}">
+                                    <i class="fas fa-search me-1"></i>Query Data
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{% url 'dashboards:list' %}">
+                                    <i class="fas fa-chart-bar me-1"></i>Dashboards
+                                </a>
+                            </li>
+                            {% if request.license_info.permissions.can_manage_data_sources %}
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{% url 'datasets:list' %}">
+                                        <i class="fas fa-table me-1"></i>Data Sources
+                                    </a>
+                                </li>
+                            {% endif %}
+                        {% endif %}
+                    {% endif %}
+                </ul>
+                
+                <ul class="navbar-nav">
+                    {% if user.is_authenticated %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" role="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-user-circle me-1"></i>
+                                {{ user.get_full_name|default:user.username }}
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="{% url 'accounts:profile' %}">
+                                    <i class="fas fa-user me-1"></i>Profile
+                                </a></li>
+                                <li><a class="dropdown-item" href="{% url 'accounts:preferences' %}">
+                                    <i class="fas fa-cog me-1"></i>Preferences
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="{% url 'accounts:logout' %}">
+                                    <i class="fas fa-sign-out-alt me-1"></i>Logout
+                                </a></li>
+                            </ul>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'accounts:login' %}">
+                                <i class="fas fa-sign-in-alt me-1"></i>Login
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Messages -->
+    {% if messages %}
+        <div class="container mt-3">
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+                    {% if message.tags == 'error' %}
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                    {% elif message.tags == 'success' %}
+                        <i class="fas fa-check-circle me-2"></i>
+                    {% elif message.tags == 'warning' %}
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                    {% else %}
+                        <i class="fas fa-info-circle me-2"></i>
+                    {% endif %}
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <!-- Main Content -->
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-light py-4 mt-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="fas fa-comments me-2"></i>ConvaBI</h5>
+                    <p class="mb-0">Conversational Business Intelligence platform for natural language queries, smart dashboards, and data insights.</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p class="mb-0">
+                        <small>
+                            <i class="fas fa-code me-1"></i>
+                            Built with Django & AI
+                        </small>
+                    </p>
+                    {% if user.is_authenticated %}
+                        <p class="mb-0">
+                            <small>
+                                <i class="fas fa-user me-1"></i>
+                                Welcome, {{ user.get_full_name|default:user.username }}
+                            </small>
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay d-none">
+        <div class="loading-content">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 mb-0">Processing...</p>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="{% static 'js/main.js' %}"></script>
+    
+    {% block extra_js %}{% endblock %}
+
+    <script>
+        // Extend ConvaBI object from main.js instead of overwriting it
+        window.ConvaBI = window.ConvaBI || {};
+        Object.assign(window.ConvaBI, {
+            // CSRF token for AJAX requests
+            csrfToken: '{{ csrf_token }}',
+            
+            // Show loading overlay
+            showLoading: function(message = 'Processing...') {
+                const overlay = document.getElementById('loading-overlay');
+                if (message !== 'Processing...') {
+                    overlay.querySelector('p').textContent = message;
+                }
+                overlay.classList.remove('d-none');
+            },
+            
+            // Hide loading overlay
+            hideLoading: function() {
+                document.getElementById('loading-overlay').classList.add('d-none');
+            },
+            
+            // Show toast notification
+            showToast: function(message, type = 'info') {
+                // Create toast element
+                const toastHtml = `
+                    <div class="toast align-items-center text-white bg-${type} border-0" role="alert">
+                        <div class="d-flex">
+                            <div class="toast-body">${message}</div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                        </div>
+                    </div>
+                `;
+                
+                // Add to toast container (create if doesn't exist)
+                let container = document.getElementById('toast-container');
+                if (!container) {
+                    container = document.createElement('div');
+                    container.id = 'toast-container';
+                    container.className = 'toast-container position-fixed top-0 end-0 p-3';
+                    document.body.appendChild(container);
+                }
+                
+                const toastElement = document.createElement('div');
+                toastElement.innerHTML = toastHtml;
+                container.appendChild(toastElement.firstElementChild);
+                
+                // Show toast
+                const toast = new bootstrap.Toast(container.lastElementChild);
+                toast.show();
+            },
+            
+            // Format numbers
+            formatNumber: function(num) {
+                return new Intl.NumberFormat().format(num);
+            },
+            
+            // Format currency
+            formatCurrency: function(amount, currency = 'USD') {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: currency
+                }).format(amount);
+            }
+        });
+        
+        // Backward compatibility alias
+        window.dbchat = window.ConvaBI;
+        
+        // Auto-dismiss alerts after 5 seconds
+        setTimeout(function() {
+            const alerts = document.querySelectorAll('.alert:not(.alert-permanent)');
+            alerts.forEach(function(alert) {
+                const bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 5000);
+    </script>
+</body>
+</html> 

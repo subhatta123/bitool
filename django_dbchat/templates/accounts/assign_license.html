@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+
+{% block title %}
+    {% if is_admin_view %}Assign License to {{ target_user.username }}{% else %}Enter License Code{% endif %} - ConvaBI
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-key me-2"></i>
+                        {% if is_admin_view %}
+                            Assign License to {{ target_user.username }}
+                        {% else %}
+                            Enter Your License Code
+                        {% endif %}
+                    </h4>
+                </div>
+                
+                <div class="card-body">
+                    {% if license_info.has_license %}
+                        <div class="alert alert-info">
+                            <h6><i class="fas fa-info-circle"></i> Current License Status</h6>
+                            <ul class="mb-0">
+                                <li><strong>License Type:</strong> {{ license_info.license_type|title }}</li>
+                                <li><strong>Status:</strong> 
+                                    <span class="badge bg-{% if license_info.status == 'active' %}success{% else %}warning{% endif %}">
+                                        {{ license_info.status|title }}
+                                    </span>
+                                </li>
+                                <li><strong>License Code:</strong> {{ license_info.license_code }}</li>
+                                {% if license_info.valid_until %}
+                                    <li><strong>Valid Until:</strong> {{ license_info.valid_until|date:"M d, Y" }}</li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                        
+                        {% if license_info.status == 'active' %}
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                This user already has an active license. Entering a new license code will replace the current license.
+                            </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            {% if is_admin_view %}
+                                This user does not have a license assigned.
+                            {% else %}
+                                You need a valid license to access ConvaBI features.
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                    
+                    <form method="post" class="needs-validation" novalidate>
+                        {% csrf_token %}
+                        
+                        {% if form.errors %}
+                            <div class="alert alert-danger">
+                                <h6>Please correct the following errors:</h6>
+                                {% for field, errors in form.errors.items %}
+                                    {% for error in errors %}
+                                        <div>{{ error }}</div>
+                                    {% endfor %}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        
+                        <div class="mb-3">
+                            <label for="{{ form.license_code.id_for_label }}" class="form-label">
+                                License Code <span class="text-danger">*</span>
+                            </label>
+                            {{ form.license_code }}
+                            {% if form.license_code.help_text %}
+                                <div class="form-text">{{ form.license_code.help_text }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{% if is_admin_view %}{% url 'accounts:user_management' %}{% else %}{% url 'accounts:profile' %}{% endif %}" 
+                               class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-key"></i> 
+                                {% if license_info.has_license %}Update License{% else %}Assign License{% endif %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <div class="card-footer text-muted">
+                    <small>
+                        <i class="fas fa-info-circle"></i>
+                        License codes are 16 characters long and contain only letters and numbers.
+                        {% if not is_admin_view %}
+                        Contact your administrator if you need a license code.
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Add form styling and validation
+document.addEventListener('DOMContentLoaded', function() {
+    // Add form-control class to inputs
+    const textInputs = document.querySelectorAll('input[type="text"]');
+    textInputs.forEach(input => {
+        input.classList.add('form-control');
+    });
+    
+    // Add uppercase formatting to license code field
+    const licenseCodeField = document.getElementById('id_license_code');
+    if (licenseCodeField) {
+        licenseCodeField.addEventListener('input', function() {
+            this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        });
+    }
+    
+    // Bootstrap form validation
+    const forms = document.getElementsByClassName('needs-validation');
+    Array.prototype.filter.call(forms, function(form) {
+        form.addEventListener('submit', function(event) {
+            if (form.checkValidity() === false) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            form.classList.add('was-validated');
+        }, false);
+    });
+});
+</script>
+{% endblock %} 

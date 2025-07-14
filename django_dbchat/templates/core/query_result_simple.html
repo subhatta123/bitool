@@ -1,0 +1,891 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Query Results - ConvaBI</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Bootstrap JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        .chart-type-btn {
+            margin: 0 5px 10px 0;
+            border-radius: 20px;
+        }
+        .chart-type-btn.active {
+            background-color: #007bff;
+            color: white;
+        }
+        .chart-container {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+        .stats-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid mt-4">
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1 class="h3 mb-1">
+                    <i class="fas fa-chart-line text-primary me-2"></i>
+                    Query Results
+                </h1>
+                <p class="text-muted mb-0">{{ natural_query }}</p>
+            </div>
+            <div>
+                <a href="/query/" class="btn btn-outline-primary">
+                    <i class="fas fa-arrow-left me-1"></i>New Query
+                </a>
+            </div>
+        </div>
+        
+        <div class="row">
+            <!-- Main Chart Area -->
+            <div class="col-lg-9">
+                <!-- Chart Type Selector -->
+                <div class="card mb-3">
+                    <div class="card-body py-3">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div>
+                                <h6 class="mb-0">
+                                    <i class="fas fa-palette me-2"></i>Chart Type
+                                </h6>
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-outline-primary chart-type-btn active" data-type="bar">
+                                    <i class="fas fa-chart-bar me-1"></i>Bar
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary chart-type-btn" data-type="line">
+                                    <i class="fas fa-chart-line me-1"></i>Line
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary chart-type-btn" data-type="pie">
+                                    <i class="fas fa-chart-pie me-1"></i>Pie
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary chart-type-btn" data-type="scatter">
+                                    <i class="fas fa-braille me-1"></i>Scatter
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Chart Visualization -->
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-chart-area me-2"></i>Visualization
+                        </h5>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-secondary" onclick="exportChart()">
+                                <i class="fas fa-download me-1"></i>Export
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="addToDashboard()">
+                                <i class="fas fa-plus me-1"></i>Dashboard
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="chartContainer" class="chart-container" style="height: 400px;"></div>
+                    </div>
+                </div>
+                
+                <!-- Data Table -->
+                <div class="card mt-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-table me-2"></i>Data Table
+                        </h5>
+                        <button class="btn btn-sm btn-outline-success" onclick="exportData()">
+                            <i class="fas fa-file-csv me-1"></i>Export CSV
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped">
+                                <thead class="table-dark">
+                                    <tr>
+                                        {% for column in data.columns %}
+                                        <th>{{ column }}</th>
+                                        {% endfor %}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in data.rows %}
+                                    <tr>
+                                        {% for value in row %}
+                                        <td>{{ value }}</td>
+                                        {% endfor %}
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Sidebar -->
+            <div class="col-lg-3">
+                <!-- Query Stats -->
+                <div class="card stats-card mb-3">
+                    <div class="card-body text-center">
+                        <i class="fas fa-database fa-2x mb-2"></i>
+                        <h4 class="mb-1">{{ data.total_rows }}</h4>
+                        <p class="mb-0">Total Rows</p>
+                    </div>
+                </div>
+                
+                <!-- Query Info -->
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-info-circle me-2"></i>Query Details
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Natural Query:</label>
+                            <p class="text-muted">{{ natural_query }}</p>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">SQL Query:</label>
+                            <div class="position-relative">
+                                <pre class="bg-light p-2 rounded small">{{ sql_query }}</pre>
+                                <button class="btn btn-sm btn-outline-secondary position-absolute top-0 end-0 m-1" onclick="copySQL()">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="row text-center">
+                            <div class="col-6">
+                                <div class="border rounded p-2">
+                                    <div class="fw-bold text-primary">{{ data.columns|length }}</div>
+                                    <small class="text-muted">Columns</small>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="border rounded p-2">
+                                    <div class="fw-bold text-success">{{ data.total_rows }}</div>
+                                    <small class="text-muted">Rows</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Quick Actions -->
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-bolt me-2"></i>Quick Actions
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-primary btn-sm" onclick="newQuery()">
+                                <i class="fas fa-plus me-1"></i>New Query
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="modifyQuery()">
+                                <i class="fas fa-edit me-1"></i>Modify Query
+                            </button>
+                            <button class="btn btn-outline-info btn-sm" onclick="shareResults()">
+                                <i class="fas fa-share me-1"></i>Share Results
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data for JavaScript -->
+    {{ data|json_script:"chart-data" }}
+    
+    <!-- CSRF Token for AJAX requests -->
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    
+    <script>
+        // Global variables
+        let currentChart = null;
+        let currentChartType = 'bar';
+        let resultData;
+        
+        // Safely parse chart data using Django's json_script
+        try {
+            const chartDataElement = document.getElementById('chart-data');
+            if (chartDataElement) {
+                resultData = JSON.parse(chartDataElement.textContent);
+                console.log('Successfully parsed chart data:', resultData);
+            } else {
+                console.warn('Chart data element not found');
+                resultData = {"columns":[],"rows":[],"total_rows":0};
+            }
+            
+            // Ensure data has the expected structure
+            if (!resultData.columns) resultData.columns = [];
+            if (!resultData.rows) resultData.rows = [];
+            if (!resultData.total_rows) resultData.total_rows = resultData.rows.length;
+            
+        } catch (error) {
+            console.error('Error parsing chart data:', error);
+            console.error('Chart data element content:', 
+                document.getElementById('chart-data') ? 
+                document.getElementById('chart-data').textContent : 'Element not found');
+            
+            // Fallback data
+            resultData = {
+                "columns": ["Category", "Value"],
+                "rows": [["Sales", 100], ["Marketing", 80], ["Support", 60], ["Engineering", 120]],
+                "total_rows": 4
+            };
+            console.log('Using fallback data:', resultData);
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Page loaded, initializing...');
+            
+            // Check if Bootstrap is loaded
+            if (typeof bootstrap === 'undefined') {
+                console.error('Bootstrap is not loaded!');
+                alert('Bootstrap is not loaded - modals will not work');
+            } else {
+                console.log('Bootstrap is loaded successfully');
+            }
+            
+            // Check if addToDashboard function is available
+            if (typeof addToDashboard === 'function') {
+                console.log('addToDashboard function is available');
+            } else {
+                console.error('addToDashboard function is not available!');
+            }
+            
+            initializeChart();
+            bindChartTypeButtons();
+        });
+        
+        // Initialize chart
+        function initializeChart() {
+            console.log('Initializing chart with data:', resultData);
+            console.log('Rows:', resultData.rows?.length, 'Columns:', resultData.columns?.length);
+            
+            if (resultData.rows && resultData.rows.length > 0 && resultData.columns && resultData.columns.length >= 1) {
+                createChart(currentChartType);
+            } else {
+                console.warn('No data available for chart - showing placeholder');
+                document.getElementById('chartContainer').innerHTML = 
+                    '<div class="d-flex align-items-center justify-content-center h-100">' +
+                    '<div class="text-center">' +
+                    '<i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>' +
+                    '<p class="text-muted">No data available for chart visualization</p>' +
+                    '<small class="text-muted">Data: ' + JSON.stringify(resultData).substring(0, 100) + '...</small>' +
+                    '</div>' +
+                    '</div>';
+            }
+        }
+        
+        // Bind chart type buttons
+        function bindChartTypeButtons() {
+            document.querySelectorAll('.chart-type-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    // Update active button
+                    document.querySelectorAll('.chart-type-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Update chart
+                    currentChartType = this.getAttribute('data-type');
+                    createChart(currentChartType);
+                });
+            });
+        }
+        
+        // Create chart based on type
+        function createChart(type) {
+            console.log('Creating chart type:', type);
+            console.log('Data structure:', resultData);
+            
+            if (!resultData || (!resultData.rows && !Array.isArray(resultData))) {
+                console.error('No valid data for chart creation');
+                return;
+            }
+            
+            let xValues, yValues;
+            let isKPI = false;
+            
+            // Handle different data formats
+            if (resultData.rows && Array.isArray(resultData.rows)) {
+                // Standard format: {columns: [...], rows: [[...], [...]]}
+                console.log('Using standard rows format');
+                if (resultData.rows.length === 0) return;
+                
+                // Check if this is a KPI (single row, single numeric value)
+                if (resultData.rows.length === 1 && resultData.columns.length === 1) {
+                    isKPI = true;
+                    console.log('Detected KPI-style data');
+                }
+                
+                xValues = resultData.rows.map(row => row[0]);
+                yValues = resultData.rows.map(row => row[1] || 0);
+                
+                // For single column data, create meaningful visualization
+                if (resultData.columns.length === 1) {
+                    xValues = [resultData.columns[0]];
+                    yValues = [resultData.rows[0][0]];
+                }
+            } else if (Array.isArray(resultData)) {
+                // Array of objects: [{Category: 'Sales', Value: 100}, ...]
+                console.log('Using array of objects format');
+                if (resultData.length === 0) return;
+                
+                const keys = Object.keys(resultData[0]);
+                const xKey = keys[0];
+                const yKey = keys[1] || keys[0];
+                
+                xValues = resultData.map(item => item[xKey]);
+                yValues = resultData.map(item => item[yKey] || 0);
+                
+                // Check if this is a KPI (single item with one numeric value)
+                if (resultData.length === 1 && keys.length === 1) {
+                    isKPI = true;
+                    console.log('Detected KPI-style data from array');
+                }
+            } else {
+                console.error('Unsupported data format');
+                return;
+            }
+            
+            console.log('Chart data - X:', xValues, 'Y:', yValues, 'IsKPI:', isKPI);
+            
+            let data, layout;
+            
+            // Enhanced KPI visualization for single values
+            if (isKPI) {
+                console.log('Creating KPI visualization');
+                createKPIVisualization(xValues[0], yValues[0]);
+                return;
+            }
+            
+            switch(type) {
+                case 'bar':
+                    data = [{
+                        x: xValues,
+                        y: yValues,
+                        type: 'bar',
+                        marker: { color: '#007bff' }
+                    }];
+                    break;
+                    
+                case 'line':
+                    // For single data point line charts, create a meaningful visualization
+                    if (xValues.length === 1) {
+                        // Create a gauge or metric display instead
+                        createSingleValueVisualization(xValues[0], yValues[0], 'line');
+                        return;
+                    }
+                    data = [{
+                        x: xValues,
+                        y: yValues,
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        line: { color: '#007bff' },
+                        marker: { color: '#007bff' }
+                    }];
+                    break;
+                    
+                case 'pie':
+                    // For single value pie charts, create a gauge instead
+                    if (xValues.length === 1) {
+                        createSingleValueVisualization(xValues[0], yValues[0], 'pie');
+                        return;
+                    }
+                    data = [{
+                        labels: xValues,
+                        values: yValues,
+                        type: 'pie',
+                        textinfo: 'label+percent',
+                        textposition: 'auto'
+                    }];
+                    break;
+                    
+                case 'scatter':
+                    // For single data point scatter, create a different visualization
+                    if (xValues.length === 1) {
+                        createSingleValueVisualization(xValues[0], yValues[0], 'scatter');
+                        return;
+                    }
+                    data = [{
+                        x: xValues,
+                        y: yValues,
+                        mode: 'markers',
+                        type: 'scatter',
+                        marker: { 
+                            color: '#007bff',
+                            size: 8
+                        }
+                    }];
+                    break;
+            }
+            
+            layout = {
+                title: {
+                    text: 'Chart Visualization',
+                    font: { size: 16 }
+                },
+                margin: { l: 50, r: 50, t: 50, b: 50 },
+                plot_bgcolor: 'white',
+                paper_bgcolor: 'white'
+            };
+            
+            if (type !== 'pie') {
+                // Set axis labels based on data format
+                let xLabel = 'X-Axis';
+                let yLabel = 'Y-Axis';
+                
+                if (resultData.columns && resultData.columns.length > 0) {
+                    xLabel = resultData.columns[0];
+                    yLabel = resultData.columns[1] || resultData.columns[0];
+                } else if (Array.isArray(resultData) && resultData.length > 0) {
+                    const keys = Object.keys(resultData[0]);
+                    xLabel = keys[0] || 'X-Axis';
+                    yLabel = keys[1] || keys[0] || 'Y-Axis';
+                }
+                
+                layout.xaxis = { title: xLabel };
+                layout.yaxis = { title: yLabel };
+            }
+            
+            Plotly.newPlot('chartContainer', data, layout, {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d']
+            });
+        }
+        
+        // Create KPI visualization for single values - SIMPLE NUMBER DISPLAY
+        function createKPIVisualization(label, value) {
+            console.log('Creating simple KPI number for:', label, value);
+            
+            // Format the value nicely
+            let formattedValue;
+            if (typeof value === 'number') {
+                if (value >= 1000000) {
+                    formattedValue = (value / 1000000).toFixed(1) + 'M';
+                } else if (value >= 1000) {
+                    formattedValue = (value / 1000).toFixed(1) + 'K';
+                } else {
+                    formattedValue = value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+                }
+            } else {
+                formattedValue = value;
+            }
+            
+            // Create simple number display instead of gauge
+            const container = document.getElementById('chartContainer');
+            container.innerHTML = `
+                <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 400px; text-align: center;">
+                    <div style="font-size: 4rem; font-weight: bold; color: #28a745; margin-bottom: 20px;">
+                        ${formattedValue}
+                    </div>
+                    <div style="font-size: 1.5rem; color: #6c757d; font-weight: 500;">
+                        ${label || 'Total'}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Create single value visualization for different chart types
+        function createSingleValueVisualization(label, value, originalType) {
+            console.log('Creating single value visualization for:', label, value, originalType);
+            
+            const formattedValue = typeof value === 'number' ? 
+                value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : value;
+            
+            if (originalType === 'pie' || originalType === 'line') {
+                // Create a donut chart showing the value as a portion of a larger whole
+                const maxValue = value * 1.5; // Assume 150% as the max for context
+                const data = [{
+                    values: [value, maxValue - value],
+                    labels: [label || 'Value', 'Remaining'],
+                    type: 'pie',
+                    hole: 0.4,
+                    textinfo: 'label+value',
+                    textposition: 'auto',
+                    marker: {
+                        colors: ['#007bff', '#e9ecef']
+                    }
+                }];
+                
+                const layout = {
+                    title: {
+                        text: `${label || 'Metric'}: ${formattedValue}`,
+                        font: { size: 18 }
+                    },
+                    annotations: [{
+                        font: { size: 20, color: '#007bff' },
+                        showarrow: false,
+                        text: formattedValue,
+                        x: 0.5,
+                        y: 0.5
+                    }],
+                    margin: { l: 50, r: 50, t: 80, b: 50 },
+                    paper_bgcolor: 'white'
+                };
+                
+                Plotly.newPlot('chartContainer', data, layout, {
+                    responsive: true,
+                    displayModeBar: true,
+                    modeBarButtonsToRemove: ['pan2d', 'lasso2d']
+                });
+            } else {
+                // Create a bar chart with context
+                const data = [{
+                    x: [label || 'Value'],
+                    y: [value],
+                    type: 'bar',
+                    marker: { 
+                        color: '#007bff',
+                        line: { color: '#0056b3', width: 2 }
+                    },
+                    text: [formattedValue],
+                    textposition: 'auto',
+                    textfont: { size: 16, color: 'white' }
+                }];
+                
+                const layout = {
+                    title: {
+                        text: `${label || 'Metric'}: ${formattedValue}`,
+                        font: { size: 18 }
+                    },
+                    margin: { l: 50, r: 50, t: 80, b: 50 },
+                    plot_bgcolor: 'white',
+                    paper_bgcolor: 'white',
+                    xaxis: { title: label || 'Metric' },
+                    yaxis: { title: 'Value' }
+                };
+                
+                Plotly.newPlot('chartContainer', data, layout, {
+                    responsive: true,
+                    displayModeBar: true,
+                    modeBarButtonsToRemove: ['pan2d', 'lasso2d']
+                });
+            }
+        }
+        
+        // Action functions
+        function exportChart() {
+            const element = document.getElementById('chartContainer');
+            if (element) {
+                Plotly.downloadImage(element, {
+                    format: 'png',
+                    width: 1200,
+                    height: 800,
+                    filename: 'chart'
+                });
+            }
+        }
+        
+        function exportData() {
+            const csvContent = convertToCSV(resultData);
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'query_results.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+        
+        function convertToCSV(data) {
+            let headers, rows;
+            
+            if (data.columns && data.rows) {
+                // Standard format
+                headers = data.columns.join(',');
+                rows = data.rows.map(row => row.join(','));
+            } else if (Array.isArray(data) && data.length > 0) {
+                // Array of objects format
+                const keys = Object.keys(data[0]);
+                headers = keys.join(',');
+                rows = data.map(item => keys.map(key => item[key]).join(','));
+            } else {
+                // Fallback
+                headers = 'Data';
+                rows = [JSON.stringify(data)];
+            }
+            
+            return [headers, ...rows].join('\n');
+        }
+        
+        function copySQL() {
+            const sqlText = '{{ sql_query|escapejs }}';
+            navigator.clipboard.writeText(sqlText).then(() => {
+                showAlert('SQL copied to clipboard!', 'success');
+            });
+        }
+        
+        function newQuery() {
+            window.location.href = '/query/';
+        }
+        
+        function modifyQuery() {
+            const currentQuery = "{{ natural_query|escapejs }}";
+            const encodedQuery = encodeURIComponent(currentQuery);
+            window.location.href = `/query/?q=${encodedQuery}`;
+        }
+        
+        function shareResults() {
+            const shareUrl = window.location.href;
+            navigator.clipboard.writeText(shareUrl).then(() => {
+                showAlert('Results URL copied to clipboard!', 'info');
+            });
+        }
+        
+        function addToDashboard() {
+            console.log('addToDashboard function called!');
+            
+            // Show dashboard modal
+            const modalHtml = `
+                <div class="modal fade" id="dashboardModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Add to Dashboard</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="dashboardForm">
+                                    <div class="mb-3">
+                                        <label for="chartTitle" class="form-label">Chart Title</label>
+                                        <input type="text" class="form-control" id="chartTitle" value="{{ natural_query|default:'Chart' }}" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="chartDescription" class="form-label">Description (optional)</label>
+                                        <textarea class="form-control" id="chartDescription" rows="2"></textarea>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="dashboardSelect" class="form-label">Dashboard</label>
+                                        <select class="form-select" id="dashboardSelect" required>
+                                            <option value="">Choose existing dashboard...</option>
+                                            <option value="new">Create New Dashboard</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3" id="newDashboardGroup" style="display: block;">
+                                        <label for="newDashboardName" class="form-label">New Dashboard Name</label>
+                                        <input type="text" class="form-control" id="newDashboardName" placeholder="My Dashboard">
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-primary" onclick="saveToDashboard()">
+                                    <i class="fas fa-save me-1"></i>Add to Dashboard
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('dashboardModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to page
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Load existing dashboards
+            loadExistingDashboards();
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('dashboardModal'));
+            modal.show();
+            
+            // Handle dashboard selection change
+            document.getElementById('dashboardSelect').addEventListener('change', function() {
+                const newDashboardGroup = document.getElementById('newDashboardGroup');
+                if (this.value === 'new') {
+                    newDashboardGroup.style.display = 'block';
+                    document.getElementById('newDashboardName').required = true;
+                } else {
+                    newDashboardGroup.style.display = 'none';
+                    document.getElementById('newDashboardName').required = false;
+                }
+            });
+        }
+        
+        function loadExistingDashboards() {
+            console.log('🔍 Loading existing dashboards...');
+            
+            fetch('/dashboards/', {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.text(); // Get as text first to check if it's HTML or JSON
+            })
+            .then(data => {
+                // Try to extract dashboard data from HTML
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(data, 'text/html');
+                const dashboardCards = doc.querySelectorAll('.card[data-dashboard-id]');
+                
+                const dashboardSelect = document.getElementById('dashboardSelect');
+                
+                if (dashboardCards.length > 0) {
+                    console.log(`✅ Found ${dashboardCards.length} existing dashboards`);
+                    
+                    dashboardCards.forEach(card => {
+                        const dashboardId = card.getAttribute('data-dashboard-id');
+                        const dashboardName = card.querySelector('.card-title')?.textContent?.trim();
+                        
+                        if (dashboardId && dashboardName) {
+                            const option = document.createElement('option');
+                            option.value = dashboardId;
+                            option.textContent = dashboardName;
+                            dashboardSelect.insertBefore(option, dashboardSelect.querySelector('option[value="new"]'));
+                        }
+                    });
+                    
+                } else {
+                    console.log('ℹ️ No existing dashboards found');
+                }
+            })
+            .catch(error => {
+                console.error('❌ Error loading dashboards:', error);
+                // Fallback - just show create new option
+            });
+        }
+        
+        function saveToDashboard() {
+            const chartTitle = document.getElementById('chartTitle').value.trim();
+            const chartDescription = document.getElementById('chartDescription').value.trim();
+            const dashboardSelect = document.getElementById('dashboardSelect').value;
+            const newDashboardName = document.getElementById('newDashboardName').value.trim();
+            
+            if (!chartTitle) {
+                showAlert('Chart title is required', 'warning');
+                return;
+            }
+            
+            if (!dashboardSelect) {
+                showAlert('Please select a dashboard or choose to create a new one', 'warning');
+                return;
+            }
+            
+            if (dashboardSelect === 'new' && !newDashboardName) {
+                showAlert('Dashboard name is required when creating a new dashboard', 'warning');
+                return;
+            }
+            
+            // Show loading state
+            const saveBtn = document.querySelector('#dashboardModal .btn-primary');
+            const originalText = saveBtn.innerHTML;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+            saveBtn.disabled = true;
+            
+            // Prepare data
+            const data = {
+                action: 'add_to_dashboard',
+                chart_title: chartTitle,
+                chart_description: chartDescription,
+                chart_type: currentChartType || 'bar',  // Ensure we always have a chart type
+                dashboard_id: dashboardSelect === 'new' ? 'new' : dashboardSelect,
+                dashboard_name: newDashboardName
+            };
+            
+            // Debug the data being sent
+            console.log('Sending dashboard data:', data);
+            
+            // Send request
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+                                   document.querySelector('meta[name=csrf-token]')?.getAttribute('content') || ''
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json().then(data => ({ status: response.status, data: data }));
+            })
+            .then(result => {
+                console.log('Dashboard response:', result);
+                
+                if (result.status === 200 && result.data.success) {
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('dashboardModal'));
+                    modal.hide();
+                    
+                    // Show success message
+                    showAlert(result.data.message, 'success');
+                    
+                    // Automatically redirect to dashboard
+                    setTimeout(() => {
+                        window.location.href = `/dashboards/${result.data.dashboard_id}/`;
+                    }, 1500);
+                } else {
+                    console.error('Dashboard addition failed:', result);
+                    
+                    // More detailed error reporting
+                    let errorMessage = 'Failed to add chart to dashboard';
+                    if (result.data && result.data.error) {
+                        errorMessage = result.data.error;
+                    } else if (result.status) {
+                        errorMessage += ` (Status: ${result.status})`;
+                    }
+                    
+                    showAlert(errorMessage, 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error adding to dashboard:', error);
+                showAlert(`Failed to add chart to dashboard: ${error.message}`, 'danger');
+            })
+            .finally(() => {
+                // Restore button state
+                saveBtn.innerHTML = originalText;
+                saveBtn.disabled = false;
+            });
+        }
+        
+        function showAlert(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.body.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 3000);
+        }
+        
+
+    </script>
+</body>
+</html> 

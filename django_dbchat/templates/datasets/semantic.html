@@ -1,0 +1,2768 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Semantic Layer - ConvaBI{% endblock %}
+
+{% block extra_css %}
+<style>
+.semantic-card {
+    transition: all 0.3s ease;
+    border: 1px solid #e0e0e0;
+}
+
+.semantic-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.auto-gen-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 10px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+.progress-indicator {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.step-circle {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.step-circle.active {
+    background: #28a745;
+    color: white;
+}
+
+.step-circle.pending {
+    background: #ffc107;
+    color: black;
+}
+
+.step-circle.inactive {
+    background: #6c757d;
+    color: white;
+}
+
+.semantic-table-card {
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.semantic-table-card:hover {
+    border-color: #007bff;
+    box-shadow: 0 2px 10px rgba(0,123,255,0.1);
+}
+
+.column-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+}
+
+.metric-card {
+    background: #f8f9fa;
+    border-left: 4px solid #007bff;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}
+
+.cursor-pointer:hover {
+    background-color: #f8f9fa;
+}
+
+.table-hover tbody tr:hover {
+    background-color: #f5f5f5;
+}
+
+.badge {
+    font-size: 0.75rem;
+}
+
+.form-text {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+.modal-lg {
+    max-width: 800px;
+}
+
+.modal-xl {
+    max-width: 1200px;
+}
+
+.btn-group-sm > .btn, .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.text-muted {
+    color: #6c757d !important;
+}
+
+.small {
+    font-size: 0.875rem;
+}
+
+/* Selection-specific styles */
+.disabled-card {
+    opacity: 0.6;
+    background-color: #f8f9fa;
+}
+
+.disabled-card .card-body {
+    color: #6c757d;
+}
+
+.semantic-card {
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+}
+
+.semantic-card:hover:not(.disabled-card) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.source-checkbox:checked + .card {
+    border-color: #0d6efd;
+    background-color: #f8f9ff;
+}
+
+.form-check-input:checked {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+.alert-light {
+    background-color: #f8f9fa;
+    border-color: #dee2e6;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    {% csrf_token %}
+    
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'core:home' %}">Home</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'datasets:list' %}">Data Sources</a></li>
+                    <li class="breadcrumb-item active">Semantic Layer</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">
+                <i class="fas fa-brain text-primary me-2"></i>
+                Semantic Layer
+            </h1>
+            <p class="text-muted mb-0">Add business context to make your data AI-ready</p>
+        </div>
+    </div>
+
+    <!-- Auto-Generation Section -->
+    <div class="auto-gen-section">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h4 class="mb-2">🚀 Auto-Generate Business Intelligence</h4>
+                <p class="mb-3">Select specific datasets and let ConvaBI automatically analyze them to create business-friendly column definitions, metrics, and relationships.</p>
+                
+                <!-- Progress Indicator -->
+                <div class="progress-indicator">
+                    <div class="step-circle {% if data_sources %}active{% else %}pending{% endif %}">1</div>
+                    <span>Select Data Sources</span>
+                    <div class="step-circle {% if semantic_tables %}active{% elif data_sources %}pending{% else %}inactive{% endif %}">2</div>
+                    <span>Semantic Analysis</span>
+                    <div class="step-circle {% if semantic_metrics %}active{% elif semantic_tables %}pending{% else %}inactive{% endif %}">3</div>
+                    <span>Business Metrics</span>
+                </div>
+            </div>
+            <div class="col-md-4 text-end">
+                {% if data_sources %}
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-light btn-lg" onclick="generateForSelected()" id="generateSelectedBtn" disabled>
+                            <i class="fas fa-magic me-2"></i>Generate for Selected
+                        </button>
+                        <button class="btn btn-outline-light btn-sm" onclick="selectAllDataSources()">
+                            <i class="fas fa-check-square me-1"></i>Select All
+                        </button>
+                    </div>
+                {% else %}
+                    <a href="{% url 'datasets:list' %}" class="btn btn-outline-light btn-lg">
+                        <i class="fas fa-plus me-2"></i>Add Data Sources First
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Sources Selection -->
+    {% if data_sources %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-database me-2"></i>Select Data Sources for Semantic Layer
+                            <span class="badge bg-primary ms-2">{{ data_sources|length }} available</span>
+                        </h5>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" onclick="selectAllDataSources()">
+                                <i class="fas fa-check-square me-1"></i>Select All
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="clearAllSelections()">
+                                <i class="fas fa-square me-1"></i>Clear All
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Choose your datasets:</strong> Select which data sources you want to include in the semantic layer generation. 
+                            Only sources with completed ETL can be used for semantic analysis.
+                        </div>
+                        
+                        <div class="row">
+                            {% for source in data_sources %}
+                                <div class="col-md-4 col-lg-3 mb-3">
+                                    <div class="card semantic-card h-100 {% if not source.workflow_status.etl_completed %}disabled-card{% endif %}" 
+                                         data-source-id="{{ source.id }}">
+                                        <div class="card-body text-center position-relative">
+                                            
+                                            <!-- Selection Checkbox -->
+                                            {% if source.workflow_status.etl_completed %}
+                                                <div class="form-check position-absolute" style="top: 10px; left: 10px;">
+                                                    <input class="form-check-input source-checkbox" 
+                                                           type="checkbox" 
+                                                           value="{{ source.id }}" 
+                                                           id="source_{{ source.id }}"
+                                                           onchange="updateSelectionCount()">
+                                                </div>
+                                            {% endif %}
+                                            
+                                            <i class="fas fa-{% if source.source_type == 'csv' %}file-csv{% elif source.source_type == 'postgresql' %}elephant{% elif source.source_type == 'etl_result' %}database{% else %}database{% endif %} fa-2x text-primary mb-2"></i>
+                                            <h6 class="card-title">{{ source.name }}</h6>
+                                            <p class="text-muted small">{{ source.source_type|upper }}</p>
+                                            
+                                            <!-- Status and Actions -->
+                                            {% if source.workflow_status.etl_completed %}
+                                                <span class="badge bg-success mb-2">ETL Complete</span>
+                                                
+                                                <!-- Check if semantic layer already exists -->
+                                                {% for table in semantic_tables %}
+                                                    {% if table.data_source.id == source.id %}
+                                                        <div class="mb-2">
+                                                            <span class="badge bg-info">Semantics Exist</span>
+                                                        </div>
+                                                    {% endif %}
+                                                {% endfor %}
+                                                
+                                                <div class="btn-group-vertical w-100 gap-1">
+                                                    <button class="btn btn-sm btn-outline-primary" onclick="generateForSource('{{ source.id }}')">
+                                                        <i class="fas fa-brain me-1"></i>Generate Individual
+                                                    </button>
+                                                    <a href="{% url 'datasets:integration' %}?source={{ source.id }}" class="btn btn-sm btn-outline-secondary">
+                                                        <i class="fas fa-eye me-1"></i>View Data
+                                                    </a>
+                                                </div>
+                                            {% else %}
+                                                <span class="badge bg-warning mb-2">ETL Required</span>
+                                                <div class="text-muted small mb-2">Complete ETL first</div>
+                                                <a href="{% url 'datasets:integration' %}?source={{ source.id }}" class="btn btn-sm btn-outline-warning">
+                                                    <i class="fas fa-cogs me-1"></i>Complete ETL
+                                                </a>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                        
+                        <!-- Selection Summary -->
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <div class="alert alert-light border">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>Selected: </strong>
+                                            <span id="selectionCount">0</span> of {{ data_sources|length }} data sources
+                                        </div>
+                                        <button class="btn btn-primary" onclick="generateForSelected()" id="generateSelectedBtn" disabled>
+                                            <i class="fas fa-magic me-2"></i>Generate Semantic Layer for Selected
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- Semantic Tables Section -->
+    {% if semantic_tables %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-table me-2"></i>Semantic Tables
+                            <span class="badge bg-info ms-2">{{ semantic_tables|length }} tables</span>
+                        </h5>
+                        <button class="btn btn-outline-primary btn-sm" onclick="refreshSemanticLayer()">
+                            <i class="fas fa-sync me-1"></i>Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            {% for table in semantic_tables %}
+                                <div class="col-md-6 col-lg-4 mb-3">
+                                    <div class="card semantic-table-card p-3">
+                                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                                            <h5 class="mb-0">
+                                                <i class="fas fa-table me-2"></i>
+                                                {{ table.display_name }}
+                                            </h5>
+                                            <div class="btn-group">
+                                                <button class="btn btn-outline-light btn-sm" onclick="viewColumns('{{ table.id }}')" title="View Columns">
+                                                    <i class="fas fa-columns"></i> Columns
+                                                </button>
+                                                <button class="btn btn-outline-light btn-sm" onclick="editTable('{{ table.id }}')" title="Edit Table">
+                                                    <i class="fas fa-edit"></i> Edit
+                                                </button>
+                                                <button class="btn btn-outline-danger btn-sm" onclick="deleteSemanticTable('{{ table.id }}', '{{ table.display_name }}')" title="Delete Table">
+                                                    <i class="fas fa-trash"></i> Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <p class="text-muted small mb-2">{{ table.description|truncatechars:100 }}</p>
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <small class="text-muted">
+                                                <i class="fas fa-columns me-1"></i>
+                                                {% if table.columns %}{{ table.columns.count }} columns{% else %}No columns{% endif %}
+                                            </small>
+                                            {% if table.is_fact_table %}
+                                                <span class="badge bg-primary column-badge">Fact Table</span>
+                                            {% elif table.is_dimension_table %}
+                                                <span class="badge bg-secondary column-badge">Dimension</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- Business Metrics Section -->
+    {% if semantic_metrics %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="fas fa-chart-line me-2"></i>Business Metrics
+                                <span class="badge bg-success ms-2">{{ semantic_metrics|length }} metrics</span>
+                            </h5>
+                            <div>
+                                <button type="button" class="btn btn-sm btn-success me-2" onclick="showCreateMetricModal()">
+                                    <i class="fas fa-plus me-1"></i>Create Metric
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="regenerateBusinessMetrics()">
+                                    <i class="fas fa-sync-alt me-1"></i>Regenerate
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        {% for metric in semantic_metrics %}
+                            <div class="metric-card">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1">{{ metric.display_name }}</h6>
+                                        <p class="text-muted small mb-1">{{ metric.description }}</p>
+                                        <code class="small">{{ metric.calculation|truncatechars:80 }}</code>
+                                    </div>
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                        <ul class="dropdown-menu">
+                                            <li><a class="dropdown-item" href="#" onclick="editMetric('{{ metric.id }}')">
+                                                <i class="fas fa-edit me-2"></i>Edit
+                                            </a></li>
+                                            <li><a class="dropdown-item text-danger" href="#" onclick="deleteMetric('{{ metric.id }}')">
+                                                <i class="fas fa-trash me-2"></i>Delete
+                                            </a></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- Empty State -->
+    {% if not semantic_tables and not semantic_metrics %}
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body text-center py-5">
+                        <i class="fas fa-brain fa-4x text-muted mb-4"></i>
+                        <h3 class="text-muted">No Semantic Layer Yet</h3>
+                        <p class="text-muted mb-4">
+                            Create business-friendly definitions for your data to improve AI query accuracy.
+                        </p>
+                        
+                        {% if data_sources %}
+                            <p class="text-muted mb-3">Go back to the top to select which data sources you want to analyze.</p>
+                            <a href="#" onclick="scrollToTop()" class="btn btn-primary btn-lg">
+                                <i class="fas fa-arrow-up me-2"></i>Select Data Sources Above
+                            </a>
+                        {% else %}
+                            <a href="{% url 'datasets:list' %}" class="btn btn-primary btn-lg">
+                                <i class="fas fa-plus me-2"></i>Add Data Sources First
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- Workflow Navigation -->
+    <div class="mt-4">
+        <div class="card bg-light">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">
+                            <i class="fas fa-route me-2"></i>ConvaBI Workflow Navigation
+                        </h6>
+                        <small class="text-muted">Continue your data journey</small>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-end gap-2">
+                            <a href="{% url 'datasets:integration' %}" class="btn btn-outline-warning btn-sm">
+                                <i class="fas fa-arrow-left me-1"></i>Back to ETL
+                            </a>
+                            <a href="{% url 'core:query' %}" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-comments me-1"></i>Next: Query Data
+                            </a>
+                            <a href="{% url 'dashboards:list' %}" class="btn btn-outline-success btn-sm">
+                                <i class="fas fa-chart-bar me-1"></i>Dashboards
+                            </a>
+                            <a href="{% url 'datasets:list' %}" class="btn btn-outline-secondary btn-sm">
+                                <i class="fas fa-database me-1"></i>Data Sources
+                            </a>
+                            <a href="{% url 'core:home' %}" class="btn btn-outline-info btn-sm">
+                                <i class="fas fa-home me-1"></i>Home
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Semantic Layer Management -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0">
+                <i class="fas fa-cog me-2"></i>
+                Semantic Layer Management
+            </h6>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="text-muted">Refresh & Generate</h6>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary" onclick="refreshSemanticLayer()">
+                            <i class="fas fa-sync-alt me-2"></i>Refresh Semantic Layer
+                        </button>
+                        <a href="#" onclick="scrollToTop()" class="btn btn-success">
+                            <i class="fas fa-magic me-2"></i>Select & Generate Semantics
+                        </a>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6 class="text-muted text-danger">Danger Zone</h6>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-warning" onclick="deleteAllBusinessMetrics()">
+                            <i class="fas fa-chart-line me-2"></i>Delete All Business Metrics
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="deleteAllSemanticData()">
+                            <i class="fas fa-trash-alt me-2"></i>Delete All Semantic Data
+                        </button>
+                    </div>
+                    <small class="text-muted">These actions cannot be undone!</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center py-4">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mb-0" id="loadingMessage">Generating semantic layer...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Simple Edit Modals (keeping existing ones but simplified) -->
+<div class="modal fade" id="editTableModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Table Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editTableForm">
+                    <input type="hidden" name="table_id" id="editTableId">
+                    <div class="mb-3">
+                        <label class="form-label">Display Name</label>
+                        <input type="text" class="form-control" name="display_name" id="editTableDisplayName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" name="description" id="editTableDescription" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="updateTable()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Metric Modal -->
+<div class="modal fade" id="editMetricModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Business Metric</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editMetricForm">
+                    <input type="hidden" name="metric_id" id="editMetricId">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Metric Name</label>
+                                <input type="text" class="form-control" name="name" id="editMetricName" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Display Name</label>
+                                <input type="text" class="form-control" name="display_name" id="editMetricDisplayName" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Metric Type</label>
+                                <select class="form-select" name="metric_type" id="editMetricType" required>
+                                    <option value="">Select type...</option>
+                                    <option value="simple">Simple Metric</option>
+                                    <option value="calculated">Calculated Metric</option>
+                                    <option value="ratio">Ratio Metric</option>
+                                    <option value="growth">Growth Metric</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Unit</label>
+                                <input type="text" class="form-control" name="unit" id="editMetricUnit" placeholder="e.g., USD, %, count">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" name="description" id="editMetricDescription" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Calculation Formula</label>
+                        <div class="position-relative">
+                            <textarea class="form-control font-monospace" name="calculation" id="editMetricCalculation" 
+                                      rows="4" required placeholder="e.g., SUM(revenue) / COUNT(orders)"
+                                      oninput="validateEditFormulaRealtime()" onkeyup="showEditFormulaSuggestions(event)"></textarea>
+                            <div id="editFormulaSuggestions" class="position-absolute bg-white border rounded shadow-sm mt-1" 
+                                 style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; width: 100%;">
+                            </div>
+                        </div>
+                        <div id="editFormulaValidation" class="mt-2"></div>
+                        <div class="form-text">
+                            Enter SQL formula using functions like SUM, AVG, COUNT, etc.
+                            <button type="button" class="btn btn-link btn-sm p-0" onclick="showEditFormulaHelp()">
+                                <i class="fas fa-question-circle"></i> Show examples
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Edit Formula Help Section (initially hidden) -->
+                    <div id="editFormulaHelpSection" class="mb-3" style="display: none;">
+                        <div class="card bg-light">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="fas fa-lightbulb me-2"></i>Formula Examples & Templates</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6>Common Functions:</h6>
+                                        <div class="d-flex flex-wrap gap-1 mb-2">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="insertEditFormula('COUNT(*)')">COUNT(*)</button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="insertEditFormula('SUM(')">SUM()</button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="insertEditFormula('AVG(')">AVG()</button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="insertEditFormula('MAX(')">MAX()</button>
+                                        </div>
+                                    </div>
+                                                                         <div class="col-md-6">
+                                        <button type="button" class="btn btn-outline-info btn-sm" onclick="testEditCalculation()">
+                                            <i class="fas fa-flask me-1"></i>Test Calculation
+                                        </button>
+                                        <div id="editTestResults" class="mt-2"></div>
+                                        
+                                        <!-- Available columns for edit mode -->
+                                        <div id="editAvailableColumns" class="mt-3">
+                                            <h6>Available Columns:</h6>
+                                            <div id="editColumnsList" class="small">
+                                                <em>Loading columns...</em>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="updateMetric()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create New Metric Modal -->
+<div class="modal fade" id="createMetricModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-plus-circle me-2"></i>Create New Business Metric
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createMetricForm">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Metric Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="name" id="createMetricName" required 
+                                       placeholder="e.g., total_revenue">
+                                <div class="form-text">System name for the metric (lowercase, underscores)</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Display Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="display_name" id="createMetricDisplayName" required
+                                       placeholder="e.g., Total Revenue">
+                                <div class="form-text">Human-friendly name for the metric</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Metric Type <span class="text-danger">*</span></label>
+                                <select class="form-select" name="metric_type" id="createMetricType" required>
+                                    <option value="">Select type...</option>
+                                    <option value="simple">Simple Metric (SUM, COUNT, AVG)</option>
+                                    <option value="calculated">Calculated Metric (Complex formula)</option>
+                                    <option value="ratio">Ratio Metric (A/B * 100)</option>
+                                    <option value="growth">Growth Metric (Period comparison)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Unit</label>
+                                <input type="text" class="form-control" name="unit" id="createMetricUnit" 
+                                       placeholder="e.g., USD, %, count, units">
+                                <div class="form-text">Unit of measurement for the metric</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Base Table</label>
+                        <select class="form-select" name="base_table_id" id="createMetricBaseTable">
+                            <option value="">Select table (optional)...</option>
+                            {% for table in semantic_tables %}
+                                <option value="{{ table.id }}">{{ table.display_name }} ({{ table.name }})</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Select the primary table for this metric (helps with validation)</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" name="description" id="createMetricDescription" rows="2"
+                                  placeholder="Describe what this metric measures and how it's used"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Calculation Formula <span class="text-danger">*</span></label>
+                        <div class="position-relative">
+                            <textarea class="form-control font-monospace" name="calculation" id="createMetricCalculation" 
+                                      rows="4" required placeholder="e.g., SUM(revenue) / COUNT(orders)"
+                                      oninput="validateFormulaRealtime()" onkeyup="showFormulaSuggestions(event)"></textarea>
+                            <div id="formulaSuggestions" class="position-absolute bg-white border rounded shadow-sm mt-1" 
+                                 style="display: none; z-index: 1000; max-height: 200px; overflow-y: auto; width: 100%;">
+                            </div>
+                        </div>
+                        <div id="formulaValidation" class="mt-2"></div>
+                        <div class="form-text">
+                            Enter SQL formula using functions like SUM, AVG, COUNT, etc.
+                            <button type="button" class="btn btn-link btn-sm p-0" onclick="showFormulaHelp()">
+                                <i class="fas fa-question-circle"></i> Show examples
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Formula Help Section (initially hidden) -->
+                    <div id="formulaHelpSection" class="mb-3" style="display: none;">
+                        <div class="card bg-light">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="fas fa-lightbulb me-2"></i>Formula Examples & Templates</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6>Common Functions:</h6>
+                                        <div class="d-flex flex-wrap gap-1 mb-2">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="insertFormula('COUNT(*)')">COUNT(*)</button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="insertFormula('SUM(')">SUM()</button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="insertFormula('AVG(')">AVG()</button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="insertFormula('MAX(')">MAX()</button>
+                                        </div>
+                                        <h6>Templates:</h6>
+                                        <div class="d-grid gap-1">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary text-start" 
+                                                    onclick="insertFormula('(SUM(column1) / SUM(column2)) * 100')">
+                                                <small>Percentage: (A / B) * 100</small>
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary text-start"
+                                                    onclick="insertFormula('COUNT(CASE WHEN condition THEN 1 END)')">
+                                                <small>Conditional Count</small>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6>Available Columns:</h6>
+                                        <div id="availableColumns" class="small">
+                                            <em>Select a base table to see available columns</em>
+                                        </div>
+                                        
+                                        <!-- Column details section -->
+                                        <div id="columnDetails" class="mt-3" style="display: none;">
+                                            <h6>Column Details:</h6>
+                                            <div class="border rounded p-2 bg-light">
+                                                <div class="row">
+                                                    <div class="col-6">
+                                                        <strong>Measures:</strong>
+                                                        <div id="measureColumns" class="mt-1"></div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <strong>Dimensions:</strong>
+                                                        <div id="dimensionColumns" class="mt-1"></div>
+                                                    </div>
+                                                </div>
+                                                <div class="row mt-2">
+                                                    <div class="col-6">
+                                                        <strong>Identifiers:</strong>
+                                                        <div id="identifierColumns" class="mt-1"></div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <strong>Dates:</strong>
+                                                        <div id="dateColumns" class="mt-1"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <small class="text-muted mt-2 d-block">
+                                                💡 Click on any column name to insert it into your formula
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Test Calculation Section -->
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-outline-info btn-sm" onclick="testCalculation()" id="testCalculationBtn">
+                            <i class="fas fa-flask me-1"></i>Test Calculation
+                        </button>
+                        <div id="testResults" class="mt-2"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="createMetric()" id="createMetricBtn">
+                    <i class="fas fa-plus me-1"></i>Create Metric
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Columns Modal -->
+<div class="modal fade" id="columnsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="columnsModalTitle">Table Columns</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="closeColumnsModal()"></button>
+            </div>
+            <div class="modal-body" id="columnsModalBody">
+                <!-- Columns will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Column Modal -->
+<div class="modal fade" id="editColumnModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Column Definition</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editColumnForm">
+                    <input type="hidden" name="column_id" id="editColumnId">
+                    
+                    <!-- Column Identity -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Column Name <small class="text-muted">(system)</small></label>
+                            <input type="text" class="form-control" id="editColumnName" readonly>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Display Name</label>
+                            <input type="text" class="form-control" name="display_name" id="editColumnDisplayName" required>
+                            <div class="form-text">User-friendly name shown in queries and reports</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Data Types -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Data Type</label>
+                            <select class="form-select" name="data_type" id="editColumnDataType" required>
+                                <option value="">Select data type...</option>
+                                <option value="string">String (Text)</option>
+                                <option value="integer">Integer (Whole Numbers)</option>
+                                <option value="float">Float (Decimal Numbers)</option>
+                                <option value="date">Date</option>
+                                <option value="datetime">Date & Time</option>
+                                <option value="boolean">Boolean (True/False)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Semantic Type</label>
+                            <select class="form-select" name="semantic_type" id="editColumnSemanticType" required>
+                                <option value="">Select semantic type...</option>
+                                <option value="identifier">Identifier (ID, Key)</option>
+                                <option value="dimension">Dimension (Category, Text)</option>
+                                <option value="measure">Measure (Numeric Value)</option>
+                                <option value="date">Date/Time</option>
+                            </select>
+                            <div class="form-text">How this column is used in business analysis</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Business Context -->
+                    <div class="mb-3">
+                        <label class="form-label">Business Description</label>
+                        <textarea class="form-control" name="description" id="editColumnDescription" rows="3" required></textarea>
+                        <div class="form-text">Explain what this column represents in business terms</div>
+                    </div>
+                    
+                    <!-- Aggregation (for measures) -->
+                    <div class="mb-3" id="aggregationSection" style="display: none;">
+                        <label class="form-label">Default Aggregation</label>
+                        <select class="form-select" name="aggregation_default" id="editColumnAggregation">
+                            <option value="">No default aggregation</option>
+                            <option value="SUM">Sum</option>
+                            <option value="AVG">Average</option>
+                            <option value="COUNT">Count</option>
+                            <option value="MIN">Minimum</option>
+                            <option value="MAX">Maximum</option>
+                        </select>
+                        <div class="form-text">Default calculation when this column is used in queries</div>
+                    </div>
+                    
+                    <!-- Business Rules -->
+                    <div class="mb-3">
+                        <label class="form-label">Business Rules <small class="text-muted">(optional)</small></label>
+                        <textarea class="form-control" name="business_rules" id="editColumnBusinessRules" rows="2" placeholder="e.g., Values must be positive, Cannot be null for active records"></textarea>
+                        <div class="form-text">Any business constraints or validation rules</div>
+                    </div>
+                    
+                    <!-- Common Filters -->
+                    <div class="mb-3">
+                        <label class="form-label">Common Filter Values <small class="text-muted">(optional)</small></label>
+                        <input type="text" class="form-control" name="common_filters" id="editColumnCommonFilters" placeholder="e.g., Active, Inactive, Pending">
+                        <div class="form-text">Comma-separated list of frequently used filter values</div>
+                    </div>
+                    
+                    <!-- ETL Status (read-only) -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">ETL Status</label>
+                            <div class="form-control-plaintext">
+                                <span id="etlStatus" class="badge bg-secondary">Not Enriched</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Sample Values</label>
+                            <div class="form-control-plaintext">
+                                <small id="sampleValues" class="text-muted">Loading...</small>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="updateColumn()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Simplified JavaScript for semantic layer management
+function showAlert(type, message) {
+    const alertClass = type === 'success' ? 'alert-success' : 
+                      type === 'warning' ? 'alert-warning' : 
+                      type === 'danger' ? 'alert-danger' : 'alert-info';
+    
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert ${alertClass} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    const container = document.querySelector('.container-fluid');
+    container.insertBefore(alertDiv, container.firstChild);
+    
+    setTimeout(() => alertDiv.remove(), 5000);
+}
+
+function getCsrfToken() {
+    return document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+}
+
+function getTypeColor(semanticType) {
+    const colors = {
+        'measure': 'primary',
+        'dimension': 'info', 
+        'identifier': 'warning',
+        'date': 'success'
+    };
+    return colors[semanticType] || 'secondary';
+}
+
+function showLoading(message = 'Processing...') {
+    document.getElementById('loadingMessage').textContent = message;
+    const modal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    modal.show();
+}
+
+function hideLoading() {
+    console.log('Hiding loading modal');
+    
+    try {
+        const loadingModal = document.getElementById('loadingModal');
+        
+        if (loadingModal) {
+            const modalInstance = bootstrap.Modal.getInstance(loadingModal);
+            
+            if (modalInstance) {
+                modalInstance.hide();
+            } else {
+                // Force hide if no instance
+                loadingModal.classList.remove('show');
+                loadingModal.style.display = 'none';
+            }
+        }
+        
+        // Remove any modal backdrops that might be left behind
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        backdrops.forEach(backdrop => {
+            if (backdrop && backdrop.parentNode) {
+                backdrop.parentNode.removeChild(backdrop);
+            }
+        });
+        
+        // Reset body state
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        
+        console.log('Loading modal hidden successfully');
+        
+    } catch (error) {
+        console.error('Error hiding loading modal:', error);
+        
+        // Force cleanup as fallback
+        const loadingModal = document.getElementById('loadingModal');
+        if (loadingModal) {
+            loadingModal.style.display = 'none';
+        }
+        
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+    }
+}
+
+function generateForSelected() {
+    const selectedSources = getSelectedDataSources();
+    
+    if (selectedSources.length === 0) {
+        showAlert('warning', 'Please select at least one data source to generate semantic layer.');
+        return;
+    }
+    
+    const btn = document.getElementById('generateSelectedBtn');
+    const originalText = btn.innerHTML;
+    
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Generating...';
+    btn.disabled = true;
+    
+    showLoading(`Analyzing ${selectedSources.length} selected data source(s) and generating semantic layer...`);
+    
+    fetch('/datasets/semantic/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            action: 'auto_generate_selected',
+            selected_source_ids: selectedSources
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            showAlert('success', data.message);
+            setTimeout(() => window.location.reload(), 2000);
+        } else {
+            showAlert('danger', data.error || 'Generation failed');
+            if (data.details) {
+                console.error('Generation details:', data.details);
+            }
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        showAlert('danger', 'Error: ' + error.message);
+    })
+    .finally(() => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    });
+}
+
+function getSelectedDataSources() {
+    const checkboxes = document.querySelectorAll('.source-checkbox:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+function selectAllDataSources() {
+    const checkboxes = document.querySelectorAll('.source-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = true;
+    });
+    updateSelectionCount();
+}
+
+function clearAllSelections() {
+    const checkboxes = document.querySelectorAll('.source-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    updateSelectionCount();
+}
+
+function updateSelectionCount() {
+    const selectedCount = document.querySelectorAll('.source-checkbox:checked').length;
+    const totalCount = document.querySelectorAll('.source-checkbox').length;
+    
+    // Update counter
+    document.getElementById('selectionCount').textContent = selectedCount;
+    
+    // Enable/disable generate button
+    const generateBtn = document.getElementById('generateSelectedBtn');
+    if (selectedCount > 0) {
+        generateBtn.disabled = false;
+        generateBtn.classList.remove('btn-light');
+        generateBtn.classList.add('btn-primary');
+        generateBtn.innerHTML = `<i class="fas fa-magic me-2"></i>Generate for ${selectedCount} Selected`;
+    } else {
+        generateBtn.disabled = true;
+        generateBtn.classList.remove('btn-primary');
+        generateBtn.classList.add('btn-light');
+        generateBtn.innerHTML = '<i class="fas fa-magic me-2"></i>Generate for Selected';
+    }
+}
+
+function generateForSource(sourceId) {
+    showLoading('Generating semantic layer for data source...');
+    
+    fetch('/datasets/semantic/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            action: 'auto_generate',
+            source_id: sourceId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            showAlert('success', data.message);
+            setTimeout(() => window.location.reload(), 2000);
+        } else {
+            showAlert('danger', data.error || 'Generation failed');
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        showAlert('danger', 'Error: ' + error.message);
+    });
+}
+
+function refreshSemanticLayer() {
+    showAlert('info', 'Refreshing semantic layer...');
+    setTimeout(() => window.location.reload(), 500);
+}
+
+function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function viewColumns(tableId) {
+    console.log('=== DEBUGGING COLUMN LOADING ===');
+    console.log('1. Starting to load columns for table:', tableId);
+    console.log('2. Current page URL:', window.location.href);
+    console.log('3. Available Bootstrap version:', typeof bootstrap !== 'undefined' ? 'Available' : 'Not available');
+    
+    showLoading('Loading column definitions...');
+    
+    // Add timeout protection
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+        console.log('4. TIMEOUT: Request taking too long, aborting...');
+        controller.abort();
+    }, 10000); // 10 second timeout
+    
+    console.log('5. Making fetch request to:', `/datasets/api/semantic/table/${tableId}/columns/`);
+    
+    fetch(`/datasets/api/semantic/table/${tableId}/columns/`, {
+        signal: controller.signal
+    })
+    .then(response => {
+        clearTimeout(timeoutId);
+        console.log('6. API response received - Status:', response.status);
+        console.log('7. Response headers:', [...response.headers.entries()]);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return response.json();
+    })
+    .then(data => {
+        console.log('8. JSON data parsed successfully:', data);
+        hideLoading();
+        
+        if (data.success) {
+            console.log('9. Success! Displaying modal with', data.columns?.length || 0, 'columns');
+            displayColumnsModal(data.table_name, data.columns);
+        } else {
+            console.error('10. API returned error:', data.error);
+            showAlert('danger', data.error || 'Failed to load columns');
+        }
+    })
+    .catch(error => {
+        console.error('11. ERROR caught:', error);
+        console.error('12. Error type:', error.name);
+        console.error('13. Error message:', error.message);
+        console.error('14. Full error stack:', error.stack);
+        
+        clearTimeout(timeoutId);
+        hideLoading();
+        
+        if (error.name === 'AbortError') {
+            console.log('15. Request was aborted due to timeout');
+            showAlert('warning', 'Request timed out. The server may be slow. Please try again.');
+        } else {
+            console.log('16. Network or other error occurred');
+            showAlert('danger', 'Error loading columns: ' + error.message);
+        }
+    });
+    
+    console.log('17. Fetch request initiated, waiting for response...');
+}
+
+function displayColumnsModal(tableName, columns) {
+    console.log('Displaying columns modal for:', tableName, 'with', columns.length, 'columns');
+    
+    // Close any existing modals first
+    const existingModals = document.querySelectorAll('.modal.show');
+    existingModals.forEach(modal => {
+        const modalInstance = bootstrap.Modal.getInstance(modal);
+        if (modalInstance) {
+            modalInstance.hide();
+        }
+    });
+    
+    // Hide any loading modals
+    hideLoading();
+    
+    document.getElementById('columnsModalTitle').textContent = `Columns: ${tableName}`;
+    
+    let html = `
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <h6 class="text-muted mb-0">
+                    <i class="fas fa-columns me-2"></i>${columns.length} columns found
+                </h6>
+                <small class="text-muted">Click on a column to edit its definition</small>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th width="5%">
+                            <input type="checkbox" id="selectAllColumns" class="form-check-input">
+                        </th>
+                        <th width="25%">Column Name</th>
+                        <th width="15%">Type</th>
+                        <th width="30%">Description</th>
+                        <th width="15%">Sample Data</th>
+                        <th width="10%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    if (columns.length === 0) {
+        html += `
+            <tr>
+                <td colspan="6" class="text-center py-4">
+                    <i class="fas fa-columns fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">No columns found</h5>
+                    <p class="text-muted">Try regenerating the semantic layer for this table.</p>
+                </td>
+            </tr>
+        `;
+    } else {
+        columns.forEach(column => {
+            html += `
+            <tr class="cursor-pointer" onclick="editColumn('${column.id}')" title="Click to edit">
+                <td>
+                    <input type="checkbox" class="form-check-input" onclick="event.stopPropagation();">
+                </td>
+                <td>
+                    <strong>${column.display_name || column.name}</strong>
+                    <br>
+                    <small class="text-muted">${column.name}</small>
+                    ${column.etl_enriched ? '<br><span class="badge bg-success badge-sm">ETL Enhanced</span>' : ''}
+                </td>
+                <td>
+                    <span class="badge bg-${getTypeColor(column.semantic_type)}">${column.semantic_type}</span>
+                    <br>
+                    <small class="text-muted">${column.data_type}</small>
+                </td>
+                <td>
+                    <small>${column.description || 'Auto-generated description'}</small>
+                    ${column.business_glossary_term ? '<br><span class="badge bg-info badge-sm">' + column.business_glossary_term + '</span>' : ''}
+                </td>
+                <td>
+                    <small class="text-muted">
+                        ${column.sample_values && column.sample_values.length > 0 ? 
+                            'Examples: ' + column.sample_values.slice(0, 3).join(', ') : 
+                            'No samples available'}
+                    </small>
+                </td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation(); editColumn('${column.id}')" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation(); deleteColumn('${column.id}', '${column.display_name || column.name}')" title="Delete">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+        });
+    }
+    
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    document.getElementById('columnsModalBody').innerHTML = html;
+    
+    // Show modal with proper event handling
+    setTimeout(() => {
+        const modalElement = document.getElementById('columnsModal');
+        const modal = new bootstrap.Modal(modalElement);
+        
+        // Add event listeners for proper cleanup
+        modalElement.addEventListener('hidden.bs.modal', function (e) {
+            console.log('Columns modal hidden event triggered');
+            cleanupModalState();
+        });
+        
+        modalElement.addEventListener('hide.bs.modal', function (e) {
+            console.log('Columns modal hide event triggered');
+        });
+        
+        modal.show();
+        console.log('Columns modal shown successfully');
+    }, 100);
+}
+
+function closeColumnsModal() {
+    console.log('Manually closing columns modal');
+    
+    try {
+        const modalElement = document.getElementById('columnsModal');
+        const modalInstance = bootstrap.Modal.getInstance(modalElement);
+        
+        if (modalInstance) {
+            modalInstance.hide();
+        } else {
+            // Force hide if no instance found
+            modalElement.classList.remove('show');
+            modalElement.style.display = 'none';
+            document.body.classList.remove('modal-open');
+            
+            // Remove backdrop
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) {
+                backdrop.remove();
+            }
+        }
+        
+        cleanupModalState();
+        
+    } catch (error) {
+        console.error('Error closing modal:', error);
+        // Force cleanup
+        cleanupModalState();
+    }
+}
+
+function cleanupModalState() {
+    console.log('Cleaning up modal state');
+    
+    // Hide any loading indicators
+    hideLoading();
+    
+    // Remove modal-open class from body
+    document.body.classList.remove('modal-open');
+    
+    // Remove any leftover backdrops
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    backdrops.forEach(backdrop => backdrop.remove());
+    
+    // Reset page scrolling
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+    
+    console.log('Modal state cleanup completed');
+}
+
+function getSemanticTypeBadge(type) {
+    const badges = {
+        'identifier': '<span class="badge bg-warning">Identifier</span>',
+        'dimension': '<span class="badge bg-info">Dimension</span>',
+        'measure': '<span class="badge bg-success">Measure</span>',
+        'date': '<span class="badge bg-primary">Date</span>'
+    };
+    return badges[type] || `<span class="badge bg-secondary">${type}</span>`;
+}
+
+function getDataTypeBadge(type) {
+    const badges = {
+        'string': '<span class="badge bg-light text-dark">String</span>',
+        'integer': '<span class="badge bg-primary">Integer</span>',
+        'float': '<span class="badge bg-primary">Float</span>',
+        'date': '<span class="badge bg-info">Date</span>',
+        'datetime': '<span class="badge bg-info">DateTime</span>',
+        'boolean': '<span class="badge bg-warning">Boolean</span>'
+    };
+    return badges[type] || `<span class="badge bg-secondary">${type}</span>`;
+}
+
+function editColumn(columnId) {
+    console.log('Editing column:', columnId);
+    showLoading('Loading column details...');
+    
+    // Add timeout protection
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+    
+    fetch(`/datasets/api/semantic/column/${columnId}/`, {
+        signal: controller.signal
+    })
+    .then(response => {
+        clearTimeout(timeoutId);
+        console.log('Column API response status:', response.status);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return response.json();
+    })
+    .then(data => {
+        hideLoading();
+        console.log('Column data received:', data);
+        
+        if (data.success) {
+            populateColumnEditModal(data.column);
+        } else {
+            console.error('API returned error:', data.error);
+            showAlert('danger', data.error || 'Failed to load column details');
+        }
+    })
+    .catch(error => {
+        clearTimeout(timeoutId);
+        hideLoading();
+        console.error('Error loading column:', error);
+        
+        if (error.name === 'AbortError') {
+            showAlert('warning', 'Request timed out while loading column details. Please try again.');
+        } else {
+            showAlert('danger', 'Error loading column: ' + error.message);
+        }
+    });
+}
+
+function populateColumnEditModal(column) {
+    // Populate form fields
+    document.getElementById('editColumnId').value = column.id;
+    document.getElementById('editColumnName').value = column.name;
+    document.getElementById('editColumnDisplayName').value = column.display_name;
+    document.getElementById('editColumnDataType').value = column.data_type;
+    document.getElementById('editColumnSemanticType').value = column.semantic_type;
+    document.getElementById('editColumnDescription').value = column.description;
+    document.getElementById('editColumnAggregation').value = column.aggregation_default || '';
+    
+    // Handle business rules (can be string or array)
+    const businessRules = Array.isArray(column.business_rules) ? 
+        column.business_rules.join(', ') : (column.business_rules || '');
+    document.getElementById('editColumnBusinessRules').value = businessRules;
+    
+    // Handle common filters (can be string or array)
+    const commonFilters = Array.isArray(column.common_filters) ? 
+        column.common_filters.join(', ') : (column.common_filters || '');
+    document.getElementById('editColumnCommonFilters').value = commonFilters;
+    
+    // Set ETL status
+    const etlStatus = document.getElementById('etlStatus');
+    if (column.etl_enriched) {
+        etlStatus.textContent = 'ETL Enhanced';
+        etlStatus.className = 'badge bg-success';
+    } else {
+        etlStatus.textContent = 'Original Data';
+        etlStatus.className = 'badge bg-secondary';
+    }
+    
+    // Set sample values
+    const sampleValues = document.getElementById('sampleValues');
+    if (column.sample_values && column.sample_values.length > 0) {
+        sampleValues.textContent = column.sample_values.slice(0, 3).join(', ') + '...';
+    } else {
+        sampleValues.textContent = 'No samples available';
+    }
+    
+    // Show/hide aggregation section based on semantic type
+    const aggregationSection = document.getElementById('aggregationSection');
+    if (column.semantic_type === 'measure') {
+        aggregationSection.style.display = 'block';
+    } else {
+        aggregationSection.style.display = 'none';
+        document.getElementById('editColumnAggregation').value = '';
+    }
+    
+    // Add event listener for semantic type changes
+    document.getElementById('editColumnSemanticType').addEventListener('change', function() {
+        const aggregationSection = document.getElementById('aggregationSection');
+        if (this.value === 'measure') {
+            aggregationSection.style.display = 'block';
+        } else {
+            aggregationSection.style.display = 'none';
+            document.getElementById('editColumnAggregation').value = '';
+        }
+    });
+    
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById('editColumnModal'));
+    modal.show();
+}
+
+function deleteColumn(columnId, columnName) {
+    if (!confirm(`Are you sure you want to delete column "${columnName}"? This action cannot be undone.`)) {
+        return;
+    }
+    
+    fetch(`/datasets/api/semantic/column/${columnId}/delete/`, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+            // Refresh the columns modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('columnsModal'));
+            if (modal) modal.hide();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showAlert('danger', data.error || 'Failed to delete column');
+        }
+    })
+    .catch(error => showAlert('danger', 'Error: ' + error.message));
+}
+
+function updateColumn() {
+    const form = document.getElementById('editColumnForm');
+    const formData = new FormData(form);
+    const columnId = formData.get('column_id');
+    
+    // Parse comma-separated values for business rules and common filters
+    const businessRules = formData.get('business_rules') ? 
+        formData.get('business_rules').split(',').map(s => s.trim()).filter(s => s) : [];
+    const commonFilters = formData.get('common_filters') ? 
+        formData.get('common_filters').split(',').map(s => s.trim()).filter(s => s) : [];
+    
+    fetch(`/datasets/api/semantic/column/${columnId}/update/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            display_name: formData.get('display_name'),
+            data_type: formData.get('data_type'),
+            semantic_type: formData.get('semantic_type'),
+            description: formData.get('description'),
+            aggregation_default: formData.get('aggregation_default'),
+            business_rules: businessRules,
+            common_filters: commonFilters
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', 'Column updated successfully');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editColumnModal'));
+            modal.hide();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showAlert('danger', data.error || 'Failed to update column');
+        }
+    })
+    .catch(error => showAlert('danger', 'Error: ' + error.message));
+}
+
+function editTable(tableId) {
+    fetch(`/datasets/api/semantic/table/${tableId}/`, {
+        headers: { 'X-CSRFToken': getCsrfToken() }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.table) {
+            document.getElementById('editTableId').value = data.table.id;
+            document.getElementById('editTableDisplayName').value = data.table.display_name;
+            document.getElementById('editTableDescription').value = data.table.description || '';
+            
+            const modal = new bootstrap.Modal(document.getElementById('editTableModal'));
+            modal.show();
+        } else {
+            showAlert('danger', 'Failed to load table details');
+        }
+    })
+    .catch(error => showAlert('danger', 'Error: ' + error.message));
+}
+
+function updateTable() {
+    const form = document.getElementById('editTableForm');
+    const formData = new FormData(form);
+    const tableId = formData.get('table_id');
+    
+    fetch(`/datasets/api/semantic/table/${tableId}/update/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            display_name: formData.get('display_name'),
+            description: formData.get('description')
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', 'Table updated successfully');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editTableModal'));
+            modal.hide();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showAlert('danger', data.error || 'Failed to update table');
+        }
+    })
+    .catch(error => showAlert('danger', 'Error: ' + error.message));
+}
+
+function deleteTable(tableId) {
+    if (confirm('Are you sure you want to delete this table? This will also delete all associated columns and metrics.')) {
+        fetch(`/datasets/api/semantic/table/${tableId}/delete/`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': getCsrfToken() }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', 'Table deleted successfully');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showAlert('danger', data.error || 'Failed to delete table');
+            }
+        })
+        .catch(error => showAlert('danger', 'Error: ' + error.message));
+    }
+}
+
+function editMetric(metricId) {
+    fetch(`/datasets/api/semantic/metric/${metricId}/`, {
+        headers: { 'X-CSRFToken': getCsrfToken() }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.metric) {
+            document.getElementById('editMetricId').value = data.metric.id;
+            document.getElementById('editMetricName').value = data.metric.name || '';
+            document.getElementById('editMetricDisplayName').value = data.metric.display_name || '';
+            document.getElementById('editMetricType').value = data.metric.metric_type || '';
+            document.getElementById('editMetricUnit').value = data.metric.unit || '';
+            document.getElementById('editMetricDescription').value = data.metric.description || '';
+            document.getElementById('editMetricCalculation').value = data.metric.calculation || '';
+            
+            // Load columns for the base table if available
+            if (data.metric.base_table_id) {
+                loadEditModalColumns(data.metric.base_table_id);
+            } else {
+                document.getElementById('editColumnsList').innerHTML = '<em>No base table selected</em>';
+            }
+            
+            const modal = new bootstrap.Modal(document.getElementById('editMetricModal'));
+            modal.show();
+        } else {
+            showAlert('danger', 'Failed to load metric details');
+        }
+    })
+    .catch(error => showAlert('danger', 'Error: ' + error.message));
+}
+
+function loadEditModalColumns(tableId) {
+    document.getElementById('editColumnsList').innerHTML = '<em><i class="fas fa-spinner fa-spin"></i> Loading columns...</em>';
+    
+    fetch(`/datasets/api/table/${tableId}/columns/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.columns) {
+                displayEditModalColumns(data.columns, data.table_display_name);
+                // Store for edit suggestions
+                window.editTableColumns = data.columns;
+                window.editTableName = data.table_name;
+            } else {
+                document.getElementById('editColumnsList').innerHTML = '<em class="text-danger">Error loading columns</em>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching columns for edit:', error);
+            document.getElementById('editColumnsList').innerHTML = '<em class="text-danger">Error loading columns</em>';
+        });
+}
+
+function displayEditModalColumns(columns, tableDisplayName) {
+    const editColumnsDiv = document.getElementById('editColumnsList');
+    
+    // Group columns by semantic type for quick reference
+    const measureColumns = columns.filter(col => col.semantic_type === 'measure' || col.is_measure);
+    const dimensionColumns = columns.filter(col => col.semantic_type === 'dimension');
+    const identifierColumns = columns.filter(col => col.semantic_type === 'identifier');
+    const dateColumns = columns.filter(col => col.semantic_type === 'date');
+    
+    editColumnsDiv.innerHTML = `
+        <div class="small">
+            <strong>${tableDisplayName}</strong> (${columns.length} columns)<br>
+            <small class="text-muted mb-2 d-block">Click any column to insert into formula</small>
+            
+            ${measureColumns.length > 0 ? `
+                <div class="mb-2">
+                    <small class="text-primary fw-bold">Measures:</small><br>
+                    ${measureColumns.map(col => `
+                        <span class="badge bg-primary me-1 mb-1 cursor-pointer" 
+                              title="${col.display_name} (${col.data_type})"
+                              onclick="insertEditColumnIntoFormula('${col.name}')"
+                              style="cursor: pointer;">
+                            ${col.name}
+                        </span>
+                    `).join('')}
+                </div>
+            ` : ''}
+            
+            ${dimensionColumns.length > 0 ? `
+                <div class="mb-2">
+                    <small class="text-secondary fw-bold">Dimensions:</small><br>
+                    ${dimensionColumns.map(col => `
+                        <span class="badge bg-secondary me-1 mb-1 cursor-pointer" 
+                              title="${col.display_name} (${col.data_type})"
+                              onclick="insertEditColumnIntoFormula('${col.name}')"
+                              style="cursor: pointer;">
+                            ${col.name}
+                        </span>
+                    `).join('')}
+                </div>
+            ` : ''}
+            
+            ${identifierColumns.length > 0 ? `
+                <div class="mb-2">
+                    <small class="text-info fw-bold">Identifiers:</small><br>
+                    ${identifierColumns.map(col => `
+                        <span class="badge bg-info me-1 mb-1 cursor-pointer" 
+                              title="${col.display_name} (${col.data_type})"
+                              onclick="insertEditColumnIntoFormula('${col.name}')"
+                              style="cursor: pointer;">
+                            ${col.name}
+                        </span>
+                    `).join('')}
+                </div>
+            ` : ''}
+            
+            ${dateColumns.length > 0 ? `
+                <div class="mb-2">
+                    <small class="text-warning fw-bold">Dates:</small><br>
+                    ${dateColumns.map(col => `
+                        <span class="badge bg-warning text-dark me-1 mb-1 cursor-pointer" 
+                              title="${col.display_name} (${col.data_type})"
+                              onclick="insertEditColumnIntoFormula('${col.name}')"
+                              style="cursor: pointer;">
+                            ${col.name}
+                        </span>
+                    `).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+function insertEditColumnIntoFormula(columnName) {
+    const textarea = document.getElementById('editMetricCalculation');
+    const cursorPos = textarea.selectionStart;
+    const textBefore = textarea.value.substring(0, cursorPos);
+    const textAfter = textarea.value.substring(cursorPos);
+    
+    // Insert the column name at cursor position
+    textarea.value = textBefore + columnName + textAfter;
+    
+    // Move cursor to after the inserted column name
+    const newCursorPos = cursorPos + columnName.length;
+    textarea.focus();
+    textarea.setSelectionRange(newCursorPos, newCursorPos);
+    
+    // Trigger validation
+    validateEditFormulaRealtime();
+    
+    // Show a brief success message
+    const successMessage = document.createElement('div');
+    successMessage.className = 'alert alert-success alert-sm py-1 mt-2';
+    successMessage.innerHTML = `<i class="fas fa-check me-1"></i>Inserted: <code>${columnName}</code>`;
+    successMessage.style.position = 'fixed';
+    successMessage.style.zIndex = '1000';
+    successMessage.style.right = '10px';
+    successMessage.style.top = '10px';
+    
+    document.body.appendChild(successMessage);
+    setTimeout(() => {
+        document.body.removeChild(successMessage);
+    }, 2000);
+}
+
+function updateMetric() {
+    const form = document.getElementById('editMetricForm');
+    const formData = new FormData(form);
+    const metricId = formData.get('metric_id');
+    
+    fetch(`/datasets/api/semantic/metric/${metricId}/update/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            name: formData.get('name'),
+            display_name: formData.get('display_name'),
+            metric_type: formData.get('metric_type'),
+            description: formData.get('description'),
+            calculation: formData.get('calculation'),
+            unit: formData.get('unit')
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', 'Metric updated successfully');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editMetricModal'));
+            modal.hide();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showAlert('danger', data.error || 'Failed to update metric');
+        }
+    })
+    .catch(error => showAlert('danger', 'Error: ' + error.message));
+}
+
+function deleteMetric(metricId) {
+    if (confirm('Are you sure you want to delete this metric?')) {
+        fetch(`/datasets/api/semantic/metric/${metricId}/delete/`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': getCsrfToken() }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', 'Metric deleted successfully');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showAlert('danger', data.error || 'Failed to delete metric');
+            }
+        })
+        .catch(error => showAlert('danger', 'Error: ' + error.message));
+    }
+}
+
+// Enhanced Business Metrics Functions
+
+function showCreateMetricModal() {
+    // Clear form
+    document.getElementById('createMetricForm').reset();
+    document.getElementById('formulaValidation').innerHTML = '';
+    document.getElementById('formulaHelpSection').style.display = 'none';
+    document.getElementById('testResults').innerHTML = '';
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('createMetricModal'));
+    modal.show();
+    
+    // Load available columns for base table
+    updateAvailableColumns();
+}
+
+function validateFormulaRealtime() {
+    const formula = document.getElementById('createMetricCalculation').value;
+    const baseTableSelect = document.getElementById('createMetricBaseTable');
+    const tableName = baseTableSelect.options[baseTableSelect.selectedIndex]?.text?.match(/\(([^)]+)\)/)?.[1];
+    
+    if (formula.trim().length < 3) {
+        document.getElementById('formulaValidation').innerHTML = '';
+        return;
+    }
+    
+    // Debounce validation
+    clearTimeout(window.formulaValidationTimeout);
+    window.formulaValidationTimeout = setTimeout(() => {
+        fetch('/datasets/api/business-metrics/validate-formula/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                formula: formula,
+                table_name: tableName
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const validationDiv = document.getElementById('formulaValidation');
+                if (data.is_valid) {
+                    validationDiv.innerHTML = `
+                        <div class="alert alert-success alert-sm py-2">
+                            <i class="fas fa-check-circle me-2"></i>${data.message}
+                        </div>
+                    `;
+                } else {
+                    let suggestionsList = '';
+                    if (data.suggestions && data.suggestions.length > 0) {
+                        suggestionsList = `
+                            <ul class="mb-0 mt-2">
+                                ${data.suggestions.map(s => `<li>${s}</li>`).join('')}
+                            </ul>
+                        `;
+                    }
+                    validationDiv.innerHTML = `
+                        <div class="alert alert-warning alert-sm py-2">
+                            <i class="fas fa-exclamation-triangle me-2"></i>${data.message}
+                            ${suggestionsList}
+                        </div>
+                    `;
+                }
+            }
+        })
+        .catch(error => console.error('Validation error:', error));
+    }, 500);
+}
+
+function validateEditFormulaRealtime() {
+    const formula = document.getElementById('editMetricCalculation').value;
+    
+    if (formula.trim().length < 3) {
+        document.getElementById('editFormulaValidation').innerHTML = '';
+        return;
+    }
+    
+    clearTimeout(window.editFormulaValidationTimeout);
+    window.editFormulaValidationTimeout = setTimeout(() => {
+        fetch('/datasets/api/business-metrics/validate-formula/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: JSON.stringify({
+                formula: formula
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const validationDiv = document.getElementById('editFormulaValidation');
+                if (data.is_valid) {
+                    validationDiv.innerHTML = `
+                        <div class="alert alert-success alert-sm py-2">
+                            <i class="fas fa-check-circle me-2"></i>${data.message}
+                        </div>
+                    `;
+                } else {
+                    let suggestionsList = '';
+                    if (data.suggestions && data.suggestions.length > 0) {
+                        suggestionsList = `
+                            <ul class="mb-0 mt-2">
+                                ${data.suggestions.map(s => `<li>${s}</li>`).join('')}
+                            </ul>
+                        `;
+                    }
+                    validationDiv.innerHTML = `
+                        <div class="alert alert-warning alert-sm py-2">
+                            <i class="fas fa-exclamation-triangle me-2"></i>${data.message}
+                            ${suggestionsList}
+                        </div>
+                    `;
+                }
+            }
+        })
+        .catch(error => console.error('Validation error:', error));
+    }, 500);
+}
+
+function showFormulaSuggestions(event) {
+    const textarea = event.target;
+    const cursorPos = textarea.selectionStart;
+    const textBeforeCursor = textarea.value.substring(0, cursorPos);
+    const lastWord = textBeforeCursor.split(/\s/).pop();
+    
+    if (lastWord.length < 1) {
+        document.getElementById('formulaSuggestions').style.display = 'none';
+        return;
+    }
+    
+    // Get suggestions from both API and local columns
+    const suggestions = [];
+    
+    // Add column suggestions if we have current table columns
+    if (window.currentTableColumns) {
+        const matchingColumns = window.currentTableColumns.filter(col => 
+            col.name.toLowerCase().includes(lastWord.toLowerCase()) ||
+            col.display_name.toLowerCase().includes(lastWord.toLowerCase())
+        );
+        
+        matchingColumns.forEach(col => {
+            suggestions.push({
+                text: col.name,
+                description: `${col.display_name} (${col.data_type}) - ${col.semantic_type}`,
+                type: 'column',
+                priority: 1
+            });
+        });
+    }
+    
+    // Get API suggestions
+    const baseTableSelect = document.getElementById('createMetricBaseTable');
+    const tableName = window.currentTableName || '';
+    
+    fetch(`/datasets/api/business-metrics/formula-suggestions/?partial=${encodeURIComponent(lastWord)}&table_name=${encodeURIComponent(tableName)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.suggestions) {
+                // Add API suggestions
+                data.suggestions.forEach(s => {
+                    if (!suggestions.find(existing => existing.text === s.text)) {
+                        suggestions.push({
+                            text: s.text,
+                            description: s.description,
+                            type: s.type || 'function',
+                            priority: s.type === 'function' ? 2 : 3
+                        });
+                    }
+                });
+            }
+            
+            // Sort suggestions by priority and show them
+            suggestions.sort((a, b) => a.priority - b.priority);
+            
+            if (suggestions.length > 0) {
+                const suggestionsDiv = document.getElementById('formulaSuggestions');
+                suggestionsDiv.innerHTML = suggestions.slice(0, 10).map(s => {
+                    const iconClass = s.type === 'column' ? 'fas fa-columns' : 
+                                    s.type === 'function' ? 'fas fa-function' : 'fas fa-template';
+                    return `
+                        <div class="suggestion-item p-2 border-bottom cursor-pointer d-flex align-items-center" 
+                             onclick="insertSuggestion('${s.text}', '${s.description}')"
+                             onmouseover="this.style.backgroundColor='#f8f9fa'"
+                             onmouseout="this.style.backgroundColor='white'">
+                            <i class="${iconClass} me-2 text-primary"></i>
+                            <div>
+                                <strong>${s.text}</strong>
+                                <br><small class="text-muted">${s.description}</small>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                suggestionsDiv.style.display = 'block';
+            } else {
+                document.getElementById('formulaSuggestions').style.display = 'none';
+            }
+        })
+        .catch(error => {
+            console.error('Error getting suggestions:', error);
+            // Still show local column suggestions even if API fails
+            if (suggestions.length > 0) {
+                const suggestionsDiv = document.getElementById('formulaSuggestions');
+                suggestionsDiv.innerHTML = suggestions.slice(0, 10).map(s => `
+                    <div class="suggestion-item p-2 border-bottom cursor-pointer" 
+                         onclick="insertSuggestion('${s.text}', '${s.description}')"
+                         onmouseover="this.style.backgroundColor='#f8f9fa'"
+                         onmouseout="this.style.backgroundColor='white'">
+                        <i class="fas fa-columns me-2 text-primary"></i>
+                        <strong>${s.text}</strong>
+                        <br><small class="text-muted">${s.description}</small>
+                    </div>
+                `).join('');
+                suggestionsDiv.style.display = 'block';
+            } else {
+                document.getElementById('formulaSuggestions').style.display = 'none';
+            }
+        });
+}
+
+function showEditFormulaSuggestions(event) {
+    const textarea = event.target;
+    const cursorPos = textarea.selectionStart;
+    const textBeforeCursor = textarea.value.substring(0, cursorPos);
+    const lastWord = textBeforeCursor.split(/\s/).pop();
+    
+    if (lastWord.length < 1) {
+        document.getElementById('editFormulaSuggestions').style.display = 'none';
+        return;
+    }
+    
+    // Get suggestions from both API and loaded columns
+    const suggestions = [];
+    
+    // Add column suggestions if we have edit table columns
+    if (window.editTableColumns) {
+        const matchingColumns = window.editTableColumns.filter(col => 
+            col.name.toLowerCase().includes(lastWord.toLowerCase()) ||
+            col.display_name.toLowerCase().includes(lastWord.toLowerCase())
+        );
+        
+        matchingColumns.forEach(col => {
+            suggestions.push({
+                text: col.name,
+                description: `${col.display_name} (${col.data_type}) - ${col.semantic_type}`,
+                type: 'column',
+                priority: 1
+            });
+        });
+    }
+    
+    // Get API suggestions
+    const tableName = window.editTableName || '';
+    
+    fetch(`/datasets/api/business-metrics/formula-suggestions/?partial=${encodeURIComponent(lastWord)}&table_name=${encodeURIComponent(tableName)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.suggestions) {
+                // Add API suggestions
+                data.suggestions.forEach(s => {
+                    if (!suggestions.find(existing => existing.text === s.text)) {
+                        suggestions.push({
+                            text: s.text,
+                            description: s.description,
+                            type: s.type || 'function',
+                            priority: s.type === 'function' ? 2 : 3
+                        });
+                    }
+                });
+            }
+            
+            // Sort suggestions by priority and show them
+            suggestions.sort((a, b) => a.priority - b.priority);
+            
+            if (suggestions.length > 0) {
+                const suggestionsDiv = document.getElementById('editFormulaSuggestions');
+                suggestionsDiv.innerHTML = suggestions.slice(0, 10).map(s => {
+                    const iconClass = s.type === 'column' ? 'fas fa-columns' : 
+                                    s.type === 'function' ? 'fas fa-function' : 'fas fa-template';
+                    return `
+                        <div class="suggestion-item p-2 border-bottom cursor-pointer d-flex align-items-center" 
+                             onclick="insertEditSuggestion('${s.text}', '${s.description}')"
+                             onmouseover="this.style.backgroundColor='#f8f9fa'"
+                             onmouseout="this.style.backgroundColor='white'">
+                            <i class="${iconClass} me-2 text-primary"></i>
+                            <div>
+                                <strong>${s.text}</strong>
+                                <br><small class="text-muted">${s.description}</small>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                suggestionsDiv.style.display = 'block';
+            } else {
+                document.getElementById('editFormulaSuggestions').style.display = 'none';
+            }
+        })
+        .catch(error => {
+            console.error('Error getting suggestions:', error);
+            // Still show local column suggestions even if API fails
+            if (suggestions.length > 0) {
+                const suggestionsDiv = document.getElementById('editFormulaSuggestions');
+                suggestionsDiv.innerHTML = suggestions.slice(0, 10).map(s => `
+                    <div class="suggestion-item p-2 border-bottom cursor-pointer" 
+                         onclick="insertEditSuggestion('${s.text}', '${s.description}')"
+                         onmouseover="this.style.backgroundColor='#f8f9fa'"
+                         onmouseout="this.style.backgroundColor='white'">
+                        <i class="fas fa-columns me-2 text-primary"></i>
+                        <strong>${s.text}</strong>
+                        <br><small class="text-muted">${s.description}</small>
+                    </div>
+                `).join('');
+                suggestionsDiv.style.display = 'block';
+            } else {
+                document.getElementById('editFormulaSuggestions').style.display = 'none';
+            }
+        });
+}
+
+function insertSuggestion(text, description) {
+    const textarea = document.getElementById('createMetricCalculation');
+    const cursorPos = textarea.selectionStart;
+    const textBefore = textarea.value.substring(0, cursorPos);
+    const textAfter = textarea.value.substring(cursorPos);
+    const lastWordStart = textBefore.lastIndexOf(textBefore.split(/\s/).pop());
+    
+    textarea.value = textBefore.substring(0, lastWordStart) + text + textAfter;
+    textarea.focus();
+    document.getElementById('formulaSuggestions').style.display = 'none';
+    
+    // Trigger validation
+    validateFormulaRealtime();
+}
+
+function insertEditSuggestion(text, description) {
+    const textarea = document.getElementById('editMetricCalculation');
+    const cursorPos = textarea.selectionStart;
+    const textBefore = textarea.value.substring(0, cursorPos);
+    const textAfter = textarea.value.substring(cursorPos);
+    const lastWordStart = textBefore.lastIndexOf(textBefore.split(/\s/).pop());
+    
+    textarea.value = textBefore.substring(0, lastWordStart) + text + textAfter;
+    textarea.focus();
+    document.getElementById('editFormulaSuggestions').style.display = 'none';
+    
+    // Trigger validation
+    validateEditFormulaRealtime();
+}
+
+function showFormulaHelp() {
+    const helpSection = document.getElementById('formulaHelpSection');
+    helpSection.style.display = helpSection.style.display === 'none' ? 'block' : 'none';
+    updateAvailableColumns();
+}
+
+function showEditFormulaHelp() {
+    const helpSection = document.getElementById('editFormulaHelpSection');
+    helpSection.style.display = helpSection.style.display === 'none' ? 'block' : 'none';
+}
+
+function insertFormula(formula) {
+    const textarea = document.getElementById('createMetricCalculation');
+    const cursorPos = textarea.selectionStart;
+    const textBefore = textarea.value.substring(0, cursorPos);
+    const textAfter = textarea.value.substring(cursorPos);
+    
+    textarea.value = textBefore + formula + textAfter;
+    textarea.focus();
+    textarea.setSelectionRange(cursorPos + formula.length, cursorPos + formula.length);
+    
+    // Trigger validation
+    validateFormulaRealtime();
+}
+
+function insertEditFormula(formula) {
+    const textarea = document.getElementById('editMetricCalculation');
+    const cursorPos = textarea.selectionStart;
+    const textBefore = textarea.value.substring(0, cursorPos);
+    const textAfter = textarea.value.substring(cursorPos);
+    
+    textarea.value = textBefore + formula + textAfter;
+    textarea.focus();
+    textarea.setSelectionRange(cursorPos + formula.length, cursorPos + formula.length);
+    
+    // Trigger validation
+    validateEditFormulaRealtime();
+}
+
+function updateAvailableColumns() {
+    const baseTableSelect = document.getElementById('createMetricBaseTable');
+    const selectedOption = baseTableSelect.options[baseTableSelect.selectedIndex];
+    const availableColumnsDiv = document.getElementById('availableColumns');
+    const columnDetailsDiv = document.getElementById('columnDetails');
+    
+    if (selectedOption && selectedOption.value) {
+        const tableId = selectedOption.value;
+        const tableName = selectedOption.text.split(' (')[0]; // Get display name
+        
+        // Show loading state
+        availableColumnsDiv.innerHTML = '<em><i class="fas fa-spinner fa-spin"></i> Loading columns...</em>';
+        columnDetailsDiv.style.display = 'none';
+        
+        // Fetch columns from API
+        fetch(`/datasets/api/table/${tableId}/columns/`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success && data.columns) {
+                    displayTableColumns(data.columns, data.table_display_name, data.table_name);
+                } else {
+                    availableColumnsDiv.innerHTML = `<em class="text-danger">Error: ${data.error || 'No columns found'}</em>`;
+                }
+            })
+            .catch(error => {
+                availableColumnsDiv.innerHTML = `<em class="text-danger">Error: ${error.message}</em>`;
+            });
+    } else {
+        availableColumnsDiv.innerHTML = '<em>Select a base table to see available columns</em>';
+        columnDetailsDiv.style.display = 'none';
+    }
+}
+
+function displayTableColumns(columns, tableDisplayName, tableName) {
+    const availableColumnsDiv = document.getElementById('availableColumns');
+    const columnDetailsDiv = document.getElementById('columnDetails');
+    
+    // Group columns by semantic type
+    const measureColumns = columns.filter(col => col.semantic_type === 'measure' || col.is_measure);
+    const dimensionColumns = columns.filter(col => col.semantic_type === 'dimension');
+    const identifierColumns = columns.filter(col => col.semantic_type === 'identifier');
+    const dateColumns = columns.filter(col => col.semantic_type === 'date');
+    const otherColumns = columns.filter(col => 
+        !['measure', 'dimension', 'identifier', 'date'].includes(col.semantic_type) && !col.is_measure
+    );
+    
+    // Update main columns display
+    availableColumnsDiv.innerHTML = `
+        <div class="small">
+            <strong>${tableDisplayName}</strong> (${columns.length} columns)<br>
+            <small class="text-muted">Click any column below to insert into formula</small>
+        </div>
+    `;
+    
+    // Update detailed columns display
+    document.getElementById('measureColumns').innerHTML = createColumnBadges(measureColumns, 'primary');
+    document.getElementById('dimensionColumns').innerHTML = createColumnBadges(dimensionColumns, 'secondary');
+    document.getElementById('identifierColumns').innerHTML = createColumnBadges(identifierColumns, 'info');
+    document.getElementById('dateColumns').innerHTML = createColumnBadges(dateColumns, 'warning');
+    
+    // Show the column details section
+    columnDetailsDiv.style.display = 'block';
+    
+    // Store columns globally for formula suggestions
+    window.currentTableColumns = columns;
+    window.currentTableName = tableName;
+}
+
+function createColumnBadges(columns, badgeClass) {
+    if (columns.length === 0) {
+        return '<small class="text-muted">None</small>';
+    }
+    
+    return columns.map(col => {
+        const tooltip = `${col.display_name} (${col.data_type})${col.description ? ': ' + col.description : ''}`;
+        return `
+            <span class="badge bg-${badgeClass} me-1 mb-1 cursor-pointer" 
+                  title="${tooltip}"
+                  onclick="insertColumnIntoFormula('${col.name}')"
+                  style="cursor: pointer;">
+                ${col.name}
+            </span>
+        `;
+    }).join('');
+}
+
+function insertColumnIntoFormula(columnName) {
+    const textarea = document.getElementById('createMetricCalculation');
+    const cursorPos = textarea.selectionStart;
+    const textBefore = textarea.value.substring(0, cursorPos);
+    const textAfter = textarea.value.substring(cursorPos);
+    
+    // Insert the column name at cursor position
+    textarea.value = textBefore + columnName + textAfter;
+    
+    // Move cursor to after the inserted column name
+    const newCursorPos = cursorPos + columnName.length;
+    textarea.focus();
+    textarea.setSelectionRange(newCursorPos, newCursorPos);
+    
+    // Trigger validation
+    validateFormulaRealtime();
+    
+    // Show a brief highlight effect
+    const successMessage = document.createElement('div');
+    successMessage.className = 'alert alert-success alert-sm py-1 mt-2';
+    successMessage.innerHTML = `<i class="fas fa-check me-1"></i>Inserted: <code>${columnName}</code>`;
+    successMessage.style.position = 'absolute';
+    successMessage.style.zIndex = '1000';
+    successMessage.style.right = '10px';
+    successMessage.style.top = '10px';
+    
+    document.body.appendChild(successMessage);
+    setTimeout(() => {
+        document.body.removeChild(successMessage);
+    }, 2000);
+}
+
+function testCalculation() {
+    const formula = document.getElementById('createMetricCalculation').value;
+    const baseTableSelect = document.getElementById('createMetricBaseTable');
+    const tableName = baseTableSelect.options[baseTableSelect.selectedIndex]?.text?.match(/\(([^)]+)\)/)?.[1];
+    
+    if (!formula.trim()) {
+        showAlert('warning', 'Please enter a formula to test');
+        return;
+    }
+    
+    if (!tableName) {
+        showAlert('warning', 'Please select a base table to test against');
+        return;
+    }
+    
+    const btn = document.getElementById('testCalculationBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Testing...';
+    
+    fetch('/datasets/api/business-metrics/test-calculation/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            calculation: formula,
+            table_name: tableName
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('testResults').innerHTML = `
+                <div class="alert alert-success alert-sm py-2">
+                    <i class="fas fa-check-circle me-2"></i>Test successful!
+                    <div class="mt-2">
+                        <strong>Sample results:</strong>
+                        <pre class="mt-1 mb-0">${JSON.stringify(data.result, null, 2)}</pre>
+                    </div>
+                </div>
+            `;
+        } else {
+            document.getElementById('testResults').innerHTML = `
+                <div class="alert alert-danger alert-sm py-2">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Test failed: ${data.message}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        document.getElementById('testResults').innerHTML = `
+            <div class="alert alert-danger alert-sm py-2">
+                <i class="fas fa-exclamation-triangle me-2"></i>Error: ${error.message}
+            </div>
+        `;
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-flask me-1"></i>Test Calculation';
+    });
+}
+
+function testEditCalculation() {
+    const formula = document.getElementById('editMetricCalculation').value;
+    
+    if (!formula.trim()) {
+        showAlert('warning', 'Please enter a formula to test');
+        return;
+    }
+    
+    fetch('/datasets/api/business-metrics/test-calculation/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify({
+            calculation: formula,
+            table_name: 'default_table' // Use a default or get from context
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('editTestResults').innerHTML = `
+                <div class="alert alert-success alert-sm py-2">
+                    <i class="fas fa-check-circle me-2"></i>Test successful!
+                </div>
+            `;
+        } else {
+            document.getElementById('editTestResults').innerHTML = `
+                <div class="alert alert-danger alert-sm py-2">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Test failed: ${data.message}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        document.getElementById('editTestResults').innerHTML = `
+            <div class="alert alert-danger alert-sm py-2">
+                <i class="fas fa-exclamation-triangle me-2"></i>Error: ${error.message}
+            </div>
+        `;
+    });
+}
+
+function createMetric() {
+    const form = document.getElementById('createMetricForm');
+    const formData = new FormData(form);
+    
+    // Validate required fields
+    const requiredFields = ['name', 'display_name', 'metric_type', 'calculation'];
+    for (const field of requiredFields) {
+        if (!formData.get(field)) {
+            showAlert('danger', `${field.replace('_', ' ')} is required`);
+            return;
+        }
+    }
+    
+    const btn = document.getElementById('createMetricBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Creating...';
+    
+    const data = {
+        name: formData.get('name'),
+        display_name: formData.get('display_name'),
+        description: formData.get('description'),
+        metric_type: formData.get('metric_type'),
+        calculation: formData.get('calculation'),
+        unit: formData.get('unit'),
+        base_table_id: formData.get('base_table_id')
+    };
+    
+    fetch('/datasets/api/business-metrics/create/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken()
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+            const modal = bootstrap.Modal.getInstance(document.getElementById('createMetricModal'));
+            modal.hide();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showAlert('danger', data.error || 'Failed to create metric');
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'Error: ' + error.message);
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-plus me-1"></i>Create Metric';
+    });
+}
+
+// Update the base table change handler
+document.addEventListener('DOMContentLoaded', function() {
+    const baseTableSelect = document.getElementById('createMetricBaseTable');
+    if (baseTableSelect) {
+        baseTableSelect.addEventListener('change', updateAvailableColumns);
+    }
+});
+
+function deleteAllBusinessMetrics() {
+    if (confirm('Are you sure you want to delete all business metrics? This action cannot be undone.')) {
+        fetch('/datasets/semantic/delete_all_metrics/', {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', 'All business metrics deleted successfully');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showAlert('danger', data.error || 'Failed to delete business metrics');
+            }
+        })
+        .catch(error => showAlert('danger', 'Error: ' + error.message));
+    }
+}
+
+function deleteAllSemanticData() {
+    if (confirm('Are you sure you want to delete all semantic data? This action cannot be undone.')) {
+        fetch('/datasets/semantic/delete_all_data/', {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', 'All semantic data deleted successfully');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showAlert('danger', data.error || 'Failed to delete semantic data');
+            }
+        })
+        .catch(error => showAlert('danger', 'Error: ' + error.message));
+    }
+}
+
+function deleteSemanticTable(tableId, tableName) {
+    console.log('Deleting semantic table:', tableId, tableName);
+    
+    if (!confirm(`Are you sure you want to delete the semantic table "${tableName}"? This will also delete all associated columns and metrics. This action cannot be undone.`)) {
+        return;
+    }
+    
+    showLoading('Deleting semantic table...');
+    
+    fetch(`/datasets/api/semantic/table/${tableId}/delete/`, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': getCsrfToken()
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            showAlert('success', `Table "${tableName}" deleted successfully`);
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showAlert('danger', data.error || 'Failed to delete table');
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        showAlert('danger', 'Error deleting table: ' + error.message);
+    });
+}
+
+function debugSemanticLayer() {
+    console.log('=== DEBUGGING SEMANTIC LAYER ===');
+    showLoading('Running semantic layer diagnostics...');
+    
+    fetch('/datasets/api/semantic/debug/')
+    .then(response => {
+        console.log('Debug API response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        hideLoading();
+        console.log('=== DEBUG RESULTS ===', data);
+        
+        if (data.success) {
+            const info = data.debug_info;
+            let debugMessage = `Semantic Layer Debug Info:
+            
+Tables: ${info.semantic_tables_count}
+Columns: ${info.semantic_columns_count}  
+Metrics: ${info.semantic_metrics_count}
+Database Queries: ${info.database_queries}
+User Authenticated: ${info.user_authenticated}
+
+${info.sample_table ? `Sample Table: ${info.sample_table.display_name} (${info.sample_table.columns_count} columns)` : 'No sample table found'}
+
+${info.sample_columns && info.sample_columns.length > 0 ? 'Sample Columns:\n' + info.sample_columns.map(col => 
+    col.error ? `ERROR: ${col.error}` : `- ${col.name} (${col.display_name})`
+).join('\n') : 'No sample columns found'}`;
+
+            alert(debugMessage);
+            showAlert('success', 'Debug completed. Check console for detailed output.');
+        } else {
+            console.error('Debug API error:', data.error);
+            if (data.traceback) {
+                console.error('Traceback:', data.traceback);
+            }
+            showAlert('danger', 'Debug failed: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        console.error('Debug request failed:', error);
+        showAlert('danger', 'Debug request failed: ' + error.message);
+    });
+}
+
+// Add global escape key handler for emergency modal closure
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        console.log('Escape key pressed - checking for open modals');
+        
+        // Check for any open modals and close them
+        const openModals = document.querySelectorAll('.modal.show');
+        if (openModals.length > 0) {
+            console.log('Found', openModals.length, 'open modals - closing them');
+            openModals.forEach(modal => {
+                const modalInstance = bootstrap.Modal.getInstance(modal);
+                if (modalInstance) {
+                    modalInstance.hide();
+                } else {
+                    modal.classList.remove('show');
+                    modal.style.display = 'none';
+                }
+            });
+            
+            cleanupModalState();
+        }
+        
+        // Also hide any loading indicators
+        hideLoading();
+    }
+});
+</script>
+{% endblock %}

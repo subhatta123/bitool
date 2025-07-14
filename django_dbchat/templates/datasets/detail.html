@@ -1,0 +1,748 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ data_source.name }} - Data Source Details{% endblock %}
+
+{% block extra_css %}
+<style>
+    .schema-table {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    .preview-table {
+        max-height: 300px;
+        overflow: auto;
+    }
+    .connection-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .status-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+    }
+    .status-active {
+        background-color: #28a745;
+    }
+    .status-error {
+        background-color: #dc3545;
+    }
+    .status-pending {
+        background-color: #ffc107;
+    }
+    .action-buttons {
+        gap: 0.5rem;
+    }
+    .info-card {
+        background: #f8f9fa;
+        border-left: 4px solid #007bff;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .table-responsive {
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+    }
+    .btn-purple {
+        background-color: #6f42c1;
+        border-color: #6f42c1;
+        color: white;
+    }
+    .btn-purple:hover {
+        background-color: #5a32a3;
+        border-color: #5a32a3;
+        color: white;
+    }
+    .workflow-step {
+        position: relative;
+        padding: 1rem;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    .workflow-step.completed {
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        border-left: 4px solid #28a745;
+    }
+    .step-number {
+        position: absolute;
+        top: -10px;
+        left: 15px;
+        background: #007bff;
+        color: white;
+        border-radius: 50%;
+        width: 25px;
+        height: 25px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'core:home' %}">Home</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'datasets:list' %}">Data Sources</a></li>
+                    <li class="breadcrumb-item active">{{ data_source.name }}</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">
+                <i class="fas fa-database text-primary me-2"></i>
+                {{ data_source.name }}
+            </h1>
+        </div>
+        <div class="d-flex action-buttons">
+            <button class="btn btn-outline-secondary" onclick="refreshSchema()">
+                <i class="fas fa-sync me-1"></i>Refresh Schema
+            </button>
+            {% if data_source.created_by == request.user %}
+                <a href="{% url 'datasets:share' data_source.id %}" class="btn btn-outline-primary">
+                    <i class="fas fa-share-alt me-1"></i>Share
+                </a>
+                <button class="btn btn-outline-danger" onclick="deleteDataSource()" data-confirm-delete="Are you sure you want to delete this data source? This action cannot be undone.">
+                    <i class="fas fa-trash me-1"></i>Delete
+                </button>
+            {% endif %}
+            <a href="{% url 'datasets:list' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back to List
+            </a>
+        </div>
+    </div>
+
+    <!-- Mandatory Workflow Navigation -->
+    <div class="card mb-4 border-warning">
+        <div class="card-header bg-warning text-dark">
+            <h5 class="mb-0">
+                <i class="fas fa-route me-2"></i>Mandatory Data Processing Workflow
+            </h5>
+            <small>Follow these steps in order to unlock advanced features</small>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="workflow-step completed">
+                        <div class="step-number">✓</div>
+                        <h6 class="mb-2">Step 1: Data Connected</h6>
+                        <p class="mb-0 text-muted">Your data source is successfully connected and ready for processing.</p>
+                    </div>
+                    
+                    <div class="workflow-step" style="border-left: 4px solid #17a2b8;">
+                        <div class="step-number" style="background: #17a2b8;">2</div>
+                        <h6 class="mb-2">Next: Data Integration & ETL</h6>
+                        <p class="mb-2 text-muted"><strong>Required:</strong> Transform and prepare your data types before proceeding.</p>
+                        <a href="{% url 'datasets:integration' %}" class="btn btn-info btn-sm">
+                            <i class="fas fa-cogs me-1"></i>Start ETL Process
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="workflow-step" style="opacity: 0.6;">
+                        <div class="step-number" style="background: #6c757d;">3</div>
+                        <h6 class="mb-2">Then: Semantic Layer Setup</h6>
+                        <p class="mb-2 text-muted">Add business context and metadata to make data AI-ready.</p>
+                        <button class="btn btn-secondary btn-sm" disabled>
+                            <i class="fas fa-lock me-1"></i>Complete ETL First
+                        </button>
+                    </div>
+                    
+                    <div class="workflow-step" style="opacity: 0.6;">
+                        <div class="step-number" style="background: #6c757d;">4</div>
+                        <h6 class="mb-2">Then: Query & Analyze</h6>
+                        <p class="mb-2 text-muted">Ask questions in natural language about your processed data.</p>
+                        <button class="btn btn-secondary btn-sm" disabled>
+                            <i class="fas fa-lock me-1"></i>Complete Semantic Layer First
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-3">
+                <div class="col-12">
+                    <div class="workflow-step" style="opacity: 0.6;">
+                        <div class="step-number" style="background: #6c757d;">5</div>
+                        <h6 class="mb-2">Finally: Create Dashboards</h6>
+                        <p class="mb-2 text-muted">Build interactive visualizations and share insights with your team.</p>
+                        <button class="btn btn-secondary btn-sm" disabled>
+                            <i class="fas fa-lock me-1"></i>Complete Query Setup First
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <hr class="my-3">
+            
+            <div class="alert alert-info mb-0">
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>Why this workflow?</strong> Following these steps ensures your data is properly cleaned, 
+                structured, and enriched before analysis - leading to more accurate insights and better AI responses.
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Data Source Information -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-info-circle me-2"></i>Data Source Information
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Name:</label>
+                        <p class="mb-0">{{ data_source.name }}</p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Type:</label>
+                        <p class="mb-0">
+                            <span class="badge bg-info">
+                                {% if data_source.source_type == 'csv' %}
+                                    <i class="fas fa-file-csv me-1"></i>CSV File
+                                {% elif data_source.source_type == 'postgresql' %}
+                                    <i class="fas fa-database me-1"></i>PostgreSQL
+                                {% elif data_source.source_type == 'mysql' %}
+                                    <i class="fas fa-database me-1"></i>MySQL
+                                {% elif data_source.source_type == 'oracle' %}
+                                    <i class="fas fa-database me-1"></i>Oracle
+                                {% elif data_source.source_type == 'sqlserver' %}
+                                    <i class="fas fa-database me-1"></i>SQL Server
+                                {% elif data_source.source_type == 'api' %}
+                                    <i class="fas fa-cloud me-1"></i>REST API
+                                {% else %}
+                                    <i class="fas fa-question me-1"></i>{{ data_source.source_type|title }}
+                                {% endif %}
+                            </span>
+                        </p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Status:</label>
+                        <div class="connection-status">
+                            <span class="status-indicator status-{% if data_source.status == 'active' %}active{% elif data_source.status == 'error' %}error{% else %}pending{% endif %}"></span>
+                            <span class="badge bg-{% if data_source.status == 'active' %}success{% elif data_source.status == 'error' %}danger{% else %}warning{% endif %}">
+                                {{ data_source.status|title }}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    {% if data_source.description %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Description:</label>
+                        <p class="mb-0">{{ data_source.description }}</p>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Created:</label>
+                        <p class="mb-0">{{ data_source.created_at|date:"M d, Y H:i" }}</p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Updated:</label>
+                        <p class="mb-0">{{ data_source.updated_at|date:"M d, Y H:i" }}</p>
+                    </div>
+                    
+                    {% if data_source.source_type != 'csv' and data_source.connection_info %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Connection Details:</label>
+                        <div class="info-card">
+                            {% if data_source.source_type == 'postgresql' or data_source.source_type == 'mysql' or data_source.source_type == 'oracle' or data_source.source_type == 'sqlserver' %}
+                                <p class="mb-1"><strong>Host:</strong> {{ data_source.connection_info.host }}</p>
+                                <p class="mb-1"><strong>Port:</strong> {{ data_source.connection_info.port }}</p>
+                                <p class="mb-1"><strong>Database:</strong> {{ data_source.connection_info.database }}</p>
+                                <p class="mb-0"><strong>Username:</strong> {{ data_source.connection_info.username }}</p>
+                            {% elif data_source.source_type == 'api' %}
+                                <p class="mb-1"><strong>Base URL:</strong> {{ data_source.connection_info.base_url }}</p>
+                                {% if data_source.connection_info.auth_type %}
+                                <p class="mb-0"><strong>Auth Type:</strong> {{ data_source.connection_info.auth_type|title }}</p>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Schema and Preview -->
+        <div class="col-lg-8">
+            <!-- Schema Information -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-table me-2"></i>Schema Information
+                    </h5>
+                    <small class="text-muted">
+                        {% if schema_info %}
+                            {% if schema_info.tables %}
+                                {{ schema_info.tables|length }} table{{ schema_info.tables|length|pluralize }}
+                            {% elif schema_info.columns %}
+                                {{ schema_info.columns|length }} column{{ schema_info.columns|length|pluralize }}
+                            {% endif %}
+                        {% endif %}
+                    </small>
+                </div>
+                <div class="card-body">
+                    {% if schema_info %}
+                        <!-- Database Schema (Multiple Tables) -->
+                        {% if schema_info.tables %}
+                            <div class="accordion" id="schemaAccordion">
+                                {% for table_name, table_info in schema_info.tables.items %}
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="heading{{ forloop.counter }}">
+                                        <button class="accordion-button {% if not forloop.first %}collapsed{% endif %}" 
+                                                type="button" data-bs-toggle="collapse" 
+                                                data-bs-target="#collapse{{ forloop.counter }}" 
+                                                aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}" 
+                                                aria-controls="collapse{{ forloop.counter }}">
+                                            <i class="fas fa-table me-2"></i>
+                                            {{ table_name }}
+                                            <small class="text-muted ms-2">({{ table_info.columns|length }} columns)</small>
+                                        </button>
+                                    </h2>
+                                    <div id="collapse{{ forloop.counter }}" 
+                                         class="accordion-collapse collapse {% if forloop.first %}show{% endif %}" 
+                                         aria-labelledby="heading{{ forloop.counter }}" 
+                                         data-bs-parent="#schemaAccordion">
+                                        <div class="accordion-body">
+                                            <div class="table-responsive schema-table">
+                                                <table class="table table-sm table-hover">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th>Column</th>
+                                                            <th>Type</th>
+                                                            <th>Nullable</th>
+                                                            <th>Default</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {% for column_name, column_info in table_info.columns.items %}
+                                                        <tr>
+                                                            <td><strong>{{ column_name }}</strong></td>
+                                                            <td><span class="badge bg-secondary">{{ column_info.type|default:"string" }}</span></td>
+                                                            <td>
+                                                                {% if column_info.nullable|default:True %}
+                                                                    <i class="fas fa-check text-success"></i>
+                                                                {% else %}
+                                                                    <i class="fas fa-times text-danger"></i>
+                                                                {% endif %}
+                                                            </td>
+                                                            <td class="text-muted">{{ column_info.default|default:"-" }}</td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <button class="btn btn-sm btn-outline-primary mt-2" 
+                                                    onclick="previewTable('{{ table_name }}')">
+                                                <i class="fas fa-eye me-1"></i>Preview Data
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        
+                        <!-- CSV/Single Table Schema -->
+                        {% elif schema_info.columns %}
+                            <div class="table-responsive schema-table">
+                                <table class="table table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Column</th>
+                                            <th>Type</th>
+                                            <th>Sample Values</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for column in schema_info.columns %}
+                                        <tr>
+                                            <td><strong>{{ column.name }}</strong></td>
+                                            <td><span class="badge bg-secondary">{{ column.type }}</span></td>
+                                            <td class="text-muted">
+                                                {% if column.sample_values %}
+                                                    {% for value in column.sample_values|slice:":3" %}
+                                                        <span class="badge bg-light text-dark me-1">{{ value }}</span>
+                                                    {% endfor %}
+                                                {% else %}
+                                                    -
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            {% if schema_info.row_count %}
+                            <div class="info-card">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <strong>Total Rows:</strong> {{ schema_info.row_count|floatformat:0 }}
+                                    </div>
+                                    <div class="col-md-6">
+                                        <strong>Total Columns:</strong> {{ schema_info.column_count }}
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        {% endif %}
+                    {% else %}
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-database fa-3x mb-3"></i>
+                            <p>No schema information available. Try refreshing the schema.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Data Preview -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-eye me-2"></i>Data Preview
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="previewContainer">
+                        {% if preview_data %}
+                            <div class="table-responsive preview-table">
+                                <table class="table table-striped table-hover">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            {% for column in preview_data.0.keys %}
+                                            <th>{{ column }}</th>
+                                            {% endfor %}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for row in preview_data %}
+                                        <tr>
+                                            {% for value in row.values %}
+                                            <td>{{ value|default:"-" }}</td>
+                                            {% endfor %}
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <small class="text-muted">Showing first {{ preview_data|length }} rows</small>
+                        {% elif preview_error %}
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Preview Error:</strong> {{ preview_error }}
+                            </div>
+                        {% else %}
+                            <div class="text-center text-muted py-4">
+                                <i class="fas fa-table fa-3x mb-3"></i>
+                                <p>No preview data available. The data source might be empty or inaccessible.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center py-4">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mb-0">Processing request...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Test connection functionality with timeout
+async function testConnection() {
+    const modal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    modal.show();
+    
+    try {
+        // Add timeout to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        
+        const response = await fetch(`/datasets/{{ data_source.id }}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': ConvaBI.getCsrfToken()
+            },
+            body: JSON.stringify({
+                action: 'test_connection'
+            }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        modal.hide();
+        
+        if (result.success) {
+            ConvaBI.showAlert('success', 'Connection test successful!');
+            updateConnectionStatus('active');
+        } else {
+            ConvaBI.showAlert('danger', 'Connection test failed: ' + result.message);
+            updateConnectionStatus('error');
+        }
+    } catch (error) {
+        modal.hide();
+        if (error.name === 'AbortError') {
+            ConvaBI.showAlert('warning', 'Connection test timed out (15s). Please check your database connection.');
+        } else {
+            ConvaBI.showAlert('danger', 'Error testing connection: ' + error.message);
+        }
+    }
+}
+
+// Refresh schema functionality with timeout
+async function refreshSchema() {
+    const modal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    modal.show();
+    
+    try {
+        // Add timeout to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout for schema refresh
+        
+        const response = await fetch(`/datasets/{{ data_source.id }}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': ConvaBI.getCsrfToken()
+            },
+            body: JSON.stringify({
+                action: 'refresh_schema'
+            }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        modal.hide();
+        
+        if (result.success) {
+            ConvaBI.showAlert('success', 'Schema refreshed successfully!');
+            // Refresh the page to show updated schema
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            ConvaBI.showAlert('danger', 'Failed to refresh schema: ' + (result.error || 'Unknown error'));
+        }
+    } catch (error) {
+        modal.hide();
+        if (error.name === 'AbortError') {
+            ConvaBI.showAlert('warning', 'Schema refresh timed out (20s). The database may be slow or unreachable.');
+        } else {
+            ConvaBI.showAlert('danger', 'Error refreshing schema: ' + error.message);
+        }
+    }
+}
+
+// Delete data source functionality
+async function deleteDataSource() {
+    if (!confirm('Are you sure you want to delete this data source? This action and all related data will be permanently removed. This cannot be undone.')) {
+        return;
+    }
+    
+    const modal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    modal.show();
+    
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout for comprehensive delete
+        
+        const response = await fetch(`/datasets/{{ data_source.id }}/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': ConvaBI.getCsrfToken()
+            },
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        const result = await response.json();
+        modal.hide();
+
+        if (response.ok) {
+            // Show summary of deleted items
+            let summaryMessage = '<strong>Deletion Summary:</strong><ul class="list-unstyled mb-0">';
+            const summary = result.deletion_summary;
+            if(summary) {
+                summaryMessage += `<li>${summary.semantic_tables || 0} semantic tables</li>`;
+                summaryMessage += `<li>${summary.semantic_columns || 0} semantic columns</li>`;
+                summaryMessage += `<li>${summary.etl_operations || 0} ETL operations</li>`;
+                summaryMessage += `<li>${summary.query_logs || 0} query logs</li>`;
+                summaryMessage += `<li>${summary.dashboard_items || 0} dashboard items</li>`;
+            }
+            summaryMessage += '</ul>';
+
+            ConvaBI.showAlert('success', `${result.message}<br>${summaryMessage}`);
+            
+            // Redirect to data sources list
+            setTimeout(() => {
+                window.location.href = result.redirect_url;
+            }, 3000); // Longer delay to read summary
+        } else {
+            ConvaBI.showAlert('danger', 'Failed to delete data source: ' + (result.error || 'Unknown error'));
+        }
+    } catch (error) {
+        modal.hide();
+        if (error.name === 'AbortError') {
+            ConvaBI.showAlert('warning', 'Delete operation timed out. Please check the server logs and try again.');
+        } else {
+            ConvaBI.showAlert('danger', 'Error deleting data source: ' + error.message);
+        }
+    }
+}
+
+// Preview table data with timeout
+async function previewTable(tableName) {
+    const modal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    modal.show();
+    
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        
+        const response = await fetch(`/datasets/{{ data_source.id }}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': ConvaBI.getCsrfToken()
+            },
+            body: JSON.stringify({
+                action: 'get_preview',
+                table_name: tableName
+            }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        modal.hide();
+        
+        if (result.success) {
+            // Update preview container with new data
+            updatePreviewContainer(result.preview_data, tableName);
+            ConvaBI.showAlert('success', `Preview loaded for table: ${tableName}`);
+        } else {
+            ConvaBI.showAlert('danger', 'Failed to load preview: ' + (result.error || 'Unknown error'));
+        }
+    } catch (error) {
+        modal.hide();
+        if (error.name === 'AbortError') {
+            ConvaBI.showAlert('warning', `Preview for table "${tableName}" timed out (15s). The table may be large or the database slow.`);
+        } else {
+            ConvaBI.showAlert('danger', 'Error loading preview: ' + error.message);
+        }
+    }
+}
+
+// Update connection status indicator
+function updateConnectionStatus(status) {
+    const indicators = document.querySelectorAll('.status-indicator');
+    const badges = document.querySelectorAll('.connection-status .badge');
+    
+    indicators.forEach(indicator => {
+        indicator.className = `status-indicator status-${status}`;
+    });
+    
+    badges.forEach(badge => {
+        badge.className = `badge bg-${status === 'active' ? 'success' : status === 'error' ? 'danger' : 'warning'}`;
+        badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+    });
+}
+
+// Update preview container with new data
+function updatePreviewContainer(data, tableName) {
+    const container = document.getElementById('previewContainer');
+    
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-table fa-3x mb-3"></i>
+                <p>No data available in table: ${tableName}</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Convert data to array format for table display
+    const rows = [];
+    const columns = Object.keys(data);
+    const maxRows = Math.max(...columns.map(col => Array.isArray(data[col]) ? data[col].length : 1));
+    
+    for (let i = 0; i < maxRows; i++) {
+        const row = {};
+        columns.forEach(col => {
+            row[col] = Array.isArray(data[col]) ? data[col][i] : data[col];
+        });
+        rows.push(row);
+    }
+    
+    let tableHtml = `
+        <div class="table-responsive preview-table">
+            <table class="table table-striped table-hover">
+                <thead class="table-dark">
+                    <tr>`;
+    
+    columns.forEach(col => {
+        tableHtml += `<th>${col}</th>`;
+    });
+    
+    tableHtml += `</tr></thead><tbody>`;
+    
+    rows.slice(0, 10).forEach(row => {
+        tableHtml += '<tr>';
+        columns.forEach(col => {
+            tableHtml += `<td>${row[col] !== null && row[col] !== undefined ? row[col] : '-'}</td>`;
+        });
+        tableHtml += '</tr>';
+    });
+    
+    tableHtml += `</tbody></table></div>`;
+    tableHtml += `<small class="text-muted">Showing first ${Math.min(rows.length, 10)} rows from table: ${tableName}</small>`;
+    
+    container.innerHTML = tableHtml;
+}
+</script>
+{% endblock %} 
