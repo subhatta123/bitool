@@ -250,7 +250,7 @@
         </div>
 
         <!-- Sidebar -->
-        <div class="col-lg-3">
+        <div class="col-lg-3 col-md-4 col-sm-12" style="background-color: #f8f9fa; min-height: 100vh;">
             <!-- Query Progress Tracker -->
             <div class="card shadow-sm mb-3" id="queryProgressCard" style="display: none;">
                 <div class="card-header">
@@ -333,16 +333,62 @@
             </div>
 
             <!-- Data Source Info -->
-            <div class="card shadow-sm mt-3" id="dataSourceInfo" style="display: none;">
-                <div class="card-header">
+            <div class="card shadow-sm mt-3 border-primary" id="dataSourceInfo" style="display: block; border: 3px solid #007bff !important; background-color: #e3f2fd;">
+                <div class="card-header bg-primary text-white">
                     <h6 class="mb-0">
-                        <i class="fas fa-info-circle"></i>
-                        Data Source Info
+                        <i class="fas fa-robot me-2"></i>
+                        🤖 AI & Data Source Info 
                     </h6>
                 </div>
                 <div class="card-body">
                     <div id="dataSourceDetails">
-                        <!-- Data source information will be loaded here -->
+                        <!-- Default content to show the panel structure -->
+                        <div class="row">
+                            <div class="col-6">
+                                <small class="text-muted">Type</small>
+                                <div class="fw-bold">Select data source</div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">Tables</small>
+                                <div class="fw-bold">-</div>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-6">
+                                <small class="text-muted">Status</small>
+                                <div>
+                                    <span class="badge bg-secondary">Pending</span>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">Connection</small>
+                                <div>
+                                    <span class="badge bg-secondary">Pending</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-6">
+                                <small class="text-muted">AI Provider</small>
+                                <div class="fw-bold">Detecting...</div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">AI Status</small>
+                                <div>
+                                    <span class="badge bg-warning">Checking</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-12">
+                                <small class="text-muted">AI Model</small>
+                                <div class="fw-bold">Select data source to detect model</div>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <small class="text-muted">Name</small>
+                            <div class="fw-bold">No data source selected</div>
+                        </div>
                     </div>
                 </div>
             </div>

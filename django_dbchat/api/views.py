@@ -17,6 +17,22 @@ from datasets.models import ETLOperation, DataSource
 logger = logging.getLogger(__name__)
 
 
+@login_required
+def dashboard_item_data_proxy(request, item_id):
+    """Proxy to dashboard item data view for API URL compatibility"""
+    try:
+        # Import and call the actual dashboard view
+        from dashboards.views import dashboard_item_data
+        return dashboard_item_data(request, item_id)
+    except Exception as e:
+        logger.error(f"Dashboard item data proxy error: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': 'API proxy error',
+            'details': str(e)
+        }, status=500)
+
+
 @method_decorator(login_required, name='dispatch')
 class ETLOperationAPIView(View):
     """API view for ETL operations"""
@@ -107,6 +123,9 @@ class DataSourceAPIView(View):
         try:
             data_source = get_object_or_404(DataSource, id=source_id, created_by=request.user)
             
+            # Get LLM configuration information
+            llm_info = self._get_llm_info()
+            
             source_data = {
                 'id': str(data_source.id),
                 'name': data_source.name,
@@ -121,7 +140,9 @@ class DataSourceAPIView(View):
                     'host': data_source.connection_info.get('host'),
                     'database': data_source.connection_info.get('database'),
                     # Don't expose sensitive info like passwords
-                }
+                },
+                'llm_info': llm_info,
+                'connection_status': 'connected' if data_source.status == 'active' else 'disconnected'
             }
             
             return JsonResponse({
@@ -132,6 +153,38 @@ class DataSourceAPIView(View):
         except Exception as e:
             logger.error(f"Error getting data source {source_id}: {e}")
             return JsonResponse({'error': str(e)}, status=500)
+    
+    def _get_llm_info(self):
+        """Get current LLM configuration information"""
+        try:
+            from core.models import LLMConfig
+            
+            # Get active LLM config
+            llm_config = LLMConfig.get_active_config()
+            
+            if llm_config:
+                return {
+                    'provider': llm_config.provider,
+                    'model': llm_config.model_name,
+                    'status': 'configured',
+                    'source': 'database_config'
+                }
+            else:
+                return {
+                    'provider': 'Unknown',
+                    'model': 'Not detected',
+                    'status': 'not_configured',
+                    'source': 'no_config_found'
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting LLM info: {e}")
+            return {
+                'provider': 'Unknown',
+                'model': 'Not detected',
+                'status': 'error',
+                'source': f'error: {str(e)}'
+            }
 
 
 @method_decorator(login_required, name='dispatch')
@@ -459,10 +512,29 @@ def data_preview(request, source_id):
                 else:
                     logger.warning(f"Could not load data for preview: {message}")
                     sample_data = []
+            elif data_source.source_type == 'etl_result':
+                # FIXED: For ETL results, use the same DuckDB-first approach as schema processing
+                from datasets.data_access_layer import unified_data_access
+                
+                success, df, message = unified_data_access.get_data_source_data(data_source)
+                
+                if success and df is not None and not df.empty:
+                    # Replace NaN values with None for JSON serialization
+                    sample_data = df.head(20).to_dict('records')
+                    # Convert NaN values to None for JSON compatibility
+                    import numpy as np
+                    sample_data = [
+                        {k: (None if pd.isna(v) else v) for k, v in row.items()}
+                        for row in sample_data
+                    ]
+                    logger.info(f"Retrieved {len(sample_data)} sample rows from ETL result via unified data access")
+                else:
+                    logger.warning(f"Could not load ETL result data for preview: {message}")
+                    sample_data = []
             else:
-                # For other data source types, try to get sample data via query
-                sample_query = f"SELECT * FROM {schema_info.get('table_name', 'data')} LIMIT 20"
-                success, result = data_service.execute_query(sample_query, data_source.connection_info)
+                # For other data source types, use the database-specific preview method
+                table_name = schema_info.get('table_name', 'data')
+                success, result = data_service.get_data_preview(data_source.connection_info, table_name, 20)
                 if success and result is not None:
                     if hasattr(result, 'to_dict'):
                         # Replace NaN values with None for JSON serialization
@@ -511,6 +583,16 @@ def data_preview(request, source_id):
                 table_name = get_integrated_table_name(data_source)
             except:
                 table_name = f"source_{data_source.id}"
+        elif data_source.source_type == 'etl_result':
+            # FIXED: For ETL results, use the actual DuckDB table name
+            from utils.table_name_helper import get_integrated_table_name
+            try:
+                table_name = get_integrated_table_name(data_source)
+                logger.info(f"Using actual DuckDB table name for ETL result: {table_name}")
+            except Exception as e:
+                # Fallback to UUID-based naming
+                table_name = f"source_{data_source.id.hex.replace('-', '')}"
+                logger.warning(f"Fallback table name for ETL result: {table_name}, error: {e}")
         elif schema_info.get('table_name'):
             table_name = schema_info['table_name']
         
@@ -535,3 +617,22 @@ def data_preview(request, source_id):
             'success': False,
             'error': str(e)
         }, status=500)
+
+
+@login_required
+def users_list_api(request):
+    """Get list of users for dashboard sharing"""
+    try:
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        users = User.objects.exclude(id=request.user.id).values('id', 'username', 'email')[:50]
+        
+        return JsonResponse({
+            'success': True,
+            'users': list(users)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting users list: {e}")
+        return JsonResponse({'error': str(e)}, status=500)

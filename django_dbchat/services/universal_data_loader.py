@@ -114,14 +114,52 @@ class UniversalDataLoader:
                     except Exception as e:
                         logger.warning(f"Enhanced CSV processor failed: {e}, falling back to basic CSV loading")
                 
-                # Fallback to basic CSV loading with detected options
-                csv_options = {
-                    'delimiter': parsing_options.get('delimiter', ','),
-                    'encoding': parsing_options.get('encoding', 'utf-8'),
-                    'header': 0 if parsing_options.get('has_header', True) else None
-                }
+                # Fallback to basic CSV loading with comprehensive encoding handling
+                encodings_to_try = ['utf-8', 'utf-16', 'latin-1', 'cp1252', 'iso-8859-1', 'windows-1252']
+                separators_to_try = [',', ';', '\t', '|']
                 
-                df = pd.read_csv(full_file_path, **csv_options)
+                df = None
+                successful_encoding = None
+                successful_separator = None
+                
+                # Try the specified options first
+                specified_encoding = parsing_options.get('encoding', 'utf-8')
+                specified_delimiter = parsing_options.get('delimiter', ',')
+                
+                try:
+                    csv_options = {
+                        'delimiter': specified_delimiter,
+                        'encoding': specified_encoding,
+                        'header': 0 if parsing_options.get('has_header', True) else None
+                    }
+                    df = pd.read_csv(full_file_path, **csv_options)
+                    successful_encoding = specified_encoding
+                    successful_separator = specified_delimiter
+                    logger.info(f"Successfully read CSV with specified options (encoding: {specified_encoding}, delimiter: '{specified_delimiter}')")
+                except Exception as e:
+                    logger.warning(f"Failed with specified options: {e}, trying fallback encodings")
+                    
+                    # Try all combinations
+                    for encoding in encodings_to_try:
+                        for separator in separators_to_try:
+                            try:
+                                csv_options = {
+                                    'delimiter': separator,
+                                    'encoding': encoding,
+                                    'header': 0 if parsing_options.get('has_header', True) else None
+                                }
+                                df = pd.read_csv(full_file_path, **csv_options)
+                                successful_encoding = encoding
+                                successful_separator = separator
+                                logger.info(f"Successfully read CSV with fallback options (encoding: {encoding}, delimiter: '{separator}')")
+                                break
+                            except Exception as e:
+                                continue
+                        if df is not None:
+                            break
+                
+                if df is None:
+                    raise Exception("Failed to read CSV file with any encoding or delimiter combination")
                 logger.info(f"Successfully loaded {len(df)} rows from CSV file")
                 return True, df, f"Loaded {len(df)} rows from CSV file"
                 
@@ -197,48 +235,89 @@ class UniversalDataLoader:
             # Build connection string based on database type
             if db_type == 'postgresql':
                 import psycopg2
-                import sqlalchemy
                 
-                conn_str = f"postgresql://{conn_info['user']}:{conn_info['password']}@{conn_info['host']}:{conn_info.get('port', 5432)}/{conn_info['database']}"
-                engine = sqlalchemy.create_engine(conn_str)
+                # Use raw psycopg2 connection (consistent with DataService)
+                host = conn_info.get('host')
+                port = conn_info.get('port', 5432)
+                database = conn_info.get('database')
+                user = conn_info.get('username')  # Note: use 'username' from conn_info
+                password = conn_info.get('password')
+                
+                conn = psycopg2.connect(
+                    host=host,
+                    port=port,
+                    database=database,
+                    user=user,
+                    password=password,
+                    connect_timeout=30
+                )
                 
                 # Get table name
                 table_name = conn_info.get('table_name', data_source.table_name)
                 if not table_name:
+                    conn.close()
                     return False, None, "Database table name not specified"
                 
                 # Load data
                 query = f"SELECT * FROM {table_name}"
-                df = pd.read_sql(query, engine)
+                df = pd.read_sql(query, conn)
+                conn.close()
                 
                 logger.info(f"Successfully loaded {len(df)} rows from PostgreSQL table: {table_name}")
                 return True, df, f"Loaded {len(df)} rows from PostgreSQL table"
                 
             elif db_type == 'mysql':
-                import pymysql
-                import sqlalchemy
+                import mysql.connector
                 
-                conn_str = f"mysql+pymysql://{conn_info['user']}:{conn_info['password']}@{conn_info['host']}:{conn_info.get('port', 3306)}/{conn_info['database']}"
-                engine = sqlalchemy.create_engine(conn_str)
+                # Use raw mysql.connector (consistent with DataService)
+                host = conn_info.get('host')
+                port = conn_info.get('port', 3306)
+                database = conn_info.get('database')
+                user = conn_info.get('username')
+                password = conn_info.get('password')
+                
+                conn = mysql.connector.connect(
+                    host=host,
+                    port=port,
+                    database=database,
+                    user=user,
+                    password=password,
+                    connection_timeout=30
+                )
                 
                 table_name = conn_info.get('table_name', data_source.table_name)
+                if not table_name:
+                    conn.close()
+                    return False, None, "MySQL table name not specified"
+                
                 query = f"SELECT * FROM {table_name}"
-                df = pd.read_sql(query, engine)
+                df = pd.read_sql(query, conn)
+                conn.close()
                 
                 logger.info(f"Successfully loaded {len(df)} rows from MySQL table: {table_name}")
                 return True, df, f"Loaded {len(df)} rows from MySQL table"
                 
             elif db_type == 'oracle':
                 import cx_Oracle
-                import sqlalchemy
                 
-                dsn = f"{conn_info['host']}:{conn_info.get('port', 1521)}/{conn_info['service_name']}"
-                conn_str = f"oracle+cx_oracle://{conn_info['user']}:{conn_info['password']}@{dsn}"
-                engine = sqlalchemy.create_engine(conn_str)
+                # Use raw cx_Oracle connection (consistent with DataService)
+                host = conn_info.get('host')
+                port = conn_info.get('port', 1521)
+                database = conn_info.get('database')  # service name
+                username = conn_info.get('username')
+                password = conn_info.get('password')
+                
+                dsn = cx_Oracle.makedsn(host, port, service_name=database)
+                conn = cx_Oracle.connect(username, password, dsn, timeout=30)
                 
                 table_name = conn_info.get('table_name', data_source.table_name)
+                if not table_name:
+                    conn.close()
+                    return False, None, "Oracle table name not specified"
+                
                 query = f"SELECT * FROM {table_name}"
-                df = pd.read_sql(query, engine)
+                df = pd.read_sql(query, conn)
+                conn.close()
                 
                 logger.info(f"Successfully loaded {len(df)} rows from Oracle table: {table_name}")
                 return True, df, f"Loaded {len(df)} rows from Oracle table"
@@ -258,6 +337,39 @@ class UniversalDataLoader:
                 
                 logger.info(f"Successfully loaded {len(df)} rows from SQLite table: {table_name}")
                 return True, df, f"Loaded {len(df)} rows from SQLite table"
+                
+            elif db_type == 'sqlserver':
+                import pyodbc
+                
+                # Get the selected tables from connection info
+                selected_tables = conn_info.get('tables', [])
+                if not selected_tables:
+                    # Fallback to single table if tables not specified
+                    table_name = conn_info.get('table_name', data_source.table_name)
+                    if not table_name:
+                        return False, None, "SQL Server table name not specified"
+                    selected_tables = [table_name]
+                
+                # Use the first selected table for now
+                table_name = selected_tables[0]
+                logger.info(f"Using SQL Server table: {table_name}")
+                
+                # Use raw pyodbc connection (same as DataService)
+                host = conn_info.get('host')
+                port = conn_info.get('port', 1433)
+                database = conn_info.get('database')
+                username = conn_info.get('username')
+                password = conn_info.get('password')
+                
+                conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={host},{port};DATABASE={database};UID={username};PWD={password};Connection Timeout=30;"
+                conn = pyodbc.connect(conn_str)
+                
+                query = f"SELECT * FROM [{table_name}]"  # Use brackets for SQL Server table names
+                df = pd.read_sql(query, conn)
+                conn.close()
+                
+                logger.info(f"Successfully loaded {len(df)} rows from SQL Server table: {table_name}")
+                return True, df, f"Loaded {len(df)} rows from SQL Server table"
                 
             else:
                 return False, None, f"Database type {db_type} not supported yet"
@@ -406,5 +518,5 @@ class UniversalDataLoader:
             logger.error(f"Error generating sample data: {e}")
             return False, None, f"Could not generate sample data: {str(e)}"
 
-# Global instance
+# Create a global instance for easy access
 universal_data_loader = UniversalDataLoader() 

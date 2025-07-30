@@ -363,12 +363,9 @@ class UnifiedDataAccessLayer:
                 logger.warning("[FAILED] No file path in connection info")
                 return False, None, "No file path in connection info"
             
-            # Try different path resolutions
+            # Use consistent file path resolution
             potential_paths = [
-                os.path.join(settings.MEDIA_ROOT, file_path),
-                os.path.join(settings.BASE_DIR, file_path),
-                file_path,  # Absolute path
-                os.path.join(settings.BASE_DIR, 'media', file_path),
+                os.path.join(settings.MEDIA_ROOT, file_path),  # Primary: /app/django_dbchat/media/csv_files/file.csv
             ]
             
             logger.info(f"[SEARCH] Trying {len(potential_paths)} potential file paths:")
@@ -384,11 +381,33 @@ class UnifiedDataAccessLayer:
                     
                     logger.info(f"[INFO] CSV parameters: delimiter='{delimiter}', has_header={has_header}")
                     
-                    df = pd.read_csv(
-                        full_path, 
-                        delimiter=delimiter, 
-                        header=0 if has_header else None
-                    )
+                    # Try multiple encodings for robust CSV reading
+                    encodings_to_try = ['utf-8', 'utf-16', 'latin-1', 'cp1252', 'iso-8859-1', 'windows-1252']
+                    
+                    df = None
+                    successful_encoding = None
+                    
+                    for encoding in encodings_to_try:
+                        try:
+                            logger.info(f"[ATTEMPT] Trying encoding: {encoding}")
+                            df = pd.read_csv(
+                                full_path, 
+                                delimiter=delimiter, 
+                                header=0 if has_header else None,
+                                encoding=encoding
+                            )
+                            successful_encoding = encoding
+                            logger.info(f"[SUCCESS] Successfully read CSV with {encoding} encoding")
+                            break
+                        except UnicodeDecodeError as e:
+                            logger.warning(f"[WARNING] Failed with {encoding} encoding: {e}")
+                            continue
+                        except Exception as e:
+                            logger.warning(f"[WARNING] Unexpected error with {encoding} encoding: {e}")
+                            continue
+                    
+                    if df is None:
+                        raise Exception("Failed to read CSV file with any encoding")
                     
                     if not has_header:
                         df.columns = [f'Column_{i+1}' for i in range(len(df.columns))]

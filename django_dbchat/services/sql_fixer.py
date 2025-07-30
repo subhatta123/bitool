@@ -43,6 +43,8 @@ class SQLFixer:
             fixed_sql = SQLFixer._fix_column_name_spaces(fixed_sql)
             # Step 10: Fix date function type casting (NEW)
             fixed_sql = SQLFixer._fix_date_functions(fixed_sql)
+            # Step 11: Fix date year filters (NEW)
+            fixed_sql = SQLFixer._fix_date_year_filters(fixed_sql)
             
             # Log if any changes were made
             if fixed_sql != sql_query:
@@ -253,6 +255,60 @@ class SQLFixer:
             logger.error(f"Error fixing column name spaces: {e}")
             return sql
     
+
+    @staticmethod
+    def _fix_date_year_filters(sql: str) -> str:
+        """
+        Fix year-based filtering for DD-MM-YYYY format dates
+        Convert: WHERE "Order_Date" LIKE '2015%' 
+        To: WHERE substr("Order_Date", 7, 4) = '2015'
+        """
+        try:
+            # Pattern for year filtering with LIKE
+            year_like_pattern = r'(WHERE|AND)\s+("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s+LIKE\s+'(\d{4})%''
+            
+            def fix_year_like(match):
+                where_and = match.group(1)
+                column_name = match.group(2)
+                year = match.group(3)
+                
+                # Check if this looks like a date column
+                if any(date_term in column_name.lower() for date_term in ['date', 'time', 'created', 'updated']):
+                    # Use substr to extract year from DD-MM-YYYY format (positions 7-10)
+                    fixed = f'{where_and} substr({column_name}, 7, 4) = '{year}''
+                    logger.info(f"DATE FILTER FIX: {column_name} LIKE '{year}%' -> substr({column_name}, 7, 4) = '{year}'")
+                    return fixed
+                
+                return match.group(0)
+            
+            sql = re.sub(year_like_pattern, fix_year_like, sql, flags=re.IGNORECASE)
+            
+            # Also fix EXTRACT year functions for string dates
+            extract_year_pattern = r'EXTRACT\s*\(\s*YEAR\s+FROM\s+("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\)'
+            
+            def fix_extract_year(match):
+                column_name = match.group(1)
+                
+                # Check if this looks like a date column
+                if any(date_term in column_name.lower() for date_term in ['date', 'time', 'created', 'updated']):
+                    # Use substr to extract year from DD-MM-YYYY format
+                    fixed = f'substr({column_name}, 7, 4)'
+                    logger.info(f"EXTRACT YEAR FIX: EXTRACT(YEAR FROM {column_name}) -> substr({column_name}, 7, 4)")
+                    return fixed
+                
+                return match.group(0)
+            
+            sql = re.sub(extract_year_pattern, fix_extract_year, sql, flags=re.IGNORECASE)
+            
+            # Mark that we've added this function
+            sql = sql + " -- strftime_year_extraction"
+            
+            return sql
+            
+        except Exception as e:
+            logger.error(f"Error fixing date year filters: {e}")
+            return sql
+
     @staticmethod
     def _fix_date_functions(sql: str) -> str:
         """

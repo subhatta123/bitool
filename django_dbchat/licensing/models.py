@@ -215,6 +215,33 @@ def validate_license_code(license_code):
 def get_user_license_info(user):
     """Get comprehensive license info for a user"""
     try:
+        # CRITICAL FIX: Handle superusers the same way as permission functions
+        if user.is_superuser:
+            return {
+                'has_license': True,
+                'license_type': 'admin',
+                'license_code': 'SUPERUSER',
+                'permissions': {
+                    'can_query': True,
+                    'can_view_dashboards': True,
+                    'can_create_dashboards': True,
+                    'can_upload_data': True,
+                    'can_manage_data_sources': True,
+                    'can_perform_etl': True,
+                    'can_manage_semantic_layer': True,
+                    'can_export_dashboards': True,
+                    'can_share_dashboards': True,
+                    'can_view_query_history': True,
+                    'can_manage_account': True,
+                    'can_change_llm_model': True,
+                    'can_change_email_config': True,
+                    'can_view_user_profile': True,
+                },
+                'status': 'active',
+                'valid_until': None,
+                'assigned_at': None,
+            }
+        
         user_license = UserLicense.objects.filter(
             user=user, 
             is_active=True
@@ -241,6 +268,38 @@ def get_user_license_info(user):
         }
     
     except Exception as e:
+        # Handle database table errors gracefully for missing migrations
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Error getting license info for user {user.username}: {e}")
+        
+        # For superusers, return admin permissions even if licensing tables don't exist
+        if hasattr(user, 'is_superuser') and user.is_superuser:
+            return {
+                'has_license': True,
+                'license_type': 'admin',
+                'license_code': 'SUPERUSER',
+                'permissions': {
+                    'can_query': True,
+                    'can_view_dashboards': True,
+                    'can_create_dashboards': True,
+                    'can_upload_data': True,
+                    'can_manage_data_sources': True,
+                    'can_perform_etl': True,
+                    'can_manage_semantic_layer': True,
+                    'can_export_dashboards': True,
+                    'can_share_dashboards': True,
+                    'can_view_query_history': True,
+                    'can_manage_account': True,
+                    'can_change_llm_model': True,
+                    'can_change_email_config': True,
+                    'can_view_user_profile': True,
+                },
+                'status': 'active',
+                'valid_until': None,
+                'assigned_at': None,
+            }
+        
         return {
             'has_license': False,
             'license_type': None,

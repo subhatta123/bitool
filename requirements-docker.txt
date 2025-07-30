@@ -1,0 +1,81 @@
+# Django and core web framework
+Django>=4.2,<5.0
+django-cors-headers
+django-extensions
+django-rest-framework
+djangorestframework
+whitenoise
+gunicorn
+
+# WebSocket and async support
+channels
+channels-redis
+daphne
+
+# Database support
+psycopg2-binary
+django-environ
+
+# Redis and Celery for async tasks
+redis
+django-redis
+celery
+django-celery-beat
+django-celery-results
+
+# Data processing and analysis
+pandas
+numpy
+sqlalchemy
+pyodbc
+duckdb
+
+# LLM integration
+openai==1.54.4
+
+# Visualizations and reporting
+matplotlib
+plotly
+reportlab
+kaleido
+
+# Web scraping and automation
+playwright
+
+# Additional utilities
+Werkzeug
+requests
+python-dotenv
+
+# Development and debugging
+django-debug-toolbar
+
+# File handling
+openpyxl
+xlsxwriter
+
+# Additional Django packages commonly needed
+django-filter
+django-crispy-forms
+pillow
+
+# Authentication and permissions
+django-allauth
+django-guardian
+
+# API and documentation
+drf-yasg
+markdown
+
+# Utilities
+python-dateutil
+pytz 
+
+# Dashboard Export Libraries
+weasyprint==61.2
+playwright==1.40.0
+Pillow==10.1.0
+reportlab==4.0.8
+
+# Enhanced Email Support
+premailer==3.10.0 

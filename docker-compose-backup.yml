@@ -1,0 +1,246 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (Optional - can use SQLite)
+  postgres:
+    image: postgres:15
+    container_name: convabc_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-convabi}
+      POSTGRES_USER: ${POSTGRES_USER:-convabiuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-convabipass}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - convabc_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-convabiuser} -d ${POSTGRES_DB:-convabc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Celery (Optional - has fallback)
+  redis:
+    image: redis:7-alpine
+    container_name: convabc_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - convabc_network
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Main ConvaBI Application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: convabc_web
+    volumes:
+      - ./django_dbchat:/app/django_dbchat
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./media:/app/media
+      - ./backups:/app/backups
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    environment:
+      # Django Settings
+      - DEBUG=${DEBUG:-True}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      
+      # Database Configuration
+      - DATABASE_URL=${DATABASE_URL:-postgresql://convabiuser:convabipass@postgres:5432/convabi}
+      - POSTGRES_DB=${POSTGRES_DB:-convabi}
+      - POSTGRES_USER=${POSTGRES_USER:-convabiuser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-convabipass}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      
+      # Django Database Settings (matching settings.py)
+      - DATABASE_NAME=${POSTGRES_DB:-convabi}
+      - DATABASE_USER=${POSTGRES_USER:-convabiuser}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-convabipass}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      
+      # Redis Configuration
+      - USE_REDIS=${USE_REDIS:-True}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      
+      # Celery Configuration
+      - CELERY_TASK_ALWAYS_EAGER=${CELERY_TASK_ALWAYS_EAGER:-False}
+      - CELERY_TASK_EAGER_PROPAGATES=${CELERY_TASK_EAGER_PROPAGATES:-False}
+      
+      # LLM Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      
+      # Email Configuration
+      - EMAIL_HOST=${EMAIL_HOST:-smtp.gmail.com}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER:-}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD:-}
+      - EMAIL_USE_TLS=${EMAIL_USE_TLS:-True}
+      
+      # Application Settings
+      - TIME_ZONE=${TIME_ZONE:-UTC}
+      - LANGUAGE_CODE=${LANGUAGE_CODE:-en-us}
+      
+      # Security Settings
+      - SECURE_SSL_REDIRECT=${SECURE_SSL_REDIRECT:-False}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-False}
+      - CSRF_COOKIE_SECURE=${CSRF_COOKIE_SECURE:-False}
+      
+      # File Storage
+      - MEDIA_ROOT=/app/media
+      - STATIC_ROOT=/app/staticfiles
+      
+      # Backup and Data
+      - BACKUP_ROOT=/app/backups
+      - DATA_ROOT=/app/data
+      
+    networks:
+      - convabc_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Ollama Local LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: convabc_ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - convabc_network
+    restart: unless-stopped
+
+  # Celery Worker
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: convabc_celery
+    command: celery -A dbchat_project worker --loglevel=info --concurrency=4
+    volumes:
+      - ./django_dbchat:/app/django_dbchat
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./media:/app/media
+      - ./backups:/app/backups
+    environment:
+      # Same environment as web service
+      - DEBUG=${DEBUG:-True}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///db.sqlite3}
+      - USE_REDIS=${USE_REDIS:-True}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      - POSTGRES_HOST=postgres
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+    networks:
+      - convabc_network
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    working_dir: /app/django_dbchat
+
+  # Celery Beat Scheduler
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: convabc_celery_beat
+    command: celery -A dbchat_project beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - ./django_dbchat:/app/django_dbchat
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      # Same environment as web service
+      - DEBUG=${DEBUG:-True}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///db.sqlite3}
+      - USE_REDIS=${USE_REDIS:-True}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/2}
+      - POSTGRES_HOST=postgres
+    networks:
+      - convabc_network
+    depends_on:
+      - redis
+      - postgres
+      - web
+    restart: unless-stopped
+    working_dir: /app/django_dbchat
+
+  # Nginx Reverse Proxy (Optional)
+  nginx:
+    image: nginx:alpine
+    container_name: convabc_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/ssl:/etc/nginx/ssl:ro
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/media:ro
+    networks:
+      - convabc_network
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  static_volume:
+    driver: local
+  media_volume:
+    driver: local
+  ollama_data:
+    driver: local
+
+networks:
+  convabc_network:
+    driver: bridge
+    name: convabc_network 

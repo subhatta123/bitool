@@ -157,17 +157,10 @@ class QueryInterface {
                 window.location.href = data.redirect_url;
             } else {
                 console.log('Query failed with error:', data.error);
-                ConvaBI.showAlert('danger', data.error || 'Query failed');
+                this.hideProgressTracker();
                 
-                // Show additional error details if available
-                if (data.details) {
-                    console.error('Error details:', data.details);
-                    ConvaBI.showAlert('info', 'Details: ' + data.details);
-                }
-                
-                if (data.suggestion) {
-                    ConvaBI.showAlert('info', 'Suggestion: ' + data.suggestion);
-                }
+                // Enhanced error display with helpful suggestions
+                this.showEnhancedErrorMessage(data);
             }
             
         } catch (error) {
@@ -1092,6 +1085,11 @@ ${JSON.stringify(this.currentSchemaData.schema_info, null, 2)}
                 tableCount = 1; // Single table (like CSV)
             }
             
+            // Prepare LLM model information
+            const llmInfo = info.llm_info || { provider: 'Unknown', model: 'Not detected', status: 'unknown' };
+            const llmStatusColor = llmInfo.status === 'configured' ? 'success' : 
+                                 llmInfo.status === 'not_configured' ? 'warning' : 'danger';
+            
             const infoHtml = `
                 <div class="row">
                     <div class="col-6">
@@ -1119,6 +1117,27 @@ ${JSON.stringify(this.currentSchemaData.schema_info, null, 2)}
                                 ${info.connection_status || 'Unknown'}
                             </span>
                         </div>
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-6">
+                        <small class="text-muted">AI Provider</small>
+                        <div class="fw-bold">${llmInfo.provider}</div>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted">AI Status</small>
+                        <div>
+                            <span class="badge bg-${llmStatusColor}" title="${llmInfo.source ? 'Source: ' + llmInfo.source : ''}">
+                                ${llmInfo.status === 'configured' ? 'Active' : 
+                                  llmInfo.status === 'not_configured' ? 'Not Set' : 'Error'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <small class="text-muted">AI Model</small>
+                        <div class="fw-bold text-truncate" title="${llmInfo.model}">${llmInfo.model}</div>
                     </div>
                 </div>
                 <div class="mt-2">
@@ -1208,6 +1227,126 @@ ${JSON.stringify(this.currentSchemaData.schema_info, null, 2)}
             // Could implement dropdown here
             console.log('Suggestions:', matches);
         }, 300));
+    }
+
+    showEnhancedErrorMessage(data) {
+        /**
+         * Display enhanced error message with helpful query suggestions
+         */
+        const errorContainer = document.getElementById('queryResults') || document.querySelector('.query-container');
+        
+        let errorHtml = `
+            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h5 class="alert-heading">
+                            <i class="fas fa-lightbulb me-2"></i>Let's Try a Different Approach
+                        </h5>
+                        <p class="mb-3">${data.error || 'Unable to process your query'}</p>
+                        
+                        ${data.suggestions && data.suggestions.length > 0 ? `
+                            <div class="mb-3">
+                                ${data.suggestions.map(suggestion => `<p class="mb-2"><i class="fas fa-info-circle me-2 text-info"></i>${suggestion}</p>`).join('')}
+                            </div>
+                        ` : ''}
+                        
+                        ${data.helpful_queries && data.helpful_queries.length > 0 ? `
+                            <div class="mb-3">
+                                <h6 class="fw-bold mb-2">
+                                    <i class="fas fa-magic me-2"></i>Try These Examples:
+                                </h6>
+                                <div class="d-flex flex-wrap gap-2">
+                                    ${data.helpful_queries.map((query, index) => `
+                                        <button class="btn btn-outline-primary btn-sm helpful-query-btn" 
+                                                data-query="${query.replace(/"/g, '&quot;')}" 
+                                                onclick="queryInterface.useHelpfulQuery('${query.replace(/'/g, "\\'")}')">
+                                            <i class="fas fa-play me-1"></i>${query}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                        
+                        ${data.tips && data.tips.length > 0 ? `
+                            <div class="mt-3">
+                                <h6 class="fw-bold mb-2">
+                                    <i class="fas fa-tips me-2"></i>Query Tips:
+                                </h6>
+                                <ul class="mb-0">
+                                    ${data.tips.map(tip => `<li>${tip}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        
+                        ${data.details ? `
+                            <details class="mt-3">
+                                <summary class="text-muted">Technical Details</summary>
+                                <p class="mt-2 text-muted small">${data.details}</p>
+                            </details>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="bg-light rounded p-3">
+                            <h6 class="fw-bold mb-3">
+                                <i class="fas fa-database me-2"></i>Your Data Source
+                            </h6>
+                            <p class="mb-2">
+                                <strong>Name:</strong> ${data.data_source_name || 'Unknown'}
+                            </p>
+                            <div class="mt-3">
+                                <button class="btn btn-primary btn-sm w-100" onclick="queryInterface.resetQueryForm()">
+                                    <i class="fas fa-redo me-2"></i>Try New Query
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `;
+        
+        if (errorContainer) {
+            errorContainer.innerHTML = errorHtml;
+        } else {
+            // Fallback to simple alert
+            ConvaBI.showAlert('danger', data.error || 'Query failed');
+        }
+    }
+    
+    useHelpfulQuery(query) {
+        /**
+         * Use one of the suggested helpful queries
+         */
+        const queryInput = document.getElementById('naturalQueryInput');
+        if (queryInput) {
+            queryInput.value = query;
+            queryInput.focus();
+            
+            // Optionally auto-submit
+            ConvaBI.showAlert('info', 'Query filled in! Click "Ask" to run it.');
+        }
+    }
+    
+    resetQueryForm() {
+        /**
+         * Reset the query form to start fresh
+         */
+        const queryInput = document.getElementById('naturalQueryInput');
+        const resultsContainer = document.getElementById('queryResults');
+        
+        if (queryInput) {
+            queryInput.value = '';
+            queryInput.focus();
+        }
+        
+        if (resultsContainer) {
+            resultsContainer.innerHTML = '';
+        }
+        
+        this.hideProgressTracker();
+        ConvaBI.showAlert('success', 'Ready for a new query!');
     }
 }
 

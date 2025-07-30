@@ -1,0 +1,1159 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}ETL Schedules - ConvaBI{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'core:home' %}">Home</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'datasets:list' %}">Data Sources</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'datasets:etl_operations' %}">ETL Operations</a></li>
+                    <li class="breadcrumb-item active">ETL Schedules</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">
+                <i class="fas fa-clock text-primary me-2"></i>
+                ETL Schedules
+            </h1>
+            <p class="text-muted mb-0">Manage automated data refresh schedules and monitor execution status</p>
+        </div>
+        <div>
+            <button class="btn btn-primary" onclick="showCreateScheduleModal()">
+                <i class="fas fa-plus me-1"></i>New Schedule
+            </button>
+        </div>
+    </div>
+
+    {% if schedules %}
+        <!-- Schedules Summary Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <h3 id="totalSchedules">{{ schedules|length }}</h3>
+                        <p class="mb-0">Total Schedules</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <h3 id="activeSchedules">0</h3>
+                        <p class="mb-0">Active</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body text-center">
+                        <h3 id="runningSchedules">0</h3>
+                        <p class="mb-0">Running Now</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-danger text-white">
+                    <div class="card-body text-center">
+                        <h3 id="failedSchedules">0</h3>
+                        <p class="mb-0">Failed Recently</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schedules List -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-list me-2"></i>Scheduled ETL Jobs
+                        </h5>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-primary" onclick="refreshSchedules()">
+                                <i class="fas fa-sync-alt me-1"></i>Refresh
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning" onclick="checkOverdueJobs()">
+                                <i class="fas fa-clock me-1"></i>Check Overdue
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" onclick="showDiagnostics()">
+                                <i class="fas fa-stethoscope me-1"></i>Diagnostics
+                            </button>
+                            <div class="btn-group" role="group">
+                                <input type="radio" class="btn-check" name="statusFilter" id="filterAll" value="all" checked>
+                                <label class="btn btn-outline-secondary btn-sm" for="filterAll">All</label>
+                                
+                                <input type="radio" class="btn-check" name="statusFilter" id="filterActive" value="active">
+                                <label class="btn btn-outline-success btn-sm" for="filterActive">Active</label>
+                                
+                                <input type="radio" class="btn-check" name="statusFilter" id="filterInactive" value="inactive">
+                                <label class="btn btn-outline-warning btn-sm" for="filterInactive">Inactive</label>
+                                
+                                <input type="radio" class="btn-check" name="statusFilter" id="filterError" value="error">
+                                <label class="btn btn-outline-danger btn-sm" for="filterError">Error</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="schedulesTable">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Schedule Name</th>
+                                        <th>Frequency</th>
+                                        <th>Data Sources</th>
+                                        <th>Status</th>
+                                        <th>Last Run</th>
+                                        <th>Next Run</th>
+                                        <th>Success Rate</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="schedulesTableBody">
+                                    <!-- Schedule rows will be populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    {% else %}
+        <!-- Empty State -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body text-center py-5">
+                        <i class="fas fa-clock fa-4x text-muted mb-4"></i>
+                        <h3 class="text-muted">No ETL Schedules Yet</h3>
+                        <p class="text-muted mb-4">
+                            ETL schedules automate data refresh operations to keep your data sources up to date.
+                            Create your first schedule to automatically refresh data at regular intervals.
+                        </p>
+                        
+                        <div class="row justify-content-center mb-4">
+                            <div class="col-md-8">
+                                <div class="alert alert-info">
+                                    <h6><i class="fas fa-lightbulb me-2"></i>Getting Started with ETL Schedules</h6>
+                                    <ol class="mb-0 text-start">
+                                        <li>Select one or more data sources to refresh</li>
+                                        <li>Choose a schedule frequency (daily, weekly, etc.)</li>
+                                        <li>Configure timezone and specific time preferences</li>
+                                        <li>Set up error handling and notification preferences</li>
+                                        <li>Monitor execution status and success rates</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-center gap-3">
+                            <a href="{% url 'datasets:list' %}" class="btn btn-outline-primary">
+                                <i class="fas fa-database me-2"></i>View Data Sources
+                            </a>
+                            <button class="btn btn-primary" onclick="showCreateScheduleModal()">
+                                <i class="fas fa-plus me-2"></i>Create Schedule
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Schedule Details Modal -->
+<div class="modal fade" id="scheduleDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-clock me-2"></i>Schedule Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="scheduleDetailsContent">
+                    <!-- Schedule details will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="editScheduleBtn" onclick="showEditScheduleModal()">
+                    <i class="fas fa-edit me-1"></i>Edit
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create/Edit Schedule Modal -->
+<div class="modal fade" id="scheduleFormModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="scheduleFormTitle">
+                    <i class="fas fa-plus me-2"></i>Create New Schedule
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="scheduleForm">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="scheduleName" class="form-label">Schedule Name</label>
+                                <input type="text" class="form-control" id="scheduleName" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="scheduleType" class="form-label">Frequency</label>
+                                <select class="form-select" id="scheduleType" required>
+                                    <option value="15min">Every 15 minutes</option>
+                                    <option value="30min">Every 30 minutes</option>
+                                    <option value="hourly">Every hour</option>
+                                    <option value="daily" selected>Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="monthly">Monthly</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="scheduleDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="scheduleDescription" rows="2"></textarea>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="scheduleTimezone" class="form-label">Timezone</label>
+                                <select class="form-select" id="scheduleTimezone">
+                                    <option value="UTC" selected>UTC</option>
+                                    <option value="US/Eastern">Eastern Time (US)</option>
+                                    <option value="US/Central">Central Time (US)</option>
+                                    <option value="US/Mountain">Mountain Time (US)</option>
+                                    <option value="US/Pacific">Pacific Time (US)</option>
+                                    <option value="Europe/London">London</option>
+                                    <option value="Europe/Paris">Paris</option>
+                                    <option value="Europe/Berlin">Berlin</option>
+                                    <option value="Asia/Tokyo">Tokyo</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4" id="hourField">
+                            <div class="mb-3">
+                                <label for="scheduleHour" class="form-label">Hour (0-23)</label>
+                                <input type="number" class="form-control" id="scheduleHour" min="0" max="23" value="2">
+                            </div>
+                        </div>
+                        <div class="col-md-4" id="minuteField">
+                            <div class="mb-3">
+                                <label for="scheduleMinute" class="form-label">Minute (0-59)</label>
+                                <input type="number" class="form-control" id="scheduleMinute" min="0" max="59" value="0">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Data Sources to Refresh</label>
+                        <div id="dataSourceSelection" class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                            <!-- Data sources will be loaded here -->
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="maxRetries" class="form-label">Max Retries</label>
+                                <input type="number" class="form-control" id="maxRetries" min="0" max="10" value="3">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="retryDelay" class="form-label">Retry Delay (minutes)</label>
+                                <input type="number" class="form-control" id="retryDelay" min="1" max="60" value="5">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="failureThreshold" class="form-label">Failure Threshold</label>
+                                <input type="number" class="form-control" id="failureThreshold" min="1" max="20" value="5">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="notifyOnFailure" checked>
+                            <label class="form-check-label" for="notifyOnFailure">
+                                Notify on failure
+                            </label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="notifyOnSuccess">
+                            <label class="form-check-label" for="notifyOnSuccess">
+                                Notify on success
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i>Save Schedule
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Run Logs Modal -->
+<div class="modal fade" id="runLogsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-history me-2"></i>Execution History
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="runLogsContent">
+                    <!-- Run logs will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Diagnostics Modal -->
+<div class="modal fade" id="diagnosticsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-stethoscope me-2"></i>ETL Scheduling Diagnostics
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="diagnosticsContent">
+                    <!-- Diagnostics will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-warning" onclick="checkOverdueJobs(); setTimeout(() => showDiagnostics(), 1000);">
+                    <i class="fas fa-play me-1"></i>Run Overdue & Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let schedules = [];
+let currentScheduleId = null;
+
+// Initialize page
+document.addEventListener('DOMContentLoaded', function() {
+    loadSchedules();
+    loadDataSources();
+    
+    // Set up filter change listeners
+    document.querySelectorAll('input[name="statusFilter"]').forEach(radio => {
+        radio.addEventListener('change', filterSchedules);
+    });
+    
+    // Set up schedule type change listener
+    document.getElementById('scheduleType').addEventListener('change', updateTimeFields);
+    
+    // Set up form submission
+    document.getElementById('scheduleForm').addEventListener('submit', handleScheduleFormSubmit);
+    
+    // Auto-check for overdue jobs on page load
+    setTimeout(() => {
+        checkOverdueJobs(true); // Pass true for silent mode
+    }, 2000);
+});
+
+// Load schedules from API
+function loadSchedules() {
+    fetch('/datasets/api/scheduled-etl-jobs/')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                schedules = data.jobs || [];
+                renderSchedules();
+                updateSummaryCards();
+            } else {
+                ConvaBI.showAlert('danger', 'Failed to load schedules');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading schedules:', error);
+            ConvaBI.showAlert('danger', 'Error loading schedules');
+        });
+}
+
+// Render schedules in table
+function renderSchedules() {
+    const tbody = document.getElementById('schedulesTableBody');
+    const filter = document.querySelector('input[name="statusFilter"]:checked').value;
+    
+    const filteredSchedules = schedules.filter(schedule => {
+        if (filter === 'all') return true;
+        return schedule.status === filter;
+    });
+    
+    tbody.innerHTML = filteredSchedules.map(schedule => `
+        <tr data-schedule-id="${schedule.id}" data-status="${schedule.status}">
+            <td>
+                <strong>${schedule.name}</strong>
+                <br>
+                <small class="text-muted">${schedule.description || 'No description'}</small>
+            </td>
+            <td>
+                <span class="badge bg-info">${schedule.schedule_display}</span>
+                <br>
+                <small class="text-muted">${schedule.timezone}</small>
+            </td>
+            <td>
+                <span class="badge bg-secondary">${schedule.data_sources_count} sources</span>
+            </td>
+            <td>
+                ${getStatusBadge(schedule.status, schedule.is_active)}
+            </td>
+            <td>
+                ${formatLastRun(schedule.last_run, schedule.last_run_status)}
+            </td>
+            <td>
+                ${formatNextRun(schedule.next_run)}
+            </td>
+            <td>
+                ${formatSuccessRate(schedule.success_rate)}
+            </td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick="viewScheduleDetails('${schedule.id}')" title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="btn btn-outline-info" onclick="viewRunLogs('${schedule.id}')" title="View Logs">
+                        <i class="fas fa-history"></i>
+                    </button>
+                    <button class="btn btn-outline-success" onclick="runScheduleNow('${schedule.id}')" title="Run Now">
+                        <i class="fas fa-play"></i>
+                    </button>
+                    <button class="btn btn-outline-warning" onclick="toggleSchedule('${schedule.id}', ${!schedule.is_active})" 
+                            title="${schedule.is_active ? 'Disable' : 'Enable'}">
+                        <i class="fas fa-${schedule.is_active ? 'pause' : 'play'}"></i>
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="deleteSchedule('${schedule.id}')" title="Delete">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// Helper functions for formatting
+function getStatusBadge(status, isActive) {
+    if (!isActive) {
+        return '<span class="badge bg-secondary"><i class="fas fa-pause me-1"></i>Inactive</span>';
+    }
+    
+    switch(status) {
+        case 'active':
+            return '<span class="badge bg-success"><i class="fas fa-check me-1"></i>Active</span>';
+        case 'error':
+            return '<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>Error</span>';
+        case 'paused':
+            return '<span class="badge bg-warning"><i class="fas fa-pause me-1"></i>Paused</span>';
+        default:
+            return `<span class="badge bg-secondary">${status}</span>`;
+    }
+}
+
+function formatLastRun(lastRun, lastRunStatus) {
+    if (!lastRun) return '<span class="text-muted">Never run</span>';
+    
+    const date = new Date(lastRun);
+    const statusColor = lastRunStatus === 'success' ? 'success' : 'danger';
+    
+    return `
+        ${date.toLocaleDateString()} ${date.toLocaleTimeString()}
+        <br>
+        <span class="badge bg-${statusColor}">${lastRunStatus || 'unknown'}</span>
+    `;
+}
+
+function formatNextRun(nextRun) {
+    if (!nextRun) return '<span class="text-muted">Not scheduled</span>';
+    
+    const date = new Date(nextRun);
+    const now = new Date();
+    const diff = date - now;
+    
+    if (diff < 0) {
+        return '<span class="text-warning">Overdue</span>';
+    }
+    
+    return `
+        ${date.toLocaleDateString()} ${date.toLocaleTimeString()}
+        <br>
+        <small class="text-muted">${formatTimeUntil(diff)}</small>
+    `;
+}
+
+function formatSuccessRate(rate) {
+    if (rate === undefined || rate === null) return '<span class="text-muted">N/A</span>';
+    
+    const color = rate >= 90 ? 'success' : rate >= 70 ? 'warning' : 'danger';
+    return `<span class="badge bg-${color}">${rate}%</span>`;
+}
+
+function formatTimeUntil(milliseconds) {
+    const seconds = Math.floor(milliseconds / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `in ${days} day${days > 1 ? 's' : ''}`;
+    if (hours > 0) return `in ${hours} hour${hours > 1 ? 's' : ''}`;
+    if (minutes > 0) return `in ${minutes} minute${minutes > 1 ? 's' : ''}`;
+    return 'in less than a minute';
+}
+
+// Update summary cards
+function updateSummaryCards() {
+    const total = schedules.length;
+    const active = schedules.filter(s => s.is_active && s.status === 'active').length;
+    const running = schedules.filter(s => s.last_run_status === 'running').length;
+    const failed = schedules.filter(s => s.status === 'error' || s.last_run_status === 'failed').length;
+    
+    document.getElementById('totalSchedules').textContent = total;
+    document.getElementById('activeSchedules').textContent = active;
+    document.getElementById('runningSchedules').textContent = running;
+    document.getElementById('failedSchedules').textContent = failed;
+}
+
+// Filter schedules
+function filterSchedules() {
+    renderSchedules();
+}
+
+// Refresh schedules
+function refreshSchedules() {
+    loadSchedules();
+}
+
+// Schedule management functions
+function viewScheduleDetails(scheduleId) {
+    const schedule = schedules.find(s => s.id === scheduleId);
+    if (!schedule) return;
+    
+    currentScheduleId = scheduleId;
+    
+    const content = `
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Basic Information</h6>
+                <table class="table table-sm">
+                    <tr><td><strong>Name:</strong></td><td>${schedule.name}</td></tr>
+                    <tr><td><strong>Description:</strong></td><td>${schedule.description || 'No description'}</td></tr>
+                    <tr><td><strong>Frequency:</strong></td><td>${schedule.schedule_display}</td></tr>
+                    <tr><td><strong>Timezone:</strong></td><td>${schedule.timezone}</td></tr>
+                    <tr><td><strong>Status:</strong></td><td>${getStatusBadge(schedule.status, schedule.is_active)}</td></tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6>Execution Details</h6>
+                <table class="table table-sm">
+                    <tr><td><strong>Data Sources:</strong></td><td>${schedule.data_sources_count} sources</td></tr>
+                    <tr><td><strong>Last Run:</strong></td><td>${formatLastRun(schedule.last_run, schedule.last_run_status)}</td></tr>
+                    <tr><td><strong>Next Run:</strong></td><td>${formatNextRun(schedule.next_run)}</td></tr>
+                    <tr><td><strong>Success Rate:</strong></td><td>${formatSuccessRate(schedule.success_rate)}</td></tr>
+                    <tr><td><strong>Consecutive Failures:</strong></td><td>${schedule.consecutive_failures || 0}</td></tr>
+                </table>
+            </div>
+        </div>
+        
+        <div class="mt-4">
+            <h6>Recent Execution History</h6>
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Started</th>
+                            <th>Status</th>
+                            <th>Duration</th>
+                            <th>Records</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${schedule.recent_runs?.map(run => `
+                            <tr>
+                                <td>${new Date(run.started_at).toLocaleString()}</td>
+                                <td><span class="badge bg-${run.status === 'success' ? 'success' : 'danger'}">${run.status}</span></td>
+                                <td>${run.duration}</td>
+                                <td>${run.records_processed || 0}</td>
+                            </tr>
+                        `).join('') || '<tr><td colspan="4" class="text-muted">No recent runs</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('scheduleDetailsContent').innerHTML = content;
+    new bootstrap.Modal(document.getElementById('scheduleDetailsModal')).show();
+}
+
+function showCreateScheduleModal() {
+    currentScheduleId = null;
+    document.getElementById('scheduleFormTitle').innerHTML = '<i class="fas fa-plus me-2"></i>Create New Schedule';
+    document.getElementById('scheduleForm').reset();
+    updateTimeFields();
+    new bootstrap.Modal(document.getElementById('scheduleFormModal')).show();
+}
+
+function showEditScheduleModal() {
+    if (!currentScheduleId) return;
+    
+    const schedule = schedules.find(s => s.id === currentScheduleId);
+    if (!schedule) return;
+    
+    document.getElementById('scheduleFormTitle').innerHTML = '<i class="fas fa-edit me-2"></i>Edit Schedule';
+    
+    // Populate form with current schedule data
+    document.getElementById('scheduleName').value = schedule.name;
+    document.getElementById('scheduleDescription').value = schedule.description || '';
+    document.getElementById('scheduleType').value = schedule.schedule_type;
+    document.getElementById('scheduleTimezone').value = schedule.timezone;
+    document.getElementById('scheduleHour').value = schedule.hour || 2;
+    document.getElementById('scheduleMinute').value = schedule.minute || 0;
+    document.getElementById('maxRetries').value = schedule.max_retries || 3;
+    document.getElementById('retryDelay').value = schedule.retry_delay_minutes || 5;
+    document.getElementById('failureThreshold').value = schedule.failure_threshold || 5;
+    document.getElementById('notifyOnFailure').checked = schedule.notify_on_failure || false;
+    document.getElementById('notifyOnSuccess').checked = schedule.notify_on_success || false;
+    
+    updateTimeFields();
+    
+    // Hide the current modal and show the form modal
+    bootstrap.Modal.getInstance(document.getElementById('scheduleDetailsModal')).hide();
+    new bootstrap.Modal(document.getElementById('scheduleFormModal')).show();
+}
+
+function updateTimeFields() {
+    const scheduleType = document.getElementById('scheduleType').value;
+    const hourField = document.getElementById('hourField');
+    const minuteField = document.getElementById('minuteField');
+    
+    if (scheduleType === '15min' || scheduleType === '30min') {
+        hourField.style.display = 'none';
+        minuteField.style.display = 'none';
+    } else if (scheduleType === 'hourly') {
+        hourField.style.display = 'none';
+        minuteField.style.display = 'block';
+    } else {
+        hourField.style.display = 'block';
+        minuteField.style.display = 'block';
+    }
+}
+
+function handleScheduleFormSubmit(event) {
+    event.preventDefault();
+    
+    const formData = {
+        name: document.getElementById('scheduleName').value,
+        description: document.getElementById('scheduleDescription').value,
+        schedule_type: document.getElementById('scheduleType').value,
+        timezone: document.getElementById('scheduleTimezone').value,
+        hour: parseInt(document.getElementById('scheduleHour').value) || 2,
+        minute: parseInt(document.getElementById('scheduleMinute').value) || 0,
+        max_retries: parseInt(document.getElementById('maxRetries').value) || 3,
+        retry_delay_minutes: parseInt(document.getElementById('retryDelay').value) || 5,
+        failure_threshold: parseInt(document.getElementById('failureThreshold').value) || 5,
+        notify_on_failure: document.getElementById('notifyOnFailure').checked,
+        notify_on_success: document.getElementById('notifyOnSuccess').checked,
+        data_source_ids: getSelectedDataSources()
+    };
+    
+    const url = currentScheduleId 
+        ? `/datasets/api/scheduled-etl-jobs/${currentScheduleId}/`
+        : '/datasets/api/scheduled-etl-jobs/create/';
+    
+    const method = currentScheduleId ? 'PUT' : 'POST';
+    
+    fetch(url, {
+        method: method,
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': ConvaBI.getCsrfToken()
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            ConvaBI.showAlert('success', currentScheduleId ? 'Schedule updated successfully' : 'Schedule created successfully');
+            bootstrap.Modal.getInstance(document.getElementById('scheduleFormModal')).hide();
+            loadSchedules();
+        } else {
+            ConvaBI.showAlert('danger', data.error || 'Failed to save schedule');
+        }
+    })
+    .catch(error => {
+        console.error('Error saving schedule:', error);
+        ConvaBI.showAlert('danger', 'Error saving schedule');
+    });
+}
+
+function loadDataSources() {
+    fetch('/datasets/api/check-data-readiness/')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.sources) {
+                renderDataSourceSelection(data.sources);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading data sources:', error);
+        });
+}
+
+function renderDataSourceSelection(sources) {
+    const container = document.getElementById('dataSourceSelection');
+    container.innerHTML = sources.map(source => `
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" value="${source.id}" id="datasource_${source.id}">
+            <label class="form-check-label" for="datasource_${source.id}">
+                <strong>${source.name}</strong>
+                <br>
+                <small class="text-muted">${source.source_type} - ${source.status}</small>
+            </label>
+        </div>
+    `).join('');
+}
+
+function getSelectedDataSources() {
+    const checkboxes = document.querySelectorAll('#dataSourceSelection input[type="checkbox"]:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+function runScheduleNow(scheduleId) {
+    if (confirm('Are you sure you want to run this schedule now?')) {
+        fetch(`/datasets/api/scheduled-etl-jobs/${scheduleId}/run/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': ConvaBI.getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                ConvaBI.showAlert('success', 'Schedule triggered successfully');
+                setTimeout(() => loadSchedules(), 2000);
+            } else {
+                ConvaBI.showAlert('danger', data.error || 'Failed to trigger schedule');
+            }
+        })
+        .catch(error => {
+            console.error('Error triggering schedule:', error);
+            ConvaBI.showAlert('danger', 'Error triggering schedule');
+        });
+    }
+}
+
+function toggleSchedule(scheduleId, enable) {
+    const action = enable ? 'enable' : 'disable';
+    const url = `/datasets/api/scheduled-etl-jobs/${scheduleId}/${action}/`;
+    
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': ConvaBI.getCsrfToken()
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            ConvaBI.showAlert('success', `Schedule ${action}d successfully`);
+            loadSchedules();
+        } else {
+            ConvaBI.showAlert('danger', data.error || `Failed to ${action} schedule`);
+        }
+    })
+    .catch(error => {
+        console.error(`Error ${action}ing schedule:`, error);
+        ConvaBI.showAlert('danger', `Error ${action}ing schedule`);
+    });
+}
+
+function deleteSchedule(scheduleId) {
+    if (confirm('Are you sure you want to delete this schedule? This action cannot be undone.')) {
+        fetch(`/datasets/api/scheduled-etl-jobs/${scheduleId}/delete/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': ConvaBI.getCsrfToken()
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                ConvaBI.showAlert('success', 'Schedule deleted successfully');
+                loadSchedules();
+            } else {
+                ConvaBI.showAlert('danger', data.error || 'Failed to delete schedule');
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting schedule:', error);
+            ConvaBI.showAlert('danger', 'Error deleting schedule');
+        });
+    }
+}
+
+function viewRunLogs(scheduleId) {
+    fetch(`/datasets/api/scheduled-etl-jobs/${scheduleId}/logs/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderRunLogs(data.logs);
+                new bootstrap.Modal(document.getElementById('runLogsModal')).show();
+            } else {
+                ConvaBI.showAlert('danger', 'Failed to load run logs');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading run logs:', error);
+            ConvaBI.showAlert('danger', 'Error loading run logs');
+        });
+}
+
+function renderRunLogs(logs) {
+    const content = `
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Started</th>
+                        <th>Status</th>
+                        <th>Duration</th>
+                        <th>Records Processed</th>
+                        <th>Sources</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${logs.map(log => `
+                        <tr>
+                            <td>${new Date(log.started_at).toLocaleString()}</td>
+                            <td><span class="badge bg-${getLogStatusColor(log.status)}">${log.status}</span></td>
+                            <td>${log.duration_formatted || 'N/A'}</td>
+                            <td>${log.total_records_processed || 0}</td>
+                            <td>
+                                <small>
+                                    Processed: ${log.data_sources_processed?.length || 0}<br>
+                                    Failed: ${log.data_sources_failed?.length || 0}
+                                </small>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" onclick="viewLogDetails('${log.id}')">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    document.getElementById('runLogsContent').innerHTML = content;
+}
+
+function getLogStatusColor(status) {
+    switch(status) {
+        case 'success': return 'success';
+        case 'failed': return 'danger';
+        case 'running': return 'warning';
+        case 'cancelled': return 'secondary';
+        default: return 'info';
+    }
+}
+
+function viewLogDetails(logId) {
+    // This would show detailed log information
+    ConvaBI.showAlert('info', 'Detailed log view coming soon');
+}
+
+function showDiagnostics() {
+    ConvaBI.showAlert('info', 'Loading diagnostics...');
+    
+    fetch('/datasets/api/etl-diagnostics/')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            renderDiagnostics(data.diagnostics);
+            new bootstrap.Modal(document.getElementById('diagnosticsModal')).show();
+        } else {
+            ConvaBI.showAlert('danger', 'Failed to load diagnostics');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading diagnostics:', error);
+        ConvaBI.showAlert('danger', 'Error loading diagnostics');
+    });
+}
+
+function renderDiagnostics(diagnostics) {
+    const systemInfo = diagnostics.system_info;
+    const celeryBeat = diagnostics.celery_beat;
+    const jobsSummary = diagnostics.jobs_summary;
+    const overdueJobs = diagnostics.overdue_jobs;
+    const recentLogs = diagnostics.recent_logs;
+    const recommendations = diagnostics.recommendations;
+    
+    const content = `
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-info-circle me-2"></i>System Information</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm">
+                            <tr><td><strong>Current Time:</strong></td><td>${new Date(systemInfo.current_time).toLocaleString()}</td></tr>
+                            <tr><td><strong>Django Version:</strong></td><td>${systemInfo.django_version}</td></tr>
+                            <tr><td><strong>Use Redis:</strong></td><td>${systemInfo.use_redis ? 'Yes' : 'No'}</td></tr>
+                            <tr><td><strong>Celery Always Eager:</strong></td><td>${systemInfo.celery_always_eager ? 'Yes' : 'No'}</td></tr>
+                            <tr><td><strong>Timezone:</strong></td><td>${systemInfo.time_zone}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-cogs me-2"></i>Celery Beat Status</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm">
+                            <tr><td><strong>Available:</strong></td><td>${celeryBeat.available ? '<span class="text-success">Yes</span>' : '<span class="text-danger">No</span>'}</td></tr>
+                            <tr><td><strong>Total Periodic Tasks:</strong></td><td>${celeryBeat.total_periodic_tasks}</td></tr>
+                            <tr><td><strong>ETL Periodic Tasks:</strong></td><td>${celeryBeat.etl_periodic_tasks}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-3">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-chart-bar me-2"></i>Jobs Summary</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3 text-center">
+                                <div class="border rounded p-3">
+                                    <h4 class="text-primary">${jobsSummary.total_jobs}</h4>
+                                    <small>Total Jobs</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="border rounded p-3">
+                                    <h4 class="text-success">${jobsSummary.active_jobs}</h4>
+                                    <small>Active</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="border rounded p-3">
+                                    <h4 class="text-warning">${jobsSummary.inactive_jobs}</h4>
+                                    <small>Inactive</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <div class="border rounded p-3">
+                                    <h4 class="text-danger">${jobsSummary.overdue_jobs}</h4>
+                                    <small>Overdue</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        ${recommendations.length > 0 ? `
+        <div class="row mt-3">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-exclamation-triangle me-2"></i>Recommendations</h6>
+                    </div>
+                    <div class="card-body">
+                        ${recommendations.map(rec => `
+                            <div class="alert alert-${rec.type === 'error' ? 'danger' : rec.type === 'warning' ? 'warning' : 'info'} mb-2">
+                                <strong>${rec.message}</strong><br>
+                                <small>${rec.action}</small>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+        ` : ''}
+        
+        ${overdueJobs.length > 0 ? `
+        <div class="row mt-3">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-clock me-2"></i>Overdue Jobs Details</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Job Name</th>
+                                        <th>Next Run Was</th>
+                                        <th>Overdue (minutes)</th>
+                                        <th>Can Run</th>
+                                        <th>Failures</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${overdueJobs.map(job => `
+                                        <tr>
+                                            <td>${job.name}</td>
+                                            <td>${job.next_run ? new Date(job.next_run).toLocaleString() : 'Never'}</td>
+                                            <td>${job.overdue_minutes || 'N/A'}</td>
+                                            <td>${job.can_run_now ? '<span class="text-success">Yes</span>' : '<span class="text-danger">No</span>'}</td>
+                                            <td>${job.consecutive_failures}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        ` : ''}
+        
+        ${recentLogs.length > 0 ? `
+        <div class="row mt-3">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-history me-2"></i>Recent Execution Logs (Last 24 hours)</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Job Name</th>
+                                        <th>Status</th>
+                                        <th>Started At</th>
+                                        <th>Triggered By</th>
+                                        <th>Duration</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${recentLogs.map(log => `
+                                        <tr>
+                                            <td>${log.job_name}</td>
+                                            <td><span class="badge bg-${log.status === 'success' ? 'success' : log.status === 'failed' ? 'danger' : 'info'}">${log.status}</span></td>
+                                            <td>${new Date(log.started_at).toLocaleString()}</td>
+                                            <td>${log.triggered_by}</td>
+                                            <td>${log.execution_time ? `${log.execution_time}s` : 'N/A'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        ` : ''}
+    `;
+    
+    document.getElementById('diagnosticsContent').innerHTML = content;
+}
+
+// Check for overdue jobs and run them automatically
+function checkOverdueJobs(silent = false) {
+    if (!silent) {
+        ConvaBI.showAlert('info', 'Checking for overdue jobs...');
+    }
+    
+    fetch('/datasets/api/check-overdue-jobs/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': ConvaBI.getCsrfToken()
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (data.executed_count > 0) {
+                const message = `Executed ${data.executed_count} overdue job${data.executed_count > 1 ? 's' : ''}`;
+                ConvaBI.showAlert('success', message);
+                
+                // Show details of executed jobs
+                if (data.executed_jobs && data.executed_jobs.length > 0) {
+                    console.log('Executed jobs:', data.executed_jobs);
+                }
+                
+                // Refresh the schedules list to show updated status
+                setTimeout(() => loadSchedules(), 1000);
+            } else if (!silent) {
+                ConvaBI.showAlert('info', 'No overdue jobs found');
+            }
+            
+            if (data.failed_count > 0) {
+                ConvaBI.showAlert('warning', `${data.failed_count} job${data.failed_count > 1 ? 's' : ''} failed to execute`);
+            }
+        } else {
+            if (!silent) {
+                ConvaBI.showAlert('danger', data.error || 'Failed to check overdue jobs');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error checking overdue jobs:', error);
+        if (!silent) {
+            ConvaBI.showAlert('danger', 'Error checking overdue jobs');
+        }
+    });
+}
+
+// Auto-refresh every 30 seconds and check for overdue jobs
+setInterval(() => {
+    loadSchedules();
+    checkOverdueJobs(true); // Silent check for overdue jobs
+}, 30000);
+</script>
+{% endblock %} 

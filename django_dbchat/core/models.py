@@ -10,20 +10,115 @@ User = get_user_model()
 
 
 class LLMConfig(models.Model):
-    """LLM configuration model (singleton pattern)."""
+    """LLM configuration model with enhanced support for Llama 3.2b."""
     
     PROVIDER_CHOICES = [
         ('openai', 'OpenAI'),
         ('azure', 'Azure OpenAI'),
-        ('local', 'Local LLM'),
+        ('local', 'Local LLM (Ollama)'),
         ('anthropic', 'Anthropic'),
         ('google', 'Google AI'),
     ]
     
+    # Optimized model configurations for specific use cases
+    OLLAMA_MODEL_CONFIGS = {
+        'llama3.2:3b': {
+            'display_name': 'Llama 3.2 3B (Recommended)',
+            'temperature': 0.1,
+            'max_tokens': 2000,  # Increased from 1000
+            'system_prompt': '''You are an expert SQL query generator. Convert natural language questions into accurate SQL queries using the provided database schema.
+
+CRITICAL RULES:
+1. Generate ONLY valid SQL queries - no explanations, no markdown formatting, no introductory text
+2. Use exact table and column names from the schema provided
+3. Use proper DuckDB SQL syntax with double quotes for identifiers when needed
+4. Include appropriate WHERE clauses, JOINs, and aggregations as requested
+5. If the question is ambiguous, respond with EXACTLY "CLARIFICATION_NEEDED: [specific question]" - DO NOT prefix with SELECT or any SQL keywords
+6. Always end SQL queries with semicolon
+7. Use LIMIT clause when asking for "top N" results
+8. Do not include any explanatory text before or after the SQL query
+9. AVOID self-joins unless absolutely necessary - prefer simple GROUP BY for aggregations
+10. For year-over-year comparisons, use simple WHERE conditions with YEAR() function
+
+RESPONSE FORMAT:
+- For clear queries: Return ONLY the SQL query, nothing else
+- For unclear queries: EXACTLY "CLARIFICATION_NEEDED: [specific question]" (no SELECT prefix)
+
+Examples:
+- Input: "Show all users" -> Output: SELECT * FROM users;
+- Input: "Top 5 customers by sales" -> Output: SELECT customer_name, SUM(sales_amount) FROM sales GROUP BY customer_name ORDER BY SUM(sales_amount) DESC LIMIT 5;
+- Input: "Compare sales in 2015 and 2016" -> Output: SELECT YEAR(order_date) as year, SUM(sales) as total_sales FROM sales WHERE YEAR(order_date) IN (2015, 2016) GROUP BY YEAR(order_date) ORDER BY year;
+- Input: "best customers" -> Output: CLARIFICATION_NEEDED: How would you like to rank customers? By total sales amount, number of orders, or profit?
+
+IMPORTANT: 
+- Never prefix clarification requests with SQL keywords like SELECT
+- Avoid complex self-joins when simple GROUP BY will work
+- Use YEAR(), MONTH() functions for temporal comparisons instead of joins
+
+Focus on accuracy and simple, efficient SQL patterns.''',
+            'context_window': 8192,
+            'stop_sequences': ['Human:', 'Assistant:', 'User:', 'Here is', 'Here\'s', 'The query', 'This query', 'SQL:', '\n\nExplanation', '\n\nNote:', 'Question:']  # Updated stop sequences
+        },
+        'llama3.2:1b': {
+            'display_name': 'Llama 3.2 1B (Faster)',
+            'temperature': 0.05,
+            'max_tokens': 1500,  # Increased from 500
+            'system_prompt': '''You are a SQL generator. Convert questions to SQL queries using the schema provided.
+
+RULES:
+1. Return ONLY SQL queries - no explanations
+2. Use exact column names from schema
+3. Use proper DuckDB syntax
+4. Add LIMIT for "top N" requests
+5. If unclear, respond EXACTLY "CLARIFICATION_NEEDED: [question]" - NO SELECT prefix
+6. No introductory text
+7. Avoid self-joins - use simple GROUP BY for aggregations
+8. Use YEAR() function for year comparisons
+
+Generate accurate, simple SQL only or ask for clarification.''',
+            'context_window': 4096,
+            'stop_sequences': ['Human:', 'User:', 'Here is', 'The query', 'Question:']  # Updated stop sequences
+        }
+    }
+    
+    # OpenAI model configurations
+    OPENAI_MODEL_CONFIGS = {
+        'gpt-4o': {
+            'display_name': 'GPT-4o (Most Capable)',
+            'temperature': 0.1,
+            'max_tokens': 1000,
+            'system_prompt': '''You are an expert SQL query generator. Your job is to convert natural language questions into accurate SQL queries based on the provided database schema.
+
+Rules:
+1. Generate only valid SQL queries
+2. Use exact table and column names as provided in the schema
+3. Include appropriate WHERE clauses, JOINs, and aggregations as needed
+4. Use proper SQL syntax for the database type
+5. If the query is ambiguous, ask for clarification by starting your response with "CLARIFICATION_NEEDED:"
+6. Otherwise, respond with only the SQL query, no explanations
+
+Focus on creating efficient, accurate queries that directly answer the user's question.'''
+        },
+        'gpt-3.5-turbo': {
+            'display_name': 'GPT-3.5 Turbo (Balanced)',
+            'temperature': 0.1,
+            'max_tokens': 1000,
+            'system_prompt': '''You are an expert SQL query generator. Convert natural language questions into accurate SQL queries.
+
+Rules:
+1. Generate ONLY valid SQL queries
+2. Use exact table and column names from the schema
+3. Include appropriate WHERE clauses, JOINs, and aggregations
+4. If the question is ambiguous, start your response with "CLARIFICATION_NEEDED:"
+5. Otherwise, respond with ONLY the SQL query, no explanations
+6. Use proper SQL syntax for the specified database type'''
+        }
+    }
+    
     provider = models.CharField(
         max_length=50, 
         choices=PROVIDER_CHOICES, 
-        default='openai',
+        default='local',
         help_text='LLM provider to use'
     )
     api_key = models.TextField(
@@ -32,11 +127,12 @@ class LLMConfig(models.Model):
     )
     base_url = models.URLField(
         blank=True, 
+        default='http://localhost:11434',
         help_text='Base URL for API calls (for custom endpoints)'
     )
     model_name = models.CharField(
         max_length=100, 
-        default='gpt-3.5-turbo',
+        default='llama3.2:3b',
         help_text='Name of the model to use'
     )
     temperature = models.FloatField(
@@ -83,11 +179,120 @@ class LLMConfig(models.Model):
         """Get the active LLM configuration."""
         return cls.objects.filter(is_active=True).first()
     
+    @classmethod
+    def create_llama32_config(cls, model_variant='llama3.2:3b', user=None):
+        """Create an optimized configuration for Llama 3.2b models."""
+        config_template = cls.OLLAMA_MODEL_CONFIGS.get(model_variant)
+        if not config_template:
+            raise ValueError(f"Unsupported Llama 3.2 variant: {model_variant}")
+        
+        # Deactivate existing configs
+        cls.objects.filter(is_active=True).update(is_active=False)
+        
+        # Create new config
+        config = cls.objects.create(
+            provider='local',
+            base_url='http://localhost:11434',
+            model_name=model_variant,
+            temperature=config_template['temperature'],
+            max_tokens=config_template['max_tokens'],
+            system_prompt=config_template['system_prompt'],
+            additional_settings={
+                'context_window': config_template['context_window'],
+                'stop_sequences': config_template['stop_sequences'],
+                'provider_type': 'ollama',
+                'timeout': 60,
+                'top_p': 0.9
+            },
+            is_active=True,
+            updated_by=user
+        )
+        
+        return config
+    
+    @classmethod
+    def create_openai_config(cls, model_name='gpt-4o', api_key=None, user=None):
+        """Create an optimized configuration for OpenAI models."""
+        config_template = cls.OPENAI_MODEL_CONFIGS.get(model_name)
+        if not config_template:
+            raise ValueError(f"Unsupported OpenAI model: {model_name}")
+        
+        # Deactivate existing configs
+        cls.objects.filter(is_active=True).update(is_active=False)
+        
+        # Create new config
+        config = cls.objects.create(
+            provider='openai',
+            api_key=api_key,
+            model_name=model_name,
+            temperature=config_template['temperature'],
+            max_tokens=config_template['max_tokens'],
+            system_prompt=config_template['system_prompt'],
+            additional_settings={
+                'timeout': 60,
+                'provider_type': 'openai'
+            },
+            is_active=True,
+            updated_by=user
+        )
+        
+        return config
+    
+    def get_model_config(self):
+        """Get the optimized configuration for the current model."""
+        if self.provider == 'local':
+            return self.OLLAMA_MODEL_CONFIGS.get(self.model_name, {})
+        elif self.provider == 'openai':
+            return self.OPENAI_MODEL_CONFIGS.get(self.model_name, {})
+        return {}
+    
+    def is_llama32_model(self):
+        """Check if this is a Llama 3.2 model configuration."""
+        return self.provider == 'local' and self.model_name.startswith('llama3.2:')
+    
+    def get_optimized_prompt(self, user_query, schema_info):
+        """Get an optimized prompt for the current model type."""
+        if self.is_llama32_model():
+            # Llama 3.2 optimized prompt format - NO SELECT prefix to avoid clarification issues
+            return f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+{self.system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Database Schema:
+{schema_info}
+
+Question: {user_query}
+
+Response:<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+"""
+        else:
+            # Standard prompt format for other models
+            return f"""System: {self.system_prompt}
+
+Database Schema:
+{schema_info}
+
+User Query: {user_query}
+
+SQL Query:"""
+    
     def save(self, *args, **kwargs):
         # Ensure only one active configuration
         if self.is_active:
             cls = self.__class__
             cls.objects.filter(is_active=True).update(is_active=False)
+        
+        # Auto-configure based on model selection
+        if self.provider == 'local' and self.model_name in self.OLLAMA_MODEL_CONFIGS:
+            config = self.OLLAMA_MODEL_CONFIGS[self.model_name]
+            if not self.system_prompt or self.system_prompt == 'You are a helpful assistant that converts natural language to SQL queries.':
+                self.system_prompt = config['system_prompt']
+            if self.temperature == 0.1:  # Default value
+                self.temperature = config['temperature']
+            if self.max_tokens == 1000:  # Default value
+                self.max_tokens = config['max_tokens']
+        
         super().save(*args, **kwargs)
 
 

@@ -96,6 +96,7 @@ class DashboardItem(models.Model):
     chart_type = models.CharField(max_length=50, choices=CHART_TYPES, blank=True)
     query = models.TextField(blank=True, help_text='SQL query for data')
     chart_config = models.JSONField(default=dict, help_text='Chart configuration')
+    result_data = models.JSONField(default=list, blank=True, help_text='Cached query result data')
     position_x = models.IntegerField(default=0, help_text='X position in grid')
     position_y = models.IntegerField(default=0, help_text='Y position in grid')
     width = models.IntegerField(default=4, help_text='Width in grid units')

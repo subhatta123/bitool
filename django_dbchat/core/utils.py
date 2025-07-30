@@ -372,6 +372,59 @@ def safe_json_dumps(data: Any, default: str = '{}') -> str:
         return default
 
 
+
+
+def safe_nan_to_json(value):
+    """
+    Safely convert values that might be NaN to JSON-serializable format
+    """
+    if pd.isna(value):
+        return None
+    elif isinstance(value, (np.floating, float)) and (np.isnan(value) or np.isinf(value)):
+        return None
+    elif isinstance(value, (np.integer, int)) and np.isnan(value):
+        return None
+    elif value is np.nan:
+        return None
+    else:
+        return value
+
+def clean_data_for_json(data):
+    """
+    Recursively clean data structure to remove NaN values for JSON serialization
+    """
+    if isinstance(data, dict):
+        return {k: clean_data_for_json(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [clean_data_for_json(item) for item in data]
+    elif isinstance(data, tuple):
+        return tuple(clean_data_for_json(item) for item in data)
+    elif pd.isna(data):
+        return None
+    elif isinstance(data, (np.floating, float)) and (np.isnan(data) or np.isinf(data)):
+        return None
+    elif isinstance(data, (np.integer, int)) and np.isnan(data):
+        return None
+    elif data is np.nan:
+        return None
+    else:
+        return data
+
+def enhanced_make_json_serializable(obj: Any) -> Any:
+    """
+    Enhanced version of make_json_serializable with proper NaN handling
+    """
+    try:
+        # First clean NaN values
+        cleaned_obj = clean_data_for_json(obj)
+        
+        # Then apply existing serialization logic
+        return make_json_serializable(cleaned_obj)
+    except Exception as e:
+        logger.error(f"Enhanced JSON serialization failed: {e}")
+        return {'error': f'Serialization failed: {str(e)}'}
+
+
 def make_json_serializable(obj: Any) -> Any:
     """
     Recursively convert numpy arrays and other non-serializable objects to JSON-compatible types.

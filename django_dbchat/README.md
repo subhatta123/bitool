@@ -141,7 +141,7 @@ ConvaBI supports multiple LLM providers:
 
 #### Ollama Configuration
 1. Install and run Ollama locally
-2. Pull SQL-focused models: `ollama pull sqlcoder:15b`
+2. Pull Llama 3.2b models: `ollama pull llama3.2:3b`
 3. Configure in Admin → LLM Configuration
 
 ### Email Configuration

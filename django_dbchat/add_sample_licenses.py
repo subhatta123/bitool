@@ -24,7 +24,7 @@ def add_sample_licenses():
     # Sample license codes generated earlier
     sample_licenses = [
         {
-            'license_code': '6C5551C138AE46A3',
+            'license_code': '6C5551C138AF46A3',
             'license_type': 'creator',
             'description': 'Sample creator license #1'
         },
@@ -110,7 +110,7 @@ if __name__ == '__main__':
         add_sample_licenses()
         print("\n✅ Sample licenses added successfully!")
         print("\nCreator License Codes (full access):")
-        print("   - 6C5551C138AE46A3")
+        print("   - 6C5551C138AF46A3")
         print("   - 06FC2245689FADC8") 
         print("   - FF1DBB98524B2EC6")
         print("   - 39E85429B0330590")

@@ -41,6 +41,10 @@ app.conf.update(
         'services.email_service.send_dashboard_email_task': {'queue': 'emails'},
         'services.email_service.send_dashboard_share_notification': {'queue': 'emails'},
         'services.integration_service.execute_etl_operation': {'queue': 'data_processing'},
+        'services.scheduled_etl_service.execute_scheduled_etl_job': {'queue': 'scheduled_etl'},
+        'services.scheduled_etl_service.schedule_pending_etl_jobs': {'queue': 'scheduling'},
+        'services.scheduled_etl_service.cleanup_old_etl_logs': {'queue': 'maintenance'},
+        'services.scheduled_etl_service.update_etl_job_schedules': {'queue': 'scheduling'},
         'celery_app.send_dashboard_email_task': {'queue': 'emails'},
         'celery_app.run_etl_operation_task': {'queue': 'data_processing'},
         'celery_app.export_dashboard_task': {'queue': 'exports'},
@@ -57,6 +61,10 @@ app.conf.update(
         'celery_app.run_etl_operation_task': {'rate_limit': '5/m'},
         'celery_app.update_semantic_layer_task': {'rate_limit': '3/m'},
         'celery_app.refresh_data_sources_task': {'rate_limit': '10/h'},
+        'services.scheduled_etl_service.execute_scheduled_etl_job': {'rate_limit': '10/m'},
+        'services.scheduled_etl_service.schedule_pending_etl_jobs': {'rate_limit': '1/m'},
+        'services.scheduled_etl_service.cleanup_old_etl_logs': {'rate_limit': '1/h'},
+        'services.scheduled_etl_service.update_etl_job_schedules': {'rate_limit': '1/h'},
     },
     
     # Periodic task schedule
@@ -77,6 +85,19 @@ app.conf.update(
             'task': 'celery_app.update_semantic_layer_task',
             'schedule': crontab(hour=1, minute=0, day_of_week=1),  # Weekly on Monday at 1 AM
         },
+        # ETL Scheduling tasks
+        'schedule-pending-etl-jobs': {
+            'task': 'services.scheduled_etl_service.schedule_pending_etl_jobs',
+            'schedule': crontab(minute='*/5'),  # Every 5 minutes
+        },
+        'cleanup-old-etl-logs': {
+            'task': 'services.scheduled_etl_service.cleanup_old_etl_logs',
+            'schedule': crontab(hour=4, minute=0),  # Daily at 4 AM
+        },
+        'update-etl-job-schedules': {
+            'task': 'services.scheduled_etl_service.update_etl_job_schedules',
+            'schedule': crontab(hour=0, minute=30),  # Daily at 12:30 AM
+        },
     },
 )
 
@@ -91,53 +112,132 @@ def debug_task(self):
 @app.task(bind=True, max_retries=3)
 def send_dashboard_email_task(self, dashboard_id, recipient_email, email_config=None):
     """
-    Celery task for sending dashboard emails with attachments
+    Enhanced Celery task for sending dashboard emails with PDF/PNG attachments
     """
     try:
         from services.email_service import EmailService
+        from services.dashboard_export_service import DashboardExportService
         from dashboards.models import Dashboard
         
         # Get dashboard
         dashboard = Dashboard.objects.get(id=dashboard_id)
         email_service = EmailService()
+        export_service = DashboardExportService()
         
-        # Generate dashboard content
-        dashboard_items = list(dashboard.dashboard_items.all().values())
-        dashboard_html = email_service.generate_dashboard_html(dashboard_items, dashboard.name)
+        # Get export format from config
+        export_format = email_config.get('export_format', 'png') if email_config else 'png'
+        dashboard_name = email_config.get('dashboard_name', dashboard.name) if email_config else dashboard.name
+        frequency = email_config.get('frequency', 'once') if email_config else 'once'
         
-        # Prepare attachments
+        # Generate dashboard export using enhanced Puppeteer service
         attachments = []
         
-        # HTML attachment
-        attachments.append({
-            'content': dashboard_html,
-            'filename': dashboard.name.replace(' ', '_'),
-            'type': 'html'
-        })
+        if export_format == 'pdf':
+            try:
+                # Try Puppeteer service first for fully rendered charts
+                from services.puppeteer_export_service import PuppeteerExportService
+                puppeteer_service = PuppeteerExportService()
+                
+                pdf_content, pdf_filename = puppeteer_service.export_dashboard_pdf(dashboard)
+                attachments.append({
+                    'content': pdf_content,
+                    'filename': pdf_filename,
+                    'type': 'pdf'
+                })
+                logger.info(f"Generated Puppeteer PDF export: {pdf_filename}")
+            except Exception as e:
+                logger.warning(f"Puppeteer PDF export failed, using fallback: {e}")
+                try:
+                    # Fallback to static export service
+                    pdf_content, pdf_filename = export_service.export_dashboard_pdf(dashboard)
+                    attachments.append({
+                        'content': pdf_content,
+                        'filename': pdf_filename,
+                        'type': 'pdf'
+                    })
+                    logger.info(f"Generated fallback PDF export: {pdf_filename}")
+                except Exception as fallback_error:
+                    logger.warning(f"Fallback PDF export also failed: {fallback_error}")
+                    # Final fallback to HTML
+                    html_content = export_service.generate_email_html(dashboard, 'pdf')
+                    attachments.append({
+                        'content': html_content,
+                        'filename': f"dashboard_{dashboard_name.replace(' ', '_')}.html",
+                        'type': 'html'
+                    })
+        else:
+            try:
+                # Try Puppeteer service first for fully rendered charts
+                from services.puppeteer_export_service import PuppeteerExportService
+                puppeteer_service = PuppeteerExportService()
+                
+                png_content, png_filename = puppeteer_service.export_dashboard_png(dashboard)
+                attachments.append({
+                    'content': png_content,
+                    'filename': png_filename,
+                    'type': 'png'
+                })
+                logger.info(f"Generated Puppeteer PNG export: {png_filename}")
+            except Exception as e:
+                logger.warning(f"Puppeteer PNG export failed, using fallback: {e}")
+                try:
+                    # Fallback to static export service
+                    png_content, png_filename = export_service.export_dashboard_png(dashboard)
+                    attachments.append({
+                        'content': png_content,
+                        'filename': png_filename,
+                        'type': 'png'
+                    })
+                    logger.info(f"Generated fallback PNG export: {png_filename}")
+                except Exception as fallback_error:
+                    logger.warning(f"Fallback PNG export also failed: {fallback_error}")
+                    # Final fallback to HTML
+                    html_content = export_service.generate_email_html(dashboard, 'png')
+                    attachments.append({
+                        'content': html_content,
+                        'filename': f"dashboard_{dashboard_name.replace(' ', '_')}.html",
+                        'type': 'html'
+                    })
         
-        # Image attachment
-        image_bytes = email_service.generate_dashboard_image(dashboard_html, dashboard.name)
-        if image_bytes:
-            attachments.append({
-                'content': image_bytes,
-                'filename': dashboard.name.replace(' ', '_'),
-                'type': 'png'
-            })
+        # Generate email content
+        email_html = export_service.generate_email_html(dashboard, export_format)
+        
+        # Prepare email
+        if frequency == 'once':
+            subject = f"Dashboard Report: {dashboard_name}"
+            body = email_html
+        else:
+            subject = f"Scheduled Dashboard Report ({frequency.title()}): {dashboard_name}"
+            body = f"""
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                <h4 style="margin: 0; color: #856404;">📅 Scheduled Report</h4>
+                <p style="margin: 5px 0 0 0; color: #856404;">This is your {frequency} scheduled dashboard report.</p>
+            </div>
+            {email_html}
+            """
         
         # Send email
-        subject = f"Dashboard Report: {dashboard.name}"
-        body = f"<p>Your dashboard <strong>{dashboard.name}</strong> is attached.</p>"
-        
         success = email_service.send_dashboard_email(
             recipient_email=recipient_email,
             subject=subject,
             body=body,
             attachments=attachments,
-            schedule_info={'is_scheduled_job': True}
+            schedule_info={
+                'is_scheduled_job': frequency != 'once',
+                'frequency': frequency,
+                'export_format': export_format
+            }
         )
         
         logger.info(f"Dashboard email sent successfully to {recipient_email}: {success}")
-        return {'success': success, 'dashboard_id': dashboard_id, 'recipient': recipient_email}
+        return {
+            'success': success, 
+            'dashboard_id': dashboard_id, 
+            'recipient': recipient_email,
+            'export_format': export_format,
+            'frequency': frequency,
+            'attachments_count': len(attachments)
+        }
         
     except Exception as exc:
         logger.error(f"Failed to send dashboard email: {exc}")

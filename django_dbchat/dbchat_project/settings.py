@@ -17,9 +17,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-change-me-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
+DEBUG = True  # Force DEBUG=True for Docker development
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+# Allow all hosts in Docker environment, specific hosts in production
+if os.environ.get('POSTGRES_HOST'):
+    # Running in Docker - allow all hosts
+    ALLOWED_HOSTS = ['*']
+else:
+    # Local development - restrict to localhost
+    ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # Application definition
 INSTALLED_APPS = [
@@ -33,6 +39,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'channels',
     'corsheaders',
+    'django_celery_beat',
     'accounts',
     'core',
     'datasets',
@@ -76,23 +83,28 @@ WSGI_APPLICATION = 'dbchat_project.wsgi.application'
 ASGI_APPLICATION = 'dbchat_project.asgi.application'
 
 # Database
-# Use SQLite for development when PostgreSQL is not available
-if os.environ.get('USE_SQLITE', 'True').lower() == 'true':
+# Use PostgreSQL in Docker, fallback to SQLite for local development
+if os.environ.get('POSTGRES_HOST'):
+    # Running in Docker with PostgreSQL
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': 'convabi',
+            'USER': 'convabiuser', 
+            'PASSWORD': 'convabipass',
+            'HOST': os.environ.get('POSTGRES_HOST', 'postgres'),
+            'PORT': '5432',
+            'OPTIONS': {
+                'connect_timeout': 30,
+            },
+        }
+    }
+else:
+    # Local development with SQLite
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('DATABASE_NAME', 'dbchat'),
-            'USER': os.environ.get('DATABASE_USER', 'postgres'),
-            'PASSWORD': os.environ.get('DATABASE_PASSWORD', ''),
-            'HOST': os.environ.get('DATABASE_HOST', 'localhost'),
-            'PORT': os.environ.get('DATABASE_PORT', '5432'),
         }
     }
 
@@ -224,14 +236,17 @@ else:
         },
     }
 
-# Celery Configuration - Enhanced for production
-if os.environ.get('USE_REDIS', 'False').lower() == 'true':
+# Celery Configuration - Enhanced for development without Redis
+USE_REDIS = os.environ.get('USE_REDIS', 'False').lower() == 'true'
+
+if USE_REDIS:
+    # Production settings with Redis
     CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/3')
     CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/3')
     CELERY_TASK_ALWAYS_EAGER = False
     CELERY_TASK_EAGER_PROPAGATES = False
 else:
-    # Development settings
+    # Development settings - Execute tasks synchronously without Redis
     CELERY_TASK_ALWAYS_EAGER = True
     CELERY_TASK_EAGER_PROPAGATES = True
     CELERY_BROKER_URL = 'memory://'
@@ -247,6 +262,11 @@ CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
+
+# CRITICAL: Disable broker connection health checks in development
+if not USE_REDIS:
+    CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = False
+    CELERY_BROKER_CONNECTION_RETRY = False
 
 # Database connection pooling - Configure if needed
 # DATABASE_CONNECTION_POOL_SIZE can be used by connection managers
@@ -266,6 +286,9 @@ if not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_BROWSER_XSS_FILTER = True
     X_FRAME_OPTIONS = 'DENY'
+else:
+    # Development settings - no HTTPS redirect
+    SECURE_SSL_REDIRECT = False
 
 # CSRF Configuration
 CSRF_COOKIE_SECURE = not DEBUG
@@ -279,18 +302,28 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024  # 100MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024  # 100MB
 MAX_CSV_FILE_SIZE = 500 * 1024 * 1024  # 500MB for CSV files
 
-# LLM Configuration - Enhanced
+# LLM Configuration - Enhanced for Llama 3.2b
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
-OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-3.5-turbo')
-LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'openai')  # 'openai' or 'ollama'
+OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o')  # Updated to GPT-4o as default
+LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'local')  # 'openai' or 'local' (default to local Llama 3.2b)
 LLM_MAX_RETRIES = int(os.environ.get('LLM_MAX_RETRIES', '3'))
 LLM_CACHE_TIMEOUT = int(os.environ.get('LLM_CACHE_TIMEOUT', '1800'))  # 30 minutes
 LLM_REQUEST_TIMEOUT = int(os.environ.get('LLM_REQUEST_TIMEOUT', '60'))
 
-# Ollama Configuration
+# Ollama Configuration - Enhanced for Llama 3.2b
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
-OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'sqlcoder')
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'llama3.2:3b')  # Updated to Llama 3.2 3B as default
+
+# Llama 3.2b specific optimizations
+LLAMA32_TEMPERATURE = float(os.environ.get('LLAMA32_TEMPERATURE', '0.1'))
+LLAMA32_MAX_TOKENS = int(os.environ.get('LLAMA32_MAX_TOKENS', '1000'))
+LLAMA32_CONTEXT_WINDOW = int(os.environ.get('LLAMA32_CONTEXT_WINDOW', '8192'))
+LLAMA32_TOP_P = float(os.environ.get('LLAMA32_TOP_P', '0.9'))
+
+# OpenAI specific optimizations
+OPENAI_TEMPERATURE = float(os.environ.get('OPENAI_TEMPERATURE', '0.1'))
+OPENAI_MAX_TOKENS = int(os.environ.get('OPENAI_MAX_TOKENS', '1000'))
 
 # DuckDB Configuration - Fixed to use proper file path
 DUCKDB_PATH = os.environ.get('DUCKDB_PATH', 'data')
@@ -436,3 +469,24 @@ os.makedirs(BASE_DIR / 'logs', exist_ok=True)
 # ADDED: Fallback mode for when LLM is not available
 LLM_FALLBACK_MODE = os.environ.get('LLM_FALLBACK_MODE', 'True').lower() == 'true'
 ENABLE_BASIC_CHARTS = os.environ.get('ENABLE_BASIC_CHARTS', 'True').lower() == 'true' 
+
+# Celery Configuration
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/1')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/2')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_RESULT_EXPIRES = 3600  # 1 hour
+
+# Import Celery app
+from .celery import app as celery_app
+
+__all__ = ('celery_app',) 

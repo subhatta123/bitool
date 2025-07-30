@@ -29,7 +29,7 @@ from rest_framework.decorators import api_view
 from django.views.decorators.csrf import csrf_exempt
 import numpy as np
 
-from .models import DataSource, ETLOperation, DataIntegrationJob
+from .models import DataSource, ETLOperation, DataIntegrationJob, ScheduledETLJob, ETLJobRunLog
 from services.data_service import DataService
 from services.integration_service import DataIntegrationService
 from services.semantic_service import SemanticService
@@ -1271,6 +1271,110 @@ class SemanticLayerView(View):
                 
                 logger.info(f"[SUCCESS] Semantic layer created: {columns_created} columns")
                 
+                # Step 6: Generate business metrics automatically
+                try:
+                    from services.business_metrics_service import BusinessMetricsService
+                    business_service = BusinessMetricsService()
+                    
+                    logger.info(f"[BUSINESS_METRICS] Generating business metrics for table: {semantic_table.name}")
+                    
+                    # Generate automatic business metrics for this table
+                    metrics_created = 0
+                    
+                    # Get user for metric creation
+                    current_user_id = 1  # Default system user
+                    if hasattr(data_source, 'created_by') and data_source.created_by:
+                        current_user_id = data_source.created_by.id
+                    
+                    # Basic count metric
+                    count_metric_name = f"{semantic_table.name}_record_count"
+                    success, message, metric_id = business_service.create_custom_metric(
+                        name=count_metric_name,
+                        display_name=f"Total {semantic_table.display_name} Records",
+                        description=f"Total number of records in {semantic_table.display_name}",
+                        metric_type="simple",
+                        calculation="COUNT(*)",
+                        unit="count",
+                        base_table_id=str(semantic_table.id),
+                        user_id=current_user_id
+                    )
+                    
+                    if success:
+                        metrics_created += 1
+                        logger.info(f"[METRIC] Created count metric: {count_metric_name}")
+                    
+                    # Generate metrics for numeric columns (measures)
+                    numeric_columns = SemanticColumn.objects.filter(
+                        semantic_table=semantic_table,
+                        data_type__in=['integer', 'float'],
+                        is_measure=True
+                    )
+                    
+                    for col in numeric_columns:
+                        # Sum metric
+                        sum_metric_name = f"{semantic_table.name}_{col.name}_total"
+                        success, message, metric_id = business_service.create_custom_metric(
+                            name=sum_metric_name,
+                            display_name=f"Total {col.display_name}",
+                            description=f"Sum of all {col.display_name} values",
+                            metric_type="simple",
+                            calculation=f"SUM({col.name})",
+                            unit="units",
+                            base_table_id=str(semantic_table.id),
+                            user_id=current_user_id
+                        )
+                        
+                        if success:
+                            metrics_created += 1
+                            logger.info(f"[METRIC] Created sum metric: {sum_metric_name}")
+                        
+                        # Average metric
+                        avg_metric_name = f"{semantic_table.name}_{col.name}_average"
+                        success, message, metric_id = business_service.create_custom_metric(
+                            name=avg_metric_name,
+                            display_name=f"Average {col.display_name}",
+                            description=f"Average value of {col.display_name}",
+                            metric_type="simple",
+                            calculation=f"AVG({col.name})",
+                            unit="units",
+                            base_table_id=str(semantic_table.id),
+                            user_id=current_user_id
+                        )
+                        
+                        if success:
+                            metrics_created += 1
+                            logger.info(f"[METRIC] Created average metric: {avg_metric_name}")
+                    
+                    # Generate distinct count for identifier columns
+                    identifier_columns = SemanticColumn.objects.filter(
+                        semantic_table=semantic_table,
+                        semantic_type='identifier'
+                    )
+                    
+                    for col in identifier_columns:
+                        distinct_metric_name = f"{semantic_table.name}_{col.name}_unique_count"
+                        success, message, metric_id = business_service.create_custom_metric(
+                            name=distinct_metric_name,
+                            display_name=f"Unique {col.display_name} Count",
+                            description=f"Number of unique {col.display_name} values",
+                            metric_type="simple",
+                            calculation=f"COUNT(DISTINCT {col.name})",
+                            unit="count",
+                            base_table_id=str(semantic_table.id),
+                            user_id=current_user_id
+                        )
+                        
+                        if success:
+                            metrics_created += 1
+                            logger.info(f"[METRIC] Created distinct count metric: {distinct_metric_name}")
+                    
+                    logger.info(f"[SUCCESS] Created {metrics_created} business metrics for {semantic_table.display_name}")
+                    
+                except Exception as metrics_error:
+                    logger.error(f"[WARNING] Failed to generate business metrics: {metrics_error}")
+                    # Continue execution - metrics are not critical for semantic layer
+                    metrics_created = 0
+                
                 return {
                     'success': True,
                     'message': f'Semantic layer generated successfully! Created {columns_created} columns using {"transformed" if table_name and "source_" in table_name else "original"} data.',
@@ -1872,6 +1976,21 @@ def etl_operations(request):
     return render(request, 'datasets/etl_operations.html', context)
 
 
+@login_required
+@creator_required
+def etl_schedules(request):
+    """View and manage ETL schedules"""
+    schedules = ScheduledETLJob.objects.filter(
+        created_by=request.user
+    ).order_by('-created_at')
+    
+    context = {
+        'schedules': schedules
+    }
+    
+    return render(request, 'datasets/etl_schedules.html', context)
+
+
 def _safe_sample_values_standalone(series, max_samples=5):
     """Safely extract sample values that can be JSON serialized - standalone version"""
     try:
@@ -1920,6 +2039,14 @@ def data_source_create_database(request):
                 'password': request.POST.get('password')
             }
             
+            # Add selected tables to connection info
+            selected_tables_json = request.POST.get('selected_tables', '[]')
+            try:
+                selected_tables = json.loads(selected_tables_json)
+                connection_params['tables'] = selected_tables
+            except (json.JSONDecodeError, TypeError):
+                return JsonResponse({'error': 'Invalid table selection data'}, status=400)
+            
             # Test connection
             data_service = DataService()
             success, message = data_service.test_connection(connection_params)
@@ -1927,21 +2054,50 @@ def data_source_create_database(request):
             if not success:
                 return JsonResponse({'error': f'Connection test failed: {message}'}, status=400)
             
+            # Initialize workflow status for database connections
+            # Database connections provide immediate data access, so mark data_loaded as True
+            workflow_status = WorkflowManager.get_default_status()
+            workflow_status = WorkflowManager.update_workflow_step(
+                workflow_status, 
+                WorkflowStep.DATA_LOADED, 
+                True
+            )
+            
             # Create data source
             data_source = DataSource.objects.create(
                 name=name,
                 source_type=source_type,
                 connection_info=connection_params,
                 created_by=request.user,
-                status='active'
+                status='active',
+                workflow_status=workflow_status
             )
             
-            # Add to integration system
+            # Generate schema info immediately after creation
+            try:
+                data_service = DataService()
+                schema_info = data_service.get_schema_info(connection_params, data_source)
+                if schema_info and not schema_info.get('error'):
+                    data_source.schema_info = schema_info
+                    data_source.save()
+                    logger.info(f"Successfully generated schema for {data_source.name}")
+                else:
+                    logger.warning(f"Failed to generate schema for {data_source.name}: {schema_info.get('error', 'Unknown error')}")
+            except Exception as e:
+                logger.error(f"Error generating schema for {data_source.name}: {e}")
+            
+            # Add to integration system with table information
             integration_service = DataIntegrationService()
+            
+            # Enhance connection params with data source info for integration
+            integration_params = connection_params.copy()
+            integration_params['data_source_id'] = str(data_source.id)
+            integration_params['data_source_name'] = name
+            
             integration_service.add_data_source(
                 name=name,
                 source_type=source_type,
-                connection_info=connection_params,
+                connection_info=integration_params,
                 user_id=request.user.pk or 0
             )
             
@@ -2026,12 +2182,22 @@ def data_source_create_api(request):
                         'error': f'Data source "{name}" already exists. Please choose a different name.'
                     }, status=400)
                 
+                # Initialize workflow status for API connections
+                # API connections provide immediate data access, so mark data_loaded as True
+                workflow_status = WorkflowManager.get_default_status()
+                workflow_status = WorkflowManager.update_workflow_step(
+                    workflow_status, 
+                    WorkflowStep.DATA_LOADED, 
+                    True
+                )
+                
                 data_source = DataSource.objects.create(
                     name=name,
                     source_type='api',
                     connection_info=connection_info,
                     created_by=request.user,
-                    status='active'
+                    status='active',
+                    workflow_status=workflow_status
                 )
                 
                 # Process with integration system using existing DataSource
@@ -2616,6 +2782,10 @@ def _generate_schema_from_universal_loader(data_source):
         from services.universal_data_loader import universal_data_loader
         import pandas as pd
         
+        logger.info(f"Attempting to load data for schema generation using universal loader for {data_source.name}")
+        logger.info(f"Data source type: {data_source.source_type}")
+        logger.info(f"Connection info keys: {list(data_source.connection_info.keys()) if data_source.connection_info else 'None'}")
+        
         # Load data using universal loader
         success, df, message = universal_data_loader.load_data_for_transformation(data_source)
         
@@ -2625,6 +2795,8 @@ def _generate_schema_from_universal_loader(data_source):
         
         schema = {}
         row_count = len(df)
+        
+        logger.info(f"Successfully loaded {row_count} rows for schema generation")
         
         for col in df.columns:
             col_data = df[col]
@@ -2663,11 +2835,13 @@ def _generate_schema_from_universal_loader(data_source):
         }
         data_source.save()
         
-        logger.info(f"Generated schema from {data_source.source_type} source for {data_source.name}: {len(schema)} columns, {row_count} rows")
+        logger.info(f"Generated schema from universal loader for {data_source.name}: {len(schema)} columns, {row_count} rows")
         return schema
         
     except Exception as e:
-        logger.error(f"Error generating schema from {data_source.source_type} source: {e}")
+        logger.error(f"Error generating schema from universal loader for {data_source.name}: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return {}
 
 
@@ -4479,6 +4653,7 @@ def create_data_source_from_etl_result(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+@csrf_exempt
 @login_required
 def analyze_csv_structure(request):
     """Analyze CSV structure and provide parsing recommendations"""
@@ -4548,6 +4723,7 @@ def analyze_csv_structure(request):
     return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
+@csrf_exempt
 @login_required
 def preview_csv_parsing(request):
     """Preview how CSV will be parsed with given options"""
@@ -4592,6 +4768,7 @@ def preview_csv_parsing(request):
     return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
+@csrf_exempt
 @login_required
 def upload_csv_with_enhanced_options(request):
     """Upload CSV with enhanced parsing options"""
@@ -5149,6 +5326,992 @@ def regenerate_business_metrics_api(request):
             
         except Exception as e:
             logger.error(f"Error regenerating business metrics: {e}")
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+@csrf_exempt
+@login_required
+@creator_required
+def get_next_workflow_step(request, pk):
+    """Get the next workflow step for a data source"""
+    try:
+        data_source = get_object_or_404(DataSource, pk=pk, created_by=request.user)
+        
+        workflow_status = data_source.workflow_status or {}
+        
+        # Determine next step based on current workflow state
+        if not workflow_status.get('etl_completed', False):
+            next_step = {
+                'step': 'etl',
+                'title': 'ETL Processing',
+                'description': 'Process and transform your data',
+                'url': reverse('datasets:integration')
+            }
+        elif not workflow_status.get('semantics_completed', False):
+            next_step = {
+                'step': 'semantics',
+                'title': 'Semantic Layer',
+                'description': 'Generate business-friendly metadata',
+                'url': reverse('datasets:semantic_detail', kwargs={'pk': pk})
+            }
+        elif not workflow_status.get('query_enabled', False):
+            next_step = {
+                'step': 'query',
+                'title': 'Query Testing',
+                'description': 'Test your data with natural language queries',
+                'url': reverse('core:query') + f'?data_source_id={pk}'
+            }
+        else:
+            next_step = {
+                'step': 'dashboard',
+                'title': 'Create Dashboard',
+                'description': 'Build visualizations and dashboards',
+                'url': reverse('dashboards:create')
+            }
+        
+        return JsonResponse({
+            'success': True,
+            'next_step': next_step,
+            'workflow_status': workflow_status
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting next workflow step for {pk}: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ETL Scheduling Views
+
+@login_required
+@creator_required
+def scheduled_etl_jobs_list(request):
+    """List all scheduled ETL jobs for the current user."""
+    try:
+        # Get user's scheduled ETL jobs
+        jobs = ScheduledETLJob.objects.filter(
+            created_by=request.user
+        ).order_by('-created_at')
+        
+        jobs_data = []
+        for job in jobs:
+            # Get recent run logs
+            recent_runs = job.run_logs.order_by('-started_at')[:5]
+            
+            # Calculate success rate
+            if recent_runs:
+                successful_runs = sum(1 for run in recent_runs if run.status == 'success')
+                success_rate = (successful_runs / len(recent_runs)) * 100
+            else:
+                success_rate = 0
+            
+            job_data = {
+                'id': str(job.id),
+                'name': job.name,
+                'description': job.description,
+                'schedule_type': job.schedule_type,
+                'schedule_display': job.get_schedule_type_display(),
+                'timezone': job.timezone,
+                'is_active': job.is_active,
+                'status': job.status,
+                'last_run': job.last_run.isoformat() if job.last_run else None,
+                'next_run': job.next_run.isoformat() if job.next_run else None,
+                'last_run_status': job.last_run_status,
+                'consecutive_failures': job.consecutive_failures,
+                'success_rate': round(success_rate, 1),
+                'data_sources_count': job.data_sources.count(),
+                'recent_runs': [
+                    {
+                        'id': str(run.id),
+                        'status': run.status,
+                        'started_at': run.started_at.isoformat(),
+                        'duration': run.duration_formatted(),
+                        'records_processed': run.total_records_processed
+                    }
+                    for run in recent_runs
+                ]
+            }
+            jobs_data.append(job_data)
+        
+        return JsonResponse({
+            'success': True,
+            'jobs': jobs_data,
+            'total_count': len(jobs_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error listing scheduled ETL jobs: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required
+@creator_required
+def create_scheduled_etl_job(request):
+    """Create a new scheduled ETL job."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        
+        # Validate required fields
+        name = data.get('name', '').strip()
+        if not name:
+            return JsonResponse({'error': 'Job name is required'}, status=400)
+        
+        schedule_type = data.get('schedule_type', 'daily')
+        if schedule_type not in dict(ScheduledETLJob.SCHEDULE_TYPE_CHOICES):
+            return JsonResponse({'error': 'Invalid schedule type'}, status=400)
+        
+        data_source_ids = data.get('data_source_ids', [])
+        if not data_source_ids:
+            return JsonResponse({'error': 'At least one data source is required'}, status=400)
+        
+        # Validate data sources belong to user
+        data_sources = DataSource.objects.filter(
+            id__in=data_source_ids,
+            created_by=request.user,
+            status='active'
+        )
+        
+        if data_sources.count() != len(data_source_ids):
+            return JsonResponse({'error': 'One or more data sources not found or not accessible'}, status=400)
+        
+        # Create the scheduled job
+        job = ScheduledETLJob.objects.create(
+            name=name,
+            description=data.get('description', ''),
+            schedule_type=schedule_type,
+            timezone=data.get('timezone', 'UTC'),
+            hour=data.get('hour', 2),
+            minute=data.get('minute', 0),
+            day_of_week=data.get('day_of_week'),
+            day_of_month=data.get('day_of_month'),
+            max_retries=data.get('max_retries', 3),
+            retry_delay_minutes=data.get('retry_delay_minutes', 5),
+            failure_threshold=data.get('failure_threshold', 5),
+            etl_config=data.get('etl_config', {}),
+            notify_on_success=data.get('notify_on_success', False),
+            notify_on_failure=data.get('notify_on_failure', True),
+            notification_emails=data.get('notification_emails', []),
+            created_by=request.user
+        )
+        
+        # Add data sources
+        job.data_sources.set(data_sources)
+        
+        # Calculate initial next run time
+        job.update_next_run()
+        
+        logger.info(f"Created scheduled ETL job: {job.name} by {request.user.username}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Scheduled ETL job created successfully',
+            'job': {
+                'id': str(job.id),
+                'name': job.name,
+                'schedule_type': job.schedule_type,
+                'next_run': job.next_run.isoformat() if job.next_run else None
+            }
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        logger.error(f"Error creating scheduled ETL job: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+@creator_required  
+def scheduled_etl_job_detail(request, job_id):
+    """Get details of a specific scheduled ETL job."""
+    try:
+        job = get_object_or_404(ScheduledETLJob, id=job_id, created_by=request.user)
+        
+        # Get schedule status from manager
+        from services.etl_schedule_manager import etl_schedule_manager
+        schedule_status = etl_schedule_manager.get_schedule_status(job)
+        
+        # Get recent run logs
+        recent_runs = job.run_logs.order_by('-started_at')[:20]
+        
+        # Calculate statistics
+        total_runs = job.run_logs.count()
+        if total_runs > 0:
+            successful_runs = job.run_logs.filter(status='success').count()
+            failed_runs = job.run_logs.filter(status='failed').count()
+            success_rate = (successful_runs / total_runs) * 100
+        else:
+            successful_runs = failed_runs = 0
+            success_rate = 0
+        
+        job_data = {
+            'id': str(job.id),
+            'name': job.name,
+            'description': job.description,
+            'schedule_type': job.schedule_type,
+            'schedule_display': job.get_schedule_type_display(),
+            'timezone': job.timezone,
+            'hour': job.hour,
+            'minute': job.minute,
+            'day_of_week': job.day_of_week,
+            'day_of_month': job.day_of_month,
+            'is_active': job.is_active,
+            'status': job.status,
+            'last_run': job.last_run.isoformat() if job.last_run else None,
+            'next_run': job.next_run.isoformat() if job.next_run else None,
+            'last_run_status': job.last_run_status,
+            'consecutive_failures': job.consecutive_failures,
+            'max_retries': job.max_retries,
+            'retry_delay_minutes': job.retry_delay_minutes,
+            'failure_threshold': job.failure_threshold,
+            'etl_config': job.etl_config,
+            'notify_on_success': job.notify_on_success,
+            'notify_on_failure': job.notify_on_failure,
+            'notification_emails': job.notification_emails,
+            'created_at': job.created_at.isoformat(),
+            'updated_at': job.updated_at.isoformat(),
+            'data_sources': [
+                {
+                    'id': str(ds.id),
+                    'name': ds.name,
+                    'source_type': ds.source_type,
+                    'status': ds.status,
+                    'last_synced': ds.last_synced.isoformat() if ds.last_synced else None
+                }
+                for ds in job.data_sources.all()
+            ],
+            'statistics': {
+                'total_runs': total_runs,
+                'successful_runs': successful_runs,
+                'failed_runs': failed_runs,
+                'success_rate': round(success_rate, 1)
+            },
+            'schedule_status': schedule_status,
+            'recent_runs': [
+                {
+                    'id': str(run.id),
+                    'status': run.status,
+                    'started_at': run.started_at.isoformat(),
+                    'completed_at': run.completed_at.isoformat() if run.completed_at else None,
+                    'duration': run.duration_formatted(),
+                    'total_records_processed': run.total_records_processed,
+                    'total_records_added': run.total_records_added,
+                    'total_records_updated': run.total_records_updated,
+                    'data_sources_processed': len(run.data_sources_processed),
+                    'data_sources_failed': len(run.data_sources_failed),
+                    'error_message': run.error_message,
+                    'triggered_by': run.triggered_by
+                }
+                for run in recent_runs
+            ]
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'job': job_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting scheduled ETL job detail for {job_id}: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required
+@creator_required
+def run_scheduled_etl_job_now(request, job_id):
+    """Trigger immediate execution of a scheduled ETL job."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        job = get_object_or_404(ScheduledETLJob, id=job_id, created_by=request.user)
+        
+        if not job.is_active:
+            return JsonResponse({'error': 'Job is not active'}, status=400)
+        
+        # FIXED: Check if Redis is available, otherwise execute directly
+        from django.conf import settings
+        
+        # Check if we should use Redis or execute directly
+        use_redis = getattr(settings, 'USE_REDIS', False)
+        always_eager = getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False)
+        
+        if use_redis and not always_eager:
+            # Use Celery with Redis (production mode)
+            from services.scheduled_etl_service import execute_scheduled_etl_job
+            task = execute_scheduled_etl_job.delay(str(job.id), 'manual_api')
+            task_id = task.id
+            logger.info(f"Queued ETL job {job.name} in Celery by {request.user.username}")
+        else:
+            # Execute directly without Redis (development mode)
+            from services.scheduled_etl_service import ScheduledETLService
+            etl_service = ScheduledETLService()
+            
+            # Execute immediately and synchronously
+            success = etl_service.execute_scheduled_job(str(job.id), triggered_by='manual_api')
+            task_id = 'immediate_execution'
+            
+            if success:
+                logger.info(f"Successfully executed ETL job {job.name} immediately by {request.user.username}")
+            else:
+                logger.error(f"Failed to execute ETL job {job.name} by {request.user.username}")
+                return JsonResponse({
+                    'error': f'ETL job "{job.name}" execution failed',
+                    'details': 'Check the job logs for more information'
+                }, status=500)
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'ETL job "{job.name}" has been triggered',
+            'task_id': task_id,
+            'execution_mode': 'immediate' if always_eager or not use_redis else 'queued'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error triggering ETL job {job_id}: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required
+@creator_required
+def enable_scheduled_etl_job(request, job_id):
+    """Enable a scheduled ETL job."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        job = get_object_or_404(ScheduledETLJob, id=job_id, created_by=request.user)
+        
+        job.is_active = True
+        job.status = 'active'
+        job.save()
+        
+        # Update next run time
+        job.update_next_run()
+        
+        logger.info(f"Enabled ETL job {job.name} by {request.user.username}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'ETL job "{job.name}" has been enabled',
+            'next_run': job.next_run.isoformat() if job.next_run else None
+        })
+        
+    except Exception as e:
+        logger.error(f"Error enabling ETL job {job_id}: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required
+@creator_required
+def disable_scheduled_etl_job(request, job_id):
+    """Disable a scheduled ETL job."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        job = get_object_or_404(ScheduledETLJob, id=job_id, created_by=request.user)
+        
+        job.is_active = False
+        job.status = 'inactive'
+        job.save()
+        
+        logger.info(f"Disabled ETL job {job.name} by {request.user.username}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'ETL job "{job.name}" has been disabled'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error disabling ETL job {job_id}: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@login_required
+@creator_required
+def delete_scheduled_etl_job(request, job_id):
+    """Delete a scheduled ETL job."""
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'DELETE method required'}, status=405)
+    
+    try:
+        job = get_object_or_404(ScheduledETLJob, id=job_id, created_by=request.user)
+        job_name = job.name
+        
+        # Delete the job (signals will handle Celery schedule cleanup)
+        job.delete()
+        
+        logger.info(f"Deleted ETL job {job_name} by {request.user.username}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'ETL job "{job_name}" has been deleted'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error deleting ETL job {job_id}: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+@creator_required
+def scheduled_etl_job_status(request, job_id):
+    """Get current status of a scheduled ETL job including running status."""
+    try:
+        job = get_object_or_404(ScheduledETLJob, id=job_id, created_by=request.user)
+        
+        # Get the most recent run log to determine current status
+        latest_run = job.run_logs.order_by('-started_at').first()
+        
+        # Determine current status
+        current_status = 'idle'  # Default if no runs
+        
+        if latest_run:
+            # Check if the job is currently running
+            if latest_run.status in ['started', 'running'] and not latest_run.completed_at:
+                current_status = 'running'
+            elif latest_run.status == 'success':
+                current_status = 'completed'
+            elif latest_run.status == 'failed':
+                current_status = 'failed'
+            else:
+                current_status = latest_run.status
+        
+        # Additional status information
+        status_data = {
+            'job_id': str(job.id),
+            'job_name': job.name,
+            'status': current_status,
+            'job_is_active': job.is_active,
+            'job_status': job.status,
+            'last_run_status': job.last_run_status,
+            'consecutive_failures': job.consecutive_failures,
+            'next_run': job.next_run.isoformat() if job.next_run else None,
+            'last_run': job.last_run.isoformat() if job.last_run else None,
+        }
+        
+        # Include latest run details if available
+        if latest_run:
+            status_data['latest_run'] = {
+                'id': str(latest_run.id),
+                'status': latest_run.status,
+                'started_at': latest_run.started_at.isoformat(),
+                'completed_at': latest_run.completed_at.isoformat() if latest_run.completed_at else None,
+                'duration_seconds': latest_run.execution_time_seconds,
+                'records_processed': latest_run.total_records_processed,
+                'error_message': latest_run.error_message
+            }
+        
+        return JsonResponse({
+            'success': True,
+            'status': current_status,
+            'details': status_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting ETL job status for {job_id}: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+@creator_required
+def scheduled_etl_job_logs(request, job_id):
+    """Get execution logs for a scheduled ETL job."""
+    try:
+        job = get_object_or_404(ScheduledETLJob, id=job_id, created_by=request.user)
+        
+        # Get logs with pagination
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 20))
+        status_filter = request.GET.get('status')
+        
+        logs_query = job.run_logs.all()
+        
+        if status_filter:
+            logs_query = logs_query.filter(status=status_filter)
+        
+        logs_query = logs_query.order_by('-started_at')
+        
+        # Calculate pagination
+        total_logs = logs_query.count()
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        
+        logs = logs_query[start_index:end_index]
+        
+        logs_data = []
+        for log in logs:
+            log_data = {
+                'id': str(log.id),
+                'status': log.status,
+                'started_at': log.started_at.isoformat(),
+                'completed_at': log.completed_at.isoformat() if log.completed_at else None,
+                'duration': log.duration_formatted(),
+                'total_records_processed': log.total_records_processed,
+                'total_records_added': log.total_records_added,
+                'total_records_updated': log.total_records_updated,
+                'total_records_deleted': log.total_records_deleted,
+                'data_sources_processed': log.data_sources_processed,
+                'data_sources_failed': log.data_sources_failed,
+                'data_sources_skipped': log.data_sources_skipped,
+                'error_message': log.error_message,
+                'triggered_by': log.triggered_by,
+                'retry_count': log.retry_count,
+                'celery_task_id': log.celery_task_id,
+                'worker_hostname': log.worker_hostname
+            }
+            logs_data.append(log_data)
+        
+        return JsonResponse({
+            'success': True,
+            'logs': logs_data,
+            'pagination': {
+                'current_page': page,
+                'page_size': page_size,
+                'total_logs': total_logs,
+                'total_pages': (total_logs + page_size - 1) // page_size,
+                'has_next': end_index < total_logs,
+                'has_previous': page > 1
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting ETL job logs for {job_id}: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def get_database_tables(request):
+    """Get list of tables from database after successful connection test"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            
+            connection_info = {
+                'type': data.get('source_type'),
+                'host': data.get('host'),
+                'port': int(data.get('port')),
+                'database': data.get('database'),
+                'username': data.get('username'),
+                'password': data.get('password')
+            }
+            
+            if data.get('schema'):
+                connection_info['schema'] = data.get('schema')
+            
+            # Get tables from database
+            data_service = DataService()
+            success, tables, message = data_service.get_database_tables(connection_info)
+            
+            return JsonResponse({
+                'success': success,
+                'tables': tables,
+                'message': message
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting database tables: {e}")
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+@csrf_exempt
+@login_required
+def check_and_run_overdue_jobs(request):
+    """
+    Check for overdue ETL jobs and execute them automatically.
+    This provides a fallback when Celery Beat isn't running.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        from django.utils import timezone
+        from django.conf import settings
+        
+        # Get all overdue jobs for this user
+        now = timezone.now()
+        overdue_jobs = ScheduledETLJob.objects.filter(
+            created_by=request.user,
+            is_active=True,
+            status='active',
+            next_run__lt=now
+        ).order_by('next_run')
+        
+        executed_jobs = []
+        failed_jobs = []
+        
+        for job in overdue_jobs:
+            try:
+                # Check if job can run (safety check)
+                if job.can_run_now():
+                    # Check if we should use Redis or execute directly
+                    use_redis = getattr(settings, 'USE_REDIS', False)
+                    always_eager = getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False)
+                    
+                    if use_redis and not always_eager:
+                        # Use Celery with Redis (production mode)
+                        from services.scheduled_etl_service import execute_scheduled_etl_job
+                        task = execute_scheduled_etl_job.delay(str(job.id), 'auto_catchup')
+                        executed_jobs.append({
+                            'id': str(job.id),
+                            'name': job.name,
+                            'method': 'celery',
+                            'task_id': task.id
+                        })
+                    else:
+                        # Execute directly without Redis (development mode)
+                        from services.scheduled_etl_service import ScheduledETLService
+                        
+                        with ScheduledETLService() as etl_service:
+                            success, message, results = etl_service.execute_scheduled_job(
+                                str(job.id), 
+                                'auto_catchup'
+                            )
+                        
+                        if success:
+                            executed_jobs.append({
+                                'id': str(job.id),
+                                'name': job.name,
+                                'method': 'direct',
+                                'message': message
+                            })
+                        else:
+                            failed_jobs.append({
+                                'id': str(job.id),
+                                'name': job.name,
+                                'error': message
+                            })
+                            
+                    logger.info(f"Auto-executed overdue ETL job: {job.name}")
+                    
+            except Exception as job_error:
+                logger.error(f"Error auto-executing job {job.name}: {job_error}")
+                failed_jobs.append({
+                    'id': str(job.id),
+                    'name': job.name,
+                    'error': str(job_error)
+                })
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Checked {overdue_jobs.count()} overdue jobs',
+            'executed_count': len(executed_jobs),
+            'failed_count': len(failed_jobs),
+            'executed_jobs': executed_jobs,
+            'failed_jobs': failed_jobs
+        })
+        
+    except Exception as e:
+        logger.error(f"Error checking overdue jobs: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+def etl_scheduling_diagnostics(request):
+    """
+    Diagnostic view to understand the ETL scheduling system status.
+    Helps identify why jobs might not be running automatically.
+    """
+    try:
+        from django.utils import timezone
+        from django.conf import settings
+        import django
+        
+        now = timezone.now()
+        
+        # Get basic system info
+        system_info = {
+            'current_time': now.isoformat(),
+            'django_version': django.get_version(),
+            'use_redis': getattr(settings, 'USE_REDIS', False),
+            'celery_always_eager': getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False),
+            'time_zone': settings.TIME_ZONE,
+        }
+        
+        # Check Celery Beat availability
+        try:
+            from django_celery_beat.models import PeriodicTask
+            celery_beat_available = True
+            periodic_tasks_count = PeriodicTask.objects.count()
+            etl_periodic_tasks = PeriodicTask.objects.filter(
+                task='services.scheduled_etl_service.execute_scheduled_etl_job'
+            ).count()
+        except ImportError:
+            celery_beat_available = False
+            periodic_tasks_count = 0
+            etl_periodic_tasks = 0
+        
+        # Get user's ETL jobs status
+        user_jobs = ScheduledETLJob.objects.filter(created_by=request.user)
+        
+        jobs_summary = {
+            'total_jobs': user_jobs.count(),
+            'active_jobs': user_jobs.filter(is_active=True, status='active').count(),
+            'inactive_jobs': user_jobs.filter(is_active=False).count(),
+            'error_jobs': user_jobs.filter(status='error').count(),
+            'overdue_jobs': user_jobs.filter(
+                is_active=True, 
+                status='active', 
+                next_run__lt=now
+            ).count()
+        }
+        
+        # Get overdue jobs details
+        overdue_jobs = user_jobs.filter(
+            is_active=True, 
+            status='active', 
+            next_run__lt=now
+        ).order_by('next_run')
+        
+        overdue_details = []
+        for job in overdue_jobs:
+            overdue_since = now - job.next_run if job.next_run else None
+            overdue_details.append({
+                'id': str(job.id),
+                'name': job.name,
+                'next_run': job.next_run.isoformat() if job.next_run else None,
+                'overdue_since': overdue_since.total_seconds() if overdue_since else None,
+                'overdue_minutes': round(overdue_since.total_seconds() / 60) if overdue_since else None,
+                'can_run_now': job.can_run_now(),
+                'consecutive_failures': job.consecutive_failures,
+                'celery_task_name': job.celery_task_name,
+                'celery_schedule_id': job.celery_schedule_id
+            })
+        
+        # Check for recent run logs
+        recent_logs = ETLJobRunLog.objects.filter(
+            scheduled_job__created_by=request.user,
+            started_at__gte=now - timezone.timedelta(hours=24)
+        ).order_by('-started_at')[:10]
+        
+        recent_logs_details = []
+        for log in recent_logs:
+            recent_logs_details.append({
+                'id': str(log.id),
+                'job_name': log.scheduled_job.name,
+                'status': log.status,
+                'started_at': log.started_at.isoformat(),
+                'triggered_by': log.triggered_by,
+                'execution_time': log.execution_time_seconds
+            })
+        
+        diagnostics = {
+            'system_info': system_info,
+            'celery_beat': {
+                'available': celery_beat_available,
+                'total_periodic_tasks': periodic_tasks_count,
+                'etl_periodic_tasks': etl_periodic_tasks
+            },
+            'jobs_summary': jobs_summary,
+            'overdue_jobs': overdue_details,
+            'recent_logs': recent_logs_details,
+            'recommendations': []
+        }
+        
+        # Add recommendations based on findings
+        if not celery_beat_available:
+            diagnostics['recommendations'].append({
+                'type': 'warning',
+                'message': 'django-celery-beat is not installed. ETL scheduling may not work automatically.',
+                'action': 'Install django-celery-beat or use the manual "Check Overdue" button.'
+            })
+        
+        if jobs_summary['overdue_jobs'] > 0:
+            diagnostics['recommendations'].append({
+                'type': 'error',
+                'message': f"{jobs_summary['overdue_jobs']} job(s) are overdue and not executing automatically.",
+                'action': 'Use the "Check Overdue" button to run them manually, or check if Celery Beat is running.'
+            })
+        
+        if system_info['celery_always_eager']:
+            diagnostics['recommendations'].append({
+                'type': 'info',
+                'message': 'Celery is in development mode (always eager). Jobs will not run automatically.',
+                'action': 'This is normal for development. Use "Check Overdue" button or set up Redis for production.'
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'diagnostics': diagnostics
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in ETL diagnostics: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def validate_business_metric_formula(request):
+    """API endpoint to validate business metric formulas"""
+    if request.method == 'POST':
+        try:
+            from services.business_metrics_service import BusinessMetricsService
+            
+            data = json.loads(request.body)
+            formula = data.get('formula', '')
+            table_name = data.get('table_name')
+            
+            metrics_service = BusinessMetricsService()
+            is_valid, message, suggestions = metrics_service.validate_formula(formula, table_name)
+            
+            return JsonResponse({
+                'success': True,
+                'is_valid': is_valid,
+                'message': message,
+                'suggestions': suggestions
+            })
+            
+        except Exception as e:
+            logger.error(f"Error validating formula: {e}")
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+
+@login_required
+def list_business_metrics(request):
+    """API endpoint to list all business metrics"""
+    if request.method == 'GET':
+        try:
+            from datasets.models import SemanticMetric
+            
+            metrics = SemanticMetric.objects.filter(is_active=True).order_by('name')
+            
+            metrics_data = []
+            for metric in metrics:
+                metrics_data.append({
+                    'id': metric.id,
+                    'name': metric.name,
+                    'display_name': metric.display_name,
+                    'description': metric.description or '',
+                    'metric_type': metric.metric_type,
+                    'calculation': metric.calculation,
+                    'unit': metric.unit or '',
+                    'base_table': metric.base_table.name if metric.base_table else '',
+                    'created_at': metric.created_at.isoformat(),
+                    'is_active': metric.is_active
+                })
+            
+            return JsonResponse({
+                'success': True,
+                'metrics': metrics_data,
+                'count': len(metrics_data)
+            })
+            
+        except Exception as e:
+            logger.error(f"Error listing business metrics: {e}")
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+
+@login_required
+def get_business_metric_detail(request, metric_id):
+    """API endpoint to get details of a specific business metric"""
+    if request.method == 'GET':
+        try:
+            from datasets.models import SemanticMetric
+            
+            try:
+                metric = SemanticMetric.objects.get(id=metric_id)
+            except SemanticMetric.DoesNotExist:
+                return JsonResponse({'error': 'Metric not found'}, status=404)
+            
+            metric_data = {
+                'id': metric.id,
+                'name': metric.name,
+                'display_name': metric.display_name,
+                'description': metric.description or '',
+                'metric_type': metric.metric_type,
+                'calculation': metric.calculation,
+                'unit': metric.unit or '',
+                'base_table': {
+                    'id': metric.base_table.id,
+                    'name': metric.base_table.name,
+                    'display_name': metric.base_table.display_name
+                } if metric.base_table else None,
+                'created_at': metric.created_at.isoformat(),
+                'updated_at': metric.updated_at.isoformat(),
+                'is_active': metric.is_active,
+                'business_owner': metric.business_owner or '',
+                'validation_rules': metric.validation_rules or []
+            }
+            
+            return JsonResponse({
+                'success': True,
+                'metric': metric_data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting business metric detail: {e}")
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+
+@login_required
+def update_business_metric(request, metric_id):
+    """API endpoint to update a business metric"""
+    if request.method == 'POST':
+        try:
+            from services.business_metrics_service import BusinessMetricsService
+            
+            data = json.loads(request.body)
+            
+            metrics_service = BusinessMetricsService()
+            success, message = metrics_service.update_metric(
+                metric_id=str(metric_id),
+                **data
+            )
+            
+            if success:
+                return JsonResponse({
+                    'success': True,
+                    'message': message
+                })
+            else:
+                return JsonResponse({'error': message}, status=400)
+                
+        except Exception as e:
+            logger.error(f"Error updating business metric: {e}")
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+
+@login_required
+def delete_business_metric(request, metric_id):
+    """API endpoint to delete a business metric"""
+    if request.method == 'DELETE':
+        try:
+            from datasets.models import SemanticMetric
+            
+            try:
+                metric = SemanticMetric.objects.get(id=metric_id)
+                metric_name = metric.name
+                metric.delete()
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Metric "{metric_name}" deleted successfully'
+                })
+                
+            except SemanticMetric.DoesNotExist:
+                return JsonResponse({'error': 'Metric not found'}, status=404)
+                
+        except Exception as e:
+            logger.error(f"Error deleting business metric: {e}")
             return JsonResponse({'error': str(e)}, status=500)
     
     return JsonResponse({'error': 'Invalid request method'}, status=405)

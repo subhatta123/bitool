@@ -363,7 +363,10 @@ class BusinessMetricsService:
                     base_table=base_table,
                     created_by_id=user_id or 1,
                     is_active=True,
-                    validation_rules=json.dumps(suggestions) if suggestions else "[]"
+                    validation_rules=suggestions if suggestions else [],
+                    business_owner="",
+                    format_string="",
+                    tags=[]
                 )
                 
                 # Store in DuckDB for LLM integration

@@ -40,6 +40,35 @@ def license_required(permission=None, license_types=None, redirect_url=None):
         @login_required
         def wrapper(request, *args, **kwargs):
             try:
+                # CRITICAL FIX: Bypass license checks for superusers
+                if request.user.is_superuser:
+                    logger.info(f"Superuser {request.user.username} bypassing license check")
+                    # Add mock license info for superusers to prevent issues in views
+                    request.license_info = {
+                        'has_license': True,
+                        'license_type': 'admin',
+                        'permissions': {
+                            'can_query': True,
+                            'can_view_dashboards': True,
+                            'can_create_dashboards': True,
+                            'can_upload_data': True,
+                            'can_manage_data_sources': True,
+                            'can_perform_etl': True,
+                            'can_manage_semantic_layer': True,
+                            'can_export_dashboards': True,
+                            'can_share_dashboards': True,
+                            'can_view_query_history': True,
+                            'can_manage_account': True,
+                            'can_change_llm_model': True,
+                            'can_change_email_config': True,
+                            'can_view_user_profile': True,
+                        },
+                        'status': 'active',
+                        'valid_until': None,
+                        'assigned_at': None,
+                    }
+                    return view_func(request, *args, **kwargs)
+                
                 # Get user license info
                 license_info = get_user_license_info(request.user)
                 
@@ -119,6 +148,35 @@ def api_license_required(permission=None, license_types=None):
         @login_required
         def wrapper(request, *args, **kwargs):
             try:
+                # CRITICAL FIX: Bypass license checks for superusers in API calls too
+                if request.user.is_superuser:
+                    logger.info(f"Superuser {request.user.username} bypassing API license check")
+                    # Add mock license info for superusers
+                    request.license_info = {
+                        'has_license': True,
+                        'license_type': 'admin',
+                        'permissions': {
+                            'can_query': True,
+                            'can_view_dashboards': True,
+                            'can_create_dashboards': True,
+                            'can_upload_data': True,
+                            'can_manage_data_sources': True,
+                            'can_perform_etl': True,
+                            'can_manage_semantic_layer': True,
+                            'can_export_dashboards': True,
+                            'can_share_dashboards': True,
+                            'can_view_query_history': True,
+                            'can_manage_account': True,
+                            'can_change_llm_model': True,
+                            'can_change_email_config': True,
+                            'can_view_user_profile': True,
+                        },
+                        'status': 'active',
+                        'valid_until': None,
+                        'assigned_at': None,
+                    }
+                    return view_func(request, *args, **kwargs)
+                
                 # Get user license info
                 license_info = get_user_license_info(request.user)
                 

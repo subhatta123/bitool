@@ -76,12 +76,13 @@ class CustomUserCreationForm(UserCreationForm):
     roles = forms.MultipleChoiceField(
         choices=[
             ('user', 'User'),
-            ('admin', 'Administrator'),
+            ('creator', 'Creator'),
             ('viewer', 'Viewer'),
+            ('admin', 'Administrator'),
         ],
         widget=forms.CheckboxSelectMultiple(),
         required=False,
-        help_text='Select user roles (optional - license determines actual permissions)',
+        help_text='Select user roles (should match license type for proper permissions)',
         initial=['user']  # Default to user role
     )
 
@@ -188,12 +189,13 @@ class CustomUserChangeForm(UserChangeForm):
     roles = forms.MultipleChoiceField(
         choices=[
             ('user', 'User'),
-            ('admin', 'Administrator'),
+            ('creator', 'Creator'),
             ('viewer', 'Viewer'),
+            ('admin', 'Administrator'),
         ],
         widget=forms.CheckboxSelectMultiple(),
         required=False,
-        help_text='Select user roles (optional - license determines actual permissions)'
+        help_text='Select user roles (should match license type for proper permissions)'
     )
     is_active = forms.BooleanField(
         required=False,

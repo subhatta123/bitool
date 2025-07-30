@@ -26,6 +26,14 @@ class SchemaAwareJoinResult:
     execution_details: Optional[Dict[str, Any]] = None
     recommendations: List[str] = None
     root_cause_analysis: Optional[Dict[str, Any]] = None
+    validation_details: Optional[Any] = None  # Added to fix the AttributeError
+
+@dataclass
+class SimpleValidationDetails:
+    """Simple validation details structure to match expected interface"""
+    left_table_result: Optional[Any] = None
+    right_table_result: Optional[Any] = None
+    column_validation: Optional[Dict[str, Any]] = None
 
 class SchemaAwareETLJoinService:
     """Enhanced ETL Join Service with schema-aware validation"""
@@ -69,13 +77,20 @@ class SchemaAwareETLJoinService:
         if not left_result.is_valid or not right_result.is_valid:
             logger.warning("Schema-aware validation failed - join operation cannot proceed")
             
+            validation_details = SimpleValidationDetails(
+                left_table_result=left_result,
+                right_table_result=right_result,
+                column_validation={'left_column_valid': False, 'right_column_valid': False}
+            )
+            
             return SchemaAwareJoinResult(
                 success=False,
                 error_message="Schema validation failed - tables not found or not accessible",
                 left_table_result=left_result,
                 right_table_result=right_result,
                 recommendations=self._generate_table_validation_recommendations(left_result, right_result),
-                root_cause_analysis=self._analyze_table_validation_failure(left_result, right_result)
+                root_cause_analysis=self._analyze_table_validation_failure(left_result, right_result),
+                validation_details=validation_details
             )
         
         logger.info(f"[SUCCESS] Schema validation passed")
@@ -109,7 +124,12 @@ class SchemaAwareETLJoinService:
                     'right_column_valid': right_column_validation['exists'],
                     'left_column_info': left_column_validation,
                     'right_column_info': right_column_validation
-                }
+                },
+                validation_details=SimpleValidationDetails(
+                    left_table_result=left_result,
+                    right_table_result=right_result,
+                    column_validation={'left_column_valid': left_column_validation['exists'], 'right_column_valid': right_column_validation['exists']}
+                )
             )
         
         logger.info("[SUCCESS] Column validation passed")
@@ -132,13 +152,21 @@ class SchemaAwareETLJoinService:
                 
                 if execution_result['success']:
                     logger.info(f"[SUCCESS] Join operation completed: {execution_result['row_count']} rows")
+                    
+                    validation_details = SimpleValidationDetails(
+                        left_table_result=left_result,
+                        right_table_result=right_result,
+                        column_validation={'left_column_valid': True, 'right_column_valid': True}
+                    )
+                    
                     return SchemaAwareJoinResult(
                         success=True,
                         etl_operation_id=str(etl_operation.id),
                         left_table_result=left_result,
                         right_table_result=right_result,
                         execution_details=execution_result,
-                        recommendations=["Join operation completed successfully!"]
+                        recommendations=["Join operation completed successfully!"],
+                        validation_details=validation_details
                     )
                 else:
                     logger.error(f"Join execution failed: {execution_result['error']}")
@@ -155,7 +183,12 @@ class SchemaAwareETLJoinService:
                 left_table_result=left_result,
                 right_table_result=right_result,
                 recommendations=self._generate_error_recommendations(str(e)),
-                root_cause_analysis={'error_type': 'execution_error', 'error_details': str(e)}
+                root_cause_analysis={'error_type': 'execution_error', 'error_details': str(e)},
+                validation_details=SimpleValidationDetails(
+                    left_table_result=left_result,
+                    right_table_result=right_result,
+                    column_validation={'left_column_valid': False, 'right_column_valid': False}
+                )
             )
     
     def _create_etl_operation_with_schema(self, operation_name: str, 
@@ -194,6 +227,18 @@ class SchemaAwareETLJoinService:
             output_table_name=output_table,
             status='pending',
             created_by=user,
+            result_summary={
+                'operation_type': 'join',
+                'status': 'pending',
+                'left_table': left_result.qualified_table_name,
+                'right_table': right_result.qualified_table_name,
+                'left_rows': left_result.row_count,
+                'right_rows': right_result.row_count,
+                'join_column_left': left_column,
+                'join_column_right': right_column,
+                'join_type': join_type,
+                'created_at': timezone.now().isoformat()
+            },
             data_lineage={
                 'left_source_table': left_result.qualified_table_name,
                 'right_source_table': right_result.qualified_table_name,
@@ -237,10 +282,27 @@ class SchemaAwareETLJoinService:
             row_count = result_stats[0] if result_stats else 0
             execution_time = (timezone.now() - start_time).total_seconds()
             
-            # Update ETL operation
+            # Update ETL operation with comprehensive result summary
             etl_operation.status = 'completed'
             etl_operation.row_count = row_count
             etl_operation.execution_time = execution_time
+            etl_operation.result_summary = {
+                'operation_type': 'join',
+                'status': 'completed',
+                'success': True,
+                'row_count': row_count,
+                'execution_time': execution_time,
+                'left_table': left_result.qualified_table_name,
+                'right_table': right_result.qualified_table_name,
+                'left_rows': left_result.row_count,
+                'right_rows': right_result.row_count,
+                'join_column_left': left_column,
+                'join_column_right': right_column,
+                'join_type': join_type,
+                'output_table': etl_operation.output_table_name,
+                'join_efficiency': self._calculate_join_efficiency(row_count, left_result.row_count, right_result.row_count),
+                'completed_at': timezone.now().isoformat()
+            }
             etl_operation.save()
             
             return {
@@ -254,9 +316,22 @@ class SchemaAwareETLJoinService:
         except Exception as e:
             logger.error(f"Error executing schema-aware join SQL: {e}")
             
-            # Update ETL operation as failed
+            # Update ETL operation as failed with result summary
             etl_operation.status = 'failed'
             etl_operation.error_message = str(e)
+            etl_operation.result_summary = {
+                'operation_type': 'join',
+                'status': 'failed',
+                'success': False,
+                'error': str(e),
+                'execution_time': (timezone.now() - start_time).total_seconds(),
+                'left_table': left_result.qualified_table_name,
+                'right_table': right_result.qualified_table_name,
+                'join_column_left': left_column,
+                'join_column_right': right_column,
+                'join_type': join_type,
+                'failed_at': timezone.now().isoformat()
+            }
             etl_operation.save()
             
             return {
@@ -265,6 +340,22 @@ class SchemaAwareETLJoinService:
                 'execution_time': (timezone.now() - start_time).total_seconds()
             }
     
+    def _calculate_join_efficiency(self, result_rows: int, left_rows: int, right_rows: int) -> float:
+        """Calculate join efficiency as a percentage"""
+        try:
+            if left_rows == 0 or right_rows == 0:
+                return 0.0
+            
+            # Calculate the theoretical maximum (Cartesian product)
+            max_possible = left_rows * right_rows
+            
+            # Calculate efficiency as result/max ratio
+            efficiency = (result_rows / max_possible) * 100
+            
+            return round(efficiency, 2)
+        except:
+            return 0.0
+
     def _generate_table_validation_recommendations(self, left_result: SchemaAwareTableResult, 
                                                  right_result: SchemaAwareTableResult) -> List[str]:
         """Generate recommendations for table validation failures"""
@@ -349,7 +440,12 @@ class SchemaAwareETLJoinService:
                 'error_type': 'execution_failure',
                 'error_details': execution_result['error'],
                 'execution_time': execution_result.get('execution_time', 0)
-            }
+            },
+            validation_details=SimpleValidationDetails(
+                left_table_result=left_result,
+                right_table_result=right_result,
+                column_validation={'left_column_valid': False, 'right_column_valid': False}
+            )
         )
     
     def _generate_error_recommendations(self, error_message: str) -> List[str]:

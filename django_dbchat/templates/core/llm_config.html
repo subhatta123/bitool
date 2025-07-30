@@ -22,39 +22,39 @@
                             <p class="text-muted">Select the AI provider you want to use for natural language queries</p>
                             
                             <div class="row">
-                                <!-- OpenAI Option -->
                                 <div class="col-md-6 mb-3">
                                     <div class="card h-100 border-primary provider-card" 
-                                         onclick="selectProvider('openai')" 
-                                         id="openai-card">
+                                         onclick="selectProvider('ollama')" 
+                                         id="ollama-card">
                                         <div class="card-body text-center">
-                                            <i class="fas fa-brain fa-3x text-primary mb-3"></i>
-                                            <h5 class="card-title">OpenAI</h5>
-                                            <p class="card-text">GPT-4 and GPT-3.5 models with excellent SQL generation capabilities</p>
+                                            <i class="fas fa-server fa-3x text-primary mb-3"></i>
+                                            <h5 class="card-title">Llama 3.2b (Local)</h5>
+                                            <p class="card-text">Powerful local LLM optimized for SQL generation with privacy and security</p>
                                             <ul class="list-unstyled text-start">
-                                                <li><i class="fas fa-check text-success"></i> High accuracy</li>
-                                                <li><i class="fas fa-check text-success"></i> Advanced reasoning</li>
-                                                <li><i class="fas fa-check text-success"></i> Multiple model options</li>
-                                                <li><i class="fas fa-times text-warning"></i> Requires API key (paid)</li>
+                                                <li><i class="fas fa-check text-success"></i> Free to use</li>
+                                                <li><i class="fas fa-check text-success"></i> Complete privacy & security</li>
+                                                <li><i class="fas fa-check text-success"></i> No API limits or costs</li>
+                                                <li><i class="fas fa-check text-success"></i> Optimized for SQL generation</li>
+                                                <li><i class="fas fa-info-circle text-info"></i> Requires local Ollama setup</li>
                                             </ul>
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Ollama Option -->
                                 <div class="col-md-6 mb-3">
                                     <div class="card h-100 border-success provider-card" 
-                                         onclick="selectProvider('ollama')" 
-                                         id="ollama-card">
+                                         onclick="selectProvider('openai')" 
+                                         id="openai-card">
                                         <div class="card-body text-center">
-                                            <i class="fas fa-server fa-3x text-success mb-3"></i>
-                                            <h5 class="card-title">Ollama (Local)</h5>
-                                            <p class="card-text">SQLCoder and other local models for on-premise deployment</p>
+                                            <i class="fas fa-brain fa-3x text-success mb-3"></i>
+                                            <h5 class="card-title">OpenAI</h5>
+                                            <p class="card-text">State-of-the-art AI models with exceptional SQL generation capabilities</p>
                                             <ul class="list-unstyled text-start">
-                                                <li><i class="fas fa-check text-success"></i> Free to use</li>
-                                                <li><i class="fas fa-check text-success"></i> Privacy & security</li>
-                                                <li><i class="fas fa-check text-success"></i> No API limits</li>
-                                                <li><i class="fas fa-times text-warning"></i> Requires local setup</li>
+                                                <li><i class="fas fa-check text-success"></i> Highest accuracy</li>
+                                                <li><i class="fas fa-check text-success"></i> Latest AI technology</li>
+                                                <li><i class="fas fa-check text-success"></i> No local setup required</li>
+                                                <li><i class="fas fa-times text-warning"></i> Requires API key</li>
+                                                <li><i class="fas fa-times text-warning"></i> Usage costs apply</li>
                                             </ul>
                                         </div>
                                     </div>
@@ -95,9 +95,10 @@
                                                 <div class="mb-3">
                                                     <label for="openai-model" class="form-label">Model</label>
                                                     <select class="form-select" id="openai-model">
-                                                        <option value="gpt-4-turbo-preview">GPT-4 Turbo (Recommended)</option>
-                                                        <option value="gpt-4">GPT-4</option>
-                                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                                        <option value="gpt-4o">GPT-4o (Recommended - Latest)</option>
+                                                        <option value="gpt-4">GPT-4 (Most Capable)</option>
+                                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Faster & Cost-effective)</option>
+                                                        <option value="gpt-4-turbo">GPT-4 Turbo (Balanced)</option>
                                                     </select>
                                                 </div>
                                             </div>
@@ -158,7 +159,7 @@
                                         <h6><i class="fas fa-info-circle"></i> Setup Instructions</h6>
                                         <ol class="mb-0">
                                             <li>Install Ollama from <a href="https://ollama.ai" target="_blank">ollama.ai</a></li>
-                                            <li>Run: <code>ollama pull sqlcoder:15b</code> or <code>ollama pull codellama:13b</code></li>
+                                            <li>Run: <code>ollama pull llama3.2:3b</code> or <code>ollama pull llama3.2:1b</code></li>
                                             <li>Start the Ollama service</li>
                                             <li>Configure the connection below</li>
                                         </ol>
@@ -186,10 +187,10 @@
                                             <label for="ollama-model" class="form-label">Model</label>
                                             <div class="input-group">
                                                 <select class="form-select" id="ollama-model">
-                                                    <option value="sqlcoder:15b">SQLCoder 15B (Recommended for SQL)</option>
-                                                    <option value="sqlcoder:7b">SQLCoder 7B (Faster)</option>
-                                                    <option value="codellama:13b">CodeLlama 13B</option>
-                                                    <option value="codellama:7b">CodeLlama 7B</option>
+                                                    <option value="llama3.2:3b">Llama 3.2 3B (Recommended for SQL)</option>
+                                                    <option value="llama3.2:1b">Llama 3.2 1B (Faster, less memory)</option>
+                                                    <option value="llama3.1:8b">Llama 3.1 8B (More capable)</option>
+                                                    <option value="llama3:8b">Llama 3 8B (Alternative)</option>
                                                     <option value="custom">Custom Model</option>
                                                 </select>
                                                 <button class="btn btn-outline-secondary" type="button" onclick="refreshOllamaModels(this)">
@@ -202,7 +203,7 @@
                                             <div class="mb-3">
                                                 <label for="ollama-custom-model" class="form-label">Custom Model Name</label>
                                                 <input type="text" class="form-control" id="ollama-custom-model" 
-                                                       placeholder="model:tag">
+                                                       placeholder="model:tag (e.g., llama3.2:3b)">
                                             </div>
                                         </div>
 
@@ -539,8 +540,14 @@ function saveOpenAIConfig() {
             timeout: parseInt(timeout)
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
     .then(data => {
+        // ALWAYS reset button first to ensure spinner disappears
         btn.innerHTML = originalText;
         btn.disabled = false;
         
@@ -555,10 +562,11 @@ function saveOpenAIConfig() {
         }
     })
     .catch(error => {
+        // ALWAYS reset button to ensure spinner disappears
         btn.innerHTML = originalText;
         btn.disabled = false;
         console.error('Error:', error);
-        showAlert('❌ Failed to save OpenAI configuration: ' + error.message, 'danger');
+        showAlert('Failed to save OpenAI configuration: ' + error.message, 'danger');
     });
 }
 
@@ -619,67 +627,40 @@ function saveOllamaConfig() {
     })
     .then(response => {
         console.log('Save response status:', response.status);
-        console.log('Save response headers:', response.headers);
         if (!response.ok) {
-            console.error('Response not OK:', response.status, response.statusText);
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         return response.json();
     })
     .then(data => {
-        console.log('JSON parsing successful');
-        return data;
-    })
-    .then(data => {
-        console.log('Save response data:', data);
-        console.log('Data type:', typeof data);
-        console.log('Data success:', data.success);
-        console.log('Data message:', data.message);
-        
+        // ALWAYS reset button first to ensure spinner disappears
         btn.innerHTML = originalText;
         btn.disabled = false;
         
+        console.log('Save response data:', data);
+        
         if (data.success) {
-            console.log('Success detected, showing success alert...');
             const message = String(data.message || 'Configuration saved successfully');
-            console.log('Save success message type:', typeof message, 'value:', message);
-            
-            // Show both custom alert and browser alert for debugging
             showAlert(message, 'success');
-            alert('SUCCESS: ' + message); // Temporary debugging alert
             
-            console.log('Updating status...');
             updateCurrentStatus('Ollama', {
                 model: model,
                 status: 'Active',
                 server_url: serverUrl
             });
         } else {
-            console.log('Error detected, showing error alert...');
             const errorMessage = String(data.error || 'Failed to save configuration');
-            console.log('Save error message type:', typeof errorMessage, 'value:', errorMessage);
-            
-            // Show both custom alert and browser alert for debugging
             showAlert(errorMessage, 'danger');
-            alert('ERROR: ' + errorMessage); // Temporary debugging alert
         }
     })
     .catch(error => {
+        // ALWAYS reset button to ensure spinner disappears
         btn.innerHTML = originalText;
         btn.disabled = false;
+        
         console.error('Save error:', error);
-        console.error('Error type:', typeof error);
-        console.error('Error stack:', error.stack);
-        
-        let errorMessage = 'Unknown error';
-        if (error.message) {
-            errorMessage = error.message;
-        } else if (typeof error === 'string') {
-            errorMessage = error;
-        }
-        
+        const errorMessage = error.message || 'Unknown error occurred';
         showAlert('Failed to save Ollama configuration: ' + errorMessage, 'danger');
-        alert('SAVE ERROR: ' + errorMessage); // Temporary debugging alert
     });
 }
 
@@ -739,78 +720,33 @@ function hideLoadingModal() {
 
 function showAlert(message, type = 'info') {
     console.log('showAlert called with:', message, type);
-    console.log('Message type:', typeof message);
     
-    // Ensure parameters are strings and handle various input types
-    let safeMessage = 'No message provided';
-    if (message !== null && message !== undefined) {
-        if (typeof message === 'string') {
-            safeMessage = message;
-        } else if (message instanceof HTMLElement) {
-            // Special handling for HTML elements that might get passed accidentally
-            console.error('HTML Element passed to showAlert:', message);
-            safeMessage = 'Error: HTML element passed as message';
-        } else if (typeof message === 'object' && message.toString) {
-            // Handle objects that might have meaningful toString methods
-            const stringified = message.toString();
-            if (stringified === '[object Object]' || stringified.includes('[object HTML')) {
-                console.error('Object with poor toString passed to showAlert:', message);
-                safeMessage = 'Error: Invalid object passed as message';
-            } else {
-                safeMessage = stringified;
-            }
-        } else {
-            // Convert anything else to string safely
-            safeMessage = String(message);
-        }
-    }
-    
-    const safeType = String(type || 'info');
-    
-    console.log('Processed alert params:', safeMessage, safeType);
-    
-    // Remove existing alerts
-    const existingAlerts = document.querySelectorAll('.alert-notification');
-    existingAlerts.forEach(alert => alert.remove());
-    
-    // Create new alert
+    // Create simple notification
     const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${safeType} alert-dismissible fade show alert-notification mt-3`;
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 350px; max-width: 500px;';
+    
+    const message_text = String(message || 'No message');
+    const icon = type === 'success' ? 'check-circle' : type === 'danger' ? 'exclamation-triangle' : 'info-circle';
+    
     alertDiv.innerHTML = `
-        <i class="fas fa-${getAlertIcon(safeType)}"></i> ${safeMessage}
+        <i class="fas fa-${icon} me-2"></i>
+        ${message_text}
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
     
-    // Insert after current status
-    const statusDiv = document.getElementById('current-status');
-    console.log('Status div found:', !!statusDiv);
+    // Remove existing alerts
+    document.querySelectorAll('.alert[style*="position: fixed"]').forEach(el => el.remove());
     
-    if (statusDiv) {
-        statusDiv.parentNode.insertBefore(alertDiv, statusDiv.nextSibling);
-        console.log('Alert inserted after status div');
-    } else {
-        // Fallback: append to body
+    // Add new alert
         document.body.appendChild(alertDiv);
-        console.log('Alert appended to body');
-    }
     
-    console.log('Alert element:', alertDiv);
-    console.log('Alert added to DOM, classes:', alertDiv.className);
-    
-    // Auto-dismiss after 5 seconds
+    // Auto-remove after 5 seconds
     setTimeout(() => {
         if (alertDiv.parentNode) {
             alertDiv.remove();
-            console.log('Alert auto-dismissed');
         }
     }, 5000);
-    
-    // Also try a simple browser alert as fallback for debugging
-    if (window.location.search.includes('debug=true')) {
-        setTimeout(() => {
-            alert(`Debug: ${safeMessage}`);
-        }, 100);
-    }
 }
 
 function getAlertIcon(type) {
@@ -916,7 +852,7 @@ function testSaveFunction() {
     
     const testData = {
         server_url: 'http://localhost:11434',
-        model: 'sqlcoder:15b',
+        model: 'llama3.2:3b',
         timeout: 60,
         temperature: 0.1,
         top_p: 0.9

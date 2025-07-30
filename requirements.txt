@@ -8,9 +8,7 @@ pyodbc # For SQL Server
 Werkzeug # For password hashing
 
 # For LLM integration (choose one and uncomment)
-# openai
-# google-generativeai
-openai # Using OpenAI
+openai==1.54.4 # Using OpenAI latest stable version
 
 # For advanced visualizations if needed
 matplotlib # For alternative image generation on Windows

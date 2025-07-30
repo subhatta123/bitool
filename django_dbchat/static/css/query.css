@@ -546,3 +546,36 @@
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 } 
+
+/* AUTO-GENERATED: Fix for SQL display truncation */
+
+/* Fix for SQL query display - ensure no truncation */
+.sql-query-display {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow: visible !important;
+    max-width: none !important;
+    text-overflow: clip !important;
+}
+
+.sql-query-display pre {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-x: auto !important;
+    max-width: none !important;
+}
+
+/* Ensure query details modal shows full content */
+.query-details .sql-content {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow: visible !important;
+    max-height: none !important;
+}
+
+/* Fix any text-truncate classes on SQL display */
+.sql-query-display * {
+    text-overflow: clip !important;
+    overflow: visible !important;
+    white-space: pre-wrap !important;
+}

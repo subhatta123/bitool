@@ -83,7 +83,13 @@
                             </h5>
                         </div>
                         <div class="card-body">
-                            <form id="email-config-form">
+                            <form id="email-config-form" method="post">
+                                {% csrf_token %}
+                                <input type="hidden" name="smtp_host" id="smtp_host">
+                                <input type="hidden" name="smtp_port" id="smtp_port">
+                                <input type="hidden" name="smtp_user" id="smtp_user">
+                                <input type="hidden" name="smtp_password" id="smtp_password">
+                                <input type="hidden" name="use_tls" id="use_tls">
                                 <!-- SMTP Server Settings -->
                                 <div class="row">
                                     <div class="col-md-8">
@@ -381,32 +387,17 @@ function testEmailConnection(buttonElement, sendTestEmail) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
     btn.disabled = true;
     
-    // Prepare request data
+    // Prepare request data for our backend endpoint
     const requestData = {
         smtp_host: formData.smtp_host,
         smtp_port: parseInt(formData.smtp_port),
-        smtp_username: formData.smtp_username,
+        smtp_user: formData.smtp_username,
         smtp_password: formData.smtp_password,
-        encryption: formData.encryption,
-        timeout: parseInt(formData.timeout),
-        use_saved_config: false
+        use_tls: formData.encryption === 'tls',
+        test_email: sendTestEmail ? formData.test_email : formData.smtp_username
     };
     
-    // Set the flag for whether to send test email or just test connection
-    requestData.send_test_email = sendTestEmail;
-    
-    // Include test_email if provided, otherwise use dummy for validation
-    if (sendTestEmail && formData.test_email) {
-        requestData.test_email = formData.test_email;
-    } else if (sendTestEmail) {
-        // This case should have been caught by validation above
-        requestData.test_email = 'test@example.com';
-    } else {
-        // For connection test only, use a dummy email to satisfy backend validation
-        requestData.test_email = 'test@example.com';
-    }
-    
-    // Call backend API
+    // Call our backend test endpoint
     fetch('/email-config/test/', {
         method: 'POST',
         headers: {
@@ -423,7 +414,7 @@ function testEmailConnection(buttonElement, sendTestEmail) {
         if (data.success) {
             showAlert(data.message, 'success');
         } else {
-            showAlert(data.message, 'danger');
+            showAlert(data.error || 'Test failed', 'danger');
         }
     })
     .catch(error => {
@@ -435,25 +426,72 @@ function testEmailConnection(buttonElement, sendTestEmail) {
 }
 
 function getFormData() {
+    console.log('Reading form data from user input...');
+    
+    // Get actual values from form fields - NO FALLBACKS
+    const smtp_host = document.getElementById('smtp-host').value.trim();
+    const smtp_port = document.getElementById('smtp-port').value.trim();
+    const smtp_username = document.getElementById('smtp-username').value.trim();
+    const smtp_password = document.getElementById('smtp-password').value;
+    const sender_email = document.getElementById('sender-email').value.trim();
+    const sender_name = document.getElementById('sender-name').value.trim();
+    const encryption = document.getElementById('encryption').value;
+    
+    console.log('User entered values:', {
+        smtp_host,
+        smtp_username,
+        smtp_port,
+        sender_email,
+        sender_name,
+        encryption,
+        password_length: smtp_password ? smtp_password.length : 0
+    });
+    
+    // Return actual user values - minimal fallbacks only for optional fields
     return {
-        smtp_host: document.getElementById('smtp-host').value.trim(),
-        smtp_port: document.getElementById('smtp-port').value,
-        smtp_username: document.getElementById('smtp-username').value.trim(),
-        smtp_password: document.getElementById('smtp-password').value,
-        sender_email: document.getElementById('sender-email').value.trim(),
-        sender_name: document.getElementById('sender-name').value.trim(),
-        encryption: document.getElementById('encryption').value,
-        timeout: document.getElementById('timeout').value,
-        test_email: document.getElementById('test-email').value.trim()
+        smtp_host,
+        smtp_port: smtp_port || '587',
+        smtp_username,
+        smtp_password,
+        sender_email,
+        sender_name: sender_name || 'ConvaBI System',
+        encryption: encryption || 'tls',
+        timeout: document.getElementById('timeout')?.value || '30',
+        test_email: document.getElementById('test-email')?.value?.trim() || smtp_username
     };
 }
 
 function saveEmailConfig() {
+    console.log('Starting email config save...');
+    
     const formData = getFormData();
     
-    // Validate required fields
+    // Validate required fields with actual user input
     if (!formData.smtp_host || !formData.smtp_username || !formData.smtp_password || !formData.sender_email) {
         showAlert('Please fill in all required fields (marked with *)', 'warning');
+        console.error('Missing required fields:', {
+            smtp_host: !!formData.smtp_host,
+            smtp_username: !!formData.smtp_username,
+            smtp_password: !!formData.smtp_password,
+            sender_email: !!formData.sender_email
+        });
+        return;
+    }
+    
+    // Show confirmation with actual values user entered
+    const confirmMessage = `Confirm saving email configuration:
+
+SMTP Host: ${formData.smtp_host}
+Port: ${formData.smtp_port}
+Username: ${formData.smtp_username}
+Sender Email: ${formData.sender_email}
+Sender Name: ${formData.sender_name}
+Encryption: ${formData.encryption}
+
+Continue with these settings?`;
+    
+    if (!confirm(confirmMessage)) {
+        console.log('Save cancelled by user');
         return;
     }
     
@@ -463,55 +501,148 @@ function saveEmailConfig() {
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
     submitBtn.disabled = true;
     
-    // Call backend API
-    fetch('/email-config/save/', {
+    // Create form data object with EXACT user values
+    const formDataObj = new FormData();
+    formDataObj.append('smtp_host', formData.smtp_host);
+    formDataObj.append('smtp_port', formData.smtp_port);
+    formDataObj.append('smtp_username', formData.smtp_username);
+    formDataObj.append('smtp_password', formData.smtp_password);
+    formDataObj.append('sender_email', formData.sender_email);
+    formDataObj.append('sender_name', formData.sender_name);
+    formDataObj.append('encryption', formData.encryption);
+    if (formData.encryption === 'tls') {
+        formDataObj.append('use_tls', 'on');
+    }
+    
+    console.log('Sending to server:', Object.fromEntries(formDataObj.entries()));
+    
+    fetch('/email-config/', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json',
             'X-CSRFToken': getCsrfToken()
         },
-        body: JSON.stringify(formData)
+        body: formDataObj
     })
-    .then(response => response.json())
-    .then(data => {
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
-        
-        if (data.success) {
-            showAlert(data.message, 'success');
-            // Reload page to show updated status
-            setTimeout(() => {
-                window.location.reload();
-            }, 2000);
+    .then(response => {
+        console.log('Save response status:', response.status);
+        if (response.ok) {
+            return response.text();
         } else {
-            showAlert(data.error || 'Failed to save configuration', 'danger');
+            throw new Error(`HTTP ${response.status}`);
+        }
+    })
+    .then(html => {
+        console.log('Save completed');
+        if (html.includes('Email configuration saved successfully') || html.includes('saved successfully')) {
+            showAlert('✅ Email configuration saved successfully with YOUR values!', 'success');
+            setTimeout(() => window.location.reload(), 2000);
+        } else if (html.includes('error') || html.includes('Error')) {
+            showAlert('⚠️ There may have been an issue saving. Please check the form and try again.', 'warning');
+        } else {
+            showAlert('✅ Configuration saved. Please test the connection.', 'success');
+            setTimeout(() => window.location.reload(), 2000);
         }
     })
     .catch(error => {
+        console.error('Save error:', error);
+        showAlert('❌ Save failed: ' + error.message, 'danger');
+    })
+    .finally(() => {
         submitBtn.innerHTML = originalText;
         submitBtn.disabled = false;
-        console.error('Error:', error);
-        showAlert('❌ Save failed: ' + error.message, 'danger');
     });
 }
 
+function testEmailConfig() {
+    console.log('Starting email test...');
+    
+    const formData = getFormData();
+    
+    // Validate required fields for testing
+    if (!formData.smtp_host || !formData.smtp_username || !formData.smtp_password) {
+        showAlert('Please fill in SMTP host, username, and password before testing', 'warning');
+        return;
+    }
+    
+    // Show what we're about to test
+    console.log('Testing with user values:', {
+        smtp_host: formData.smtp_host,
+        smtp_username: formData.smtp_username,
+        smtp_port: formData.smtp_port,
+        encryption: formData.encryption
+    });
+    
+    // Show loading on test button
+    const testBtn = document.getElementById('test-email-btn') || document.querySelector('.btn:contains("Test")');
+    if (testBtn) {
+        const originalText = testBtn.innerHTML;
+        testBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+        testBtn.disabled = true;
+        
+        // Create test form data with user's exact values
+        const testFormData = new FormData();
+        testFormData.append('smtp_host', formData.smtp_host);
+        testFormData.append('smtp_port', formData.smtp_port);
+        testFormData.append('smtp_username', formData.smtp_username);
+        testFormData.append('smtp_password', formData.smtp_password);
+        if (formData.encryption === 'tls') {
+            testFormData.append('use_tls', 'on');
+        }
+        
+        fetch('/test-email-config/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            },
+            body: testFormData
+        })
+        .then(response => {
+            console.log('Test response status:', response.status);
+            return response.json();
+        })
+        .then(data => {
+            console.log('Test response:', data);
+            if (data.success) {
+                showAlert('✅ ' + data.message, 'success');
+            } else {
+                showAlert('❌ ' + data.message + '\n\nTroubleshooting:\n- Verify Gmail app password (not regular password)\n- Check SMTP settings\n- Ensure 2-factor authentication is enabled', 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Test error:', error);
+            showAlert('❌ Test failed: ' + error.message + '\n\nTroubleshooting:\n- Check your Gmail app password (not regular password)\n- Verify SMTP settings\n- Ensure 2-factor authentication is enabled', 'danger');
+        })
+        .finally(() => {
+            testBtn.innerHTML = originalText;
+            testBtn.disabled = false;
+        });
+    }
+}
+
 function showAlert(message, type) {
-    const alert = document.getElementById('statusAlert');
-    const messageDiv = document.getElementById('statusMessage');
+    // Create simple notification
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 350px;';
     
-    // Remove existing classes
-    alert.className = 'alert alert-dismissible fade show';
-    alert.classList.add(`alert-${type}`);
+    const icon = type === 'success' ? 'check-circle' : type === 'danger' ? 'exclamation-triangle' : 'info-circle';
+    alertDiv.innerHTML = `
+        <i class="fas fa-${icon} me-2"></i>
+        ${String(message || 'No message')}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
     
-    messageDiv.innerHTML = message;
-    alert.style.display = 'block';
+    // Remove existing alerts
+    document.querySelectorAll('.alert[style*="position: fixed"]').forEach(el => el.remove());
     
-    // Auto-hide after 5 seconds
+    // Add new alert
+    document.body.appendChild(alertDiv);
+    
+    // Auto-remove after 5 seconds
     setTimeout(() => {
-        alert.classList.remove('show');
-        setTimeout(() => {
-            alert.style.display = 'none';
-        }, 150);
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
     }, 5000);
 }
 

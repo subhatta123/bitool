@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chart and KPI Fixes - Manual Test</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            margin: 20px;
+            background: #f5f7fa;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .kpi-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            border-radius: 10px;
+            color: white;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .kpi-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .chart-types {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .chart-type-btn {
+            padding: 10px 20px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .chart-type-btn.active,
+        .chart-type-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .test-pass {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .test-fail {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .chart-container {
+            height: 400px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        .controls select, .controls input {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1><i class="fas fa-test-tube"></i> Chart and KPI Fixes - Manual Test</h1>
+    
+    <div class="test-section">
+        <h2><i class="fas fa-chart-line"></i> KPI Display Test</h2>
+        <p>This tests whether the KPI card shows only when there's exactly 1 row of data.</p>
+        
+        <div class="controls">
+            <button onclick="testSingleRow()">Test Single Row (Should Show KPI)</button>
+            <button onclick="testMultipleRows()">Test Multiple Rows (Should Hide KPI)</button>
+            <button onclick="testEmptyData()">Test Empty Data (Should Hide KPI)</button>
+        </div>
+        
+        <div class="kpi-card" id="kpiCard" style="display: none;">
+            <h6><i class="fas fa-chart-bar"></i> Key Performance Indicator</h6>
+            <div class="kpi-value" id="kpiValue">$0.00</div>
+            <small id="kpiLabel">Select a column to calculate</small>
+        </div>
+        
+        <div id="kpiTestResults"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2><i class="fas fa-chart-bar"></i> Chart Generation Test</h2>
+        <p>This tests whether charts generate correctly when switching between types.</p>
+        
+        <div class="controls">
+            <button onclick="loadSampleData()">Load Sample Data</button>
+            <select id="xAxisColumn">
+                <option value="">Select X Column</option>
+            </select>
+            <select id="yAxisColumn">
+                <option value="">Select Y Column</option>
+            </select>
+        </div>
+        
+        <div class="chart-types">
+            <div class="chart-type-btn active" onclick="selectChartType('table')" data-type="table">
+                <i class="fas fa-table"></i> Table
+            </div>
+            <div class="chart-type-btn" onclick="selectChartType('bar')" data-type="bar">
+                <i class="fas fa-chart-bar"></i> Bar
+            </div>
+            <div class="chart-type-btn" onclick="selectChartType('line')" data-type="line">
+                <i class="fas fa-chart-line"></i> Line
+            </div>
+            <div class="chart-type-btn" onclick="selectChartType('pie')" data-type="pie">
+                <i class="fas fa-chart-pie"></i> Pie
+            </div>
+            <div class="chart-type-btn" onclick="selectChartType('scatter')" data-type="scatter">
+                <i class="fas fa-braille"></i> Scatter
+            </div>
+        </div>
+        
+        <div class="chart-container" id="chartContainer">
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
+                <div style="text-align: center;">
+                    <i class="fas fa-chart-bar fa-3x" style="margin-bottom: 10px;"></i>
+                    <p>Click "Load Sample Data" and select a chart type to test</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="tableContainer" style="display: none;">
+            <table id="dataTable" style="width: 100%; border-collapse: collapse;">
+                <thead id="tableHeader"></thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+        
+        <div id="chartTestResults"></div>
+    </div>
+    
+    <script>
+        // Global variables
+        let resultData = null;
+        let currentChartType = 'table';
+        
+        // Test data sets
+        const testDataSets = {
+            singleRow: {
+                columns: ["total_profit"],
+                rows: [[76829.07]]
+            },
+            multipleRows: {
+                columns: ["segment", "profit"],
+                rows: [
+                    ["Consumer", 25000],
+                    ["Corporate", 35000],
+                    ["Home Office", 16829.07]
+                ]
+            },
+            emptyData: {
+                columns: ["segment", "profit"],
+                rows: []
+            },
+            sampleChart: {
+                columns: ["region", "category", "sales", "profit", "quantity"],
+                rows: [
+                    ["North", "Electronics", 125000, 25000, 150],
+                    ["South", "Clothing", 85000, 18000, 120],
+                    ["East", "Books", 65000, 12000, 200],
+                    ["West", "Electronics", 110000, 22000, 135],
+                    ["North", "Books", 45000, 9000, 80]
+                ]
+            }
+        };
+        
+        // KPI Display Functions (Fixed Logic)
+        function updateKPIVisibility(data) {
+            const kpiCard = document.getElementById('kpiCard');
+            if (!kpiCard || !data || !data.rows) return false;
+            
+            // Show KPI only when there's exactly 1 row of data
+            const shouldShow = data.rows.length === 1;
+            kpiCard.style.display = shouldShow ? 'block' : 'none';
+            
+            console.log(`KPI Visibility: ${shouldShow} (${data.rows.length} rows)`);
+            return shouldShow;
+        }
+        
+        function updateKPIValue(data) {
+            if (!data || !data.rows || data.rows.length !== 1) return;
+            
+            const kpiValue = document.getElementById('kpiValue');
+            const kpiLabel = document.getElementById('kpiLabel');
+            
+            // Find first numeric value
+            let value = null;
+            let columnName = '';
+            
+            for (let i = 0; i < data.columns.length; i++) {
+                const cellValue = data.rows[0][i];
+                if (typeof cellValue === 'number' || !isNaN(parseFloat(cellValue))) {
+                    value = parseFloat(cellValue);
+                    columnName = data.columns[i];
+                    break;
+                }
+            }
+            
+            if (value !== null) {
+                kpiValue.textContent = formatKPIValue(value);
+                kpiLabel.textContent = columnName;
+            }
+        }
+        
+        function formatKPIValue(value) {
+            if (isNaN(value) || value === null) return '$0.00';
+            
+            const absValue = Math.abs(value);
+            if (absValue >= 1000000) {
+                return (value >= 0 ? '$' : '-$') + (absValue / 1000000).toFixed(1) + 'M';
+            } else if (absValue >= 1000) {
+                return (value >= 0 ? '$' : '-$') + (absValue / 1000).toFixed(1) + 'K';
+            } else {
+                return (value >= 0 ? '$' : '-$') + Math.abs(value).toFixed(2);
+            }
+        }
+        
+        // Chart Functions (Fixed Logic)
+        function autoSelectChartColumns(chartType, data) {
+            if (!data || !data.columns) return;
+            
+            const xAxisSelect = document.getElementById('xAxisColumn');
+            const yAxisSelect = document.getElementById('yAxisColumn');
+            
+            if (!xAxisSelect || !yAxisSelect) return;
+            
+            // Analyze columns
+            const numericColumns = [];
+            const categoryColumns = [];
+            
+            data.columns.forEach((col, index) => {
+                const sampleValues = data.rows.slice(0, 3).map(row => row[index]);
+                const numericCount = sampleValues.filter(val => 
+                    val !== null && val !== undefined && !isNaN(parseFloat(val))
+                ).length;
+                
+                if (numericCount >= sampleValues.length * 0.6) {
+                    numericColumns.push(col);
+                } else {
+                    categoryColumns.push(col);
+                }
+            });
+            
+            // Auto-select based on chart type
+            let bestXColumn = null;
+            let bestYColumn = null;
+            
+            if (chartType === 'pie') {
+                bestXColumn = categoryColumns[0] || data.columns[0];
+                bestYColumn = numericColumns[0] || data.columns[1] || data.columns[0];
+            } else if (chartType === 'histogram') {
+                bestXColumn = numericColumns[0] || data.columns[0];
+                bestYColumn = numericColumns[0] || data.columns[0];
+            } else {
+                bestXColumn = categoryColumns[0] || data.columns[0];
+                bestYColumn = numericColumns[0] || data.columns[1] || data.columns[0];
+            }
+            
+            if (bestXColumn) xAxisSelect.value = bestXColumn;
+            if (bestYColumn) yAxisSelect.value = bestYColumn;
+            
+            console.log(`Auto-selected for ${chartType}: X=${bestXColumn}, Y=${bestYColumn}`);
+        }
+        
+        function selectChartType(chartType) {
+            currentChartType = chartType;
+            
+            // Update active button
+            document.querySelectorAll('.chart-type-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`[data-type="${chartType}"]`).classList.add('active');
+            
+            // Auto-select columns if needed
+            if (chartType !== 'table' && resultData) {
+                autoSelectChartColumns(chartType, resultData);
+            }
+            
+            // Render chart
+            renderVisualization(chartType);
+        }
+        
+        function renderVisualization(chartType) {
+            const chartContainer = document.getElementById('chartContainer');
+            const tableContainer = document.getElementById('tableContainer');
+            
+            if (chartType === 'table') {
+                chartContainer.style.display = 'none';
+                tableContainer.style.display = 'block';
+                renderTable();
+            } else {
+                chartContainer.style.display = 'block';
+                tableContainer.style.display = 'none';
+                renderChart(chartType);
+            }
+        }
+        
+        function renderTable() {
+            if (!resultData) return;
+            
+            const header = document.getElementById('tableHeader');
+            const body = document.getElementById('tableBody');
+            
+            header.innerHTML = '<tr>' + resultData.columns.map(col => `<th style="border: 1px solid #ddd; padding: 8px; background: #f5f5f5;">${col}</th>`).join('') + '</tr>';
+            
+            body.innerHTML = resultData.rows.map(row => 
+                '<tr>' + row.map(cell => `<td style="border: 1px solid #ddd; padding: 8px;">${cell}</td>`).join('') + '</tr>'
+            ).join('');
+        }
+        
+        function renderChart(chartType) {
+            if (!resultData) return;
+            
+            const xColumn = document.getElementById('xAxisColumn').value;
+            const yColumn = document.getElementById('yAxisColumn').value;
+            
+            if (!xColumn || !yColumn) {
+                document.getElementById('chartContainer').innerHTML = 
+                    '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;"><p>Please select X and Y columns</p></div>';
+                return;
+            }
+            
+            const xIndex = resultData.columns.indexOf(xColumn);
+            const yIndex = resultData.columns.indexOf(yColumn);
+            
+            const xData = resultData.rows.map(row => row[xIndex]);
+            const yData = resultData.rows.map(row => parseFloat(row[yIndex]) || 0);
+            
+            let trace;
+            const colors = ['#667eea', '#764ba2', '#4facfe', '#00f2fe'];
+            
+            switch (chartType) {
+                case 'bar':
+                    trace = {
+                        x: xData,
+                        y: yData,
+                        type: 'bar',
+                        marker: { color: colors[0] }
+                    };
+                    break;
+                case 'line':
+                    trace = {
+                        x: xData,
+                        y: yData,
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        line: { color: colors[0] }
+                    };
+                    break;
+                case 'pie':
+                    trace = {
+                        labels: xData,
+                        values: yData,
+                        type: 'pie',
+                        marker: { colors: colors }
+                    };
+                    break;
+                case 'scatter':
+                    trace = {
+                        x: xData,
+                        y: yData,
+                        mode: 'markers',
+                        type: 'scatter',
+                        marker: { color: colors[0], size: 12 }
+                    };
+                    break;
+            }
+            
+            const layout = {
+                title: `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`,
+                xaxis: { title: chartType !== 'pie' ? xColumn : '' },
+                yaxis: { title: chartType !== 'pie' ? yColumn : '' },
+                margin: { t: 50, r: 30, b: 50, l: 50 }
+            };
+            
+            Plotly.newPlot('chartContainer', [trace], layout, { responsive: true });
+        }
+        
+        function populateColumnSelectors(data) {
+            const xSelect = document.getElementById('xAxisColumn');
+            const ySelect = document.getElementById('yAxisColumn');
+            
+            xSelect.innerHTML = '<option value="">Select X Column</option>';
+            ySelect.innerHTML = '<option value="">Select Y Column</option>';
+            
+            if (data && data.columns) {
+                data.columns.forEach(column => {
+                    xSelect.innerHTML += `<option value="${column}">${column}</option>`;
+                    ySelect.innerHTML += `<option value="${column}">${column}</option>`;
+                });
+            }
+        }
+        
+        // Test Functions
+        function testSingleRow() {
+            resultData = testDataSets.singleRow;
+            const shouldShow = updateKPIVisibility(resultData);
+            updateKPIValue(resultData);
+            
+            const result = document.createElement('div');
+            result.className = shouldShow ? 'test-result test-pass' : 'test-result test-fail';
+            result.innerHTML = `
+                <i class="fas fa-${shouldShow ? 'check' : 'times'}"></i> 
+                Single Row Test: KPI ${shouldShow ? 'SHOWN' : 'HIDDEN'} (${shouldShow ? 'PASS' : 'FAIL'})
+            `;
+            
+            const resultsDiv = document.getElementById('kpiTestResults');
+            resultsDiv.innerHTML = '';
+            resultsDiv.appendChild(result);
+        }
+        
+        function testMultipleRows() {
+            resultData = testDataSets.multipleRows;
+            const shouldShow = updateKPIVisibility(resultData);
+            
+            const result = document.createElement('div');
+            result.className = !shouldShow ? 'test-result test-pass' : 'test-result test-fail';
+            result.innerHTML = `
+                <i class="fas fa-${!shouldShow ? 'check' : 'times'}"></i> 
+                Multiple Rows Test: KPI ${shouldShow ? 'SHOWN' : 'HIDDEN'} (${!shouldShow ? 'PASS' : 'FAIL'})
+            `;
+            
+            const resultsDiv = document.getElementById('kpiTestResults');
+            resultsDiv.innerHTML = '';
+            resultsDiv.appendChild(result);
+        }
+        
+        function testEmptyData() {
+            resultData = testDataSets.emptyData;
+            const shouldShow = updateKPIVisibility(resultData);
+            
+            const result = document.createElement('div');
+            result.className = !shouldShow ? 'test-result test-pass' : 'test-result test-fail';
+            result.innerHTML = `
+                <i class="fas fa-${!shouldShow ? 'check' : 'times'}"></i> 
+                Empty Data Test: KPI ${shouldShow ? 'SHOWN' : 'HIDDEN'} (${!shouldShow ? 'PASS' : 'FAIL'})
+            `;
+            
+            const resultsDiv = document.getElementById('kpiTestResults');
+            resultsDiv.innerHTML = '';
+            resultsDiv.appendChild(result);
+        }
+        
+        function loadSampleData() {
+            resultData = testDataSets.sampleChart;
+            populateColumnSelectors(resultData);
+            autoSelectChartColumns(currentChartType, resultData);
+            renderVisualization(currentChartType);
+            
+            const result = document.createElement('div');
+            result.className = 'test-result test-pass';
+            result.innerHTML = `
+                <i class="fas fa-check"></i> 
+                Sample data loaded successfully with ${resultData.rows.length} rows and ${resultData.columns.length} columns
+            `;
+            
+            const resultsDiv = document.getElementById('chartTestResults');
+            resultsDiv.innerHTML = '';
+            resultsDiv.appendChild(result);
+        }
+        
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Chart and KPI Fix Test Page Loaded');
+            
+            // Add change handlers to column selectors
+            document.getElementById('xAxisColumn').addEventListener('change', () => {
+                if (currentChartType !== 'table') renderChart(currentChartType);
+            });
+            
+            document.getElementById('yAxisColumn').addEventListener('change', () => {
+                if (currentChartType !== 'table') renderChart(currentChartType);
+            });
+        });
+    </script>
+</body>
+</html> 

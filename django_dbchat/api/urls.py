@@ -5,17 +5,15 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 
-app_name = 'api'
-
-# DRF router for viewsets
+# Create a router for DRF ViewSets
 router = DefaultRouter()
-# TODO: Register viewsets here when they are created
-# router.register(r'users', UserViewSet)
-# router.register(r'dashboards', DashboardViewSet)
 
 urlpatterns = [
     # DRF browsable API
     path('', include(router.urls)),
+    
+    # Dashboard API endpoints (frontend expects these URLs)
+    path('dashboards/item/<uuid:item_id>/data/', views.dashboard_item_data_proxy, name='dashboard_item_data_proxy'),
     
     # ETL Operations API
     path('etl-operations/<uuid:operation_id>/', views.ETLOperationAPIView.as_view(), name='etl_operation'),
@@ -33,6 +31,9 @@ urlpatterns = [
     
     # Dashboard API
     path('execute-dashboard-query/', views.execute_dashboard_query, name='execute_dashboard_query'),
+    
+    # Users API for dashboard sharing
+    path('users/', views.users_list_api, name='users_list'),
     
     # API documentation (will be added with drf-spectacular)
     # path('schema/', SpectacularAPIView.as_view(), name='schema'),

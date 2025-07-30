@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+
+{% block title %}Query Results - Test{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header">
+            <h5>Query Results - Debug View</h5>
+        </div>
+        <div class="card-body">
+            <h6>Query:</h6>
+            <p>{{ query }}</p>
+            
+            <h6>Raw Result Data:</h6>
+            <pre style="background: #f8f9fa; padding: 1rem; border-radius: 0.5rem;">{{ result }}</pre>
+            
+            <h6>Generated SQL:</h6>
+            <pre style="background: #e9ecef; padding: 1rem; border-radius: 0.5rem;">{{ sql }}</pre>
+            
+            <div class="mt-4">
+                <h6>Data Analysis:</h6>
+                <div id="dataAnalysis" style="background: #d4edda; padding: 1rem; border-radius: 0.5rem;">
+                    Loading data analysis...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Analyze the raw result data
+document.addEventListener('DOMContentLoaded', function() {
+    const resultText = `{{ result|escapejs }}`;
+    const analysisDiv = document.getElementById('dataAnalysis');
+    
+    let analysis = 'Raw result text: ' + resultText + '\n\n';
+    
+    try {
+        // Try to parse as JSON
+        if (resultText.startsWith('{') || resultText.startsWith('[')) {
+            const parsed = JSON.parse(resultText);
+            analysis += 'Parsed as JSON:\n' + JSON.stringify(parsed, null, 2) + '\n\n';
+            
+            // Look for numeric values
+            if (parsed.data && Array.isArray(parsed.data)) {
+                analysis += 'Data array found with ' + parsed.data.length + ' rows\n';
+                if (parsed.data.length > 0) {
+                    const firstRow = parsed.data[0];
+                    analysis += 'First row: ' + JSON.stringify(firstRow) + '\n';
+                    
+                    if (typeof firstRow === 'object') {
+                        for (let key in firstRow) {
+                            const value = firstRow[key];
+                            analysis += key + ': ' + value + ' (type: ' + typeof value + ')\n';
+                            
+                            if (typeof value === 'number' && value > 0) {
+                                analysis += '>>> FOUND NUMERIC VALUE: ' + value + ' <<<\n';
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Try as plain number
+            const num = parseFloat(resultText);
+            if (!isNaN(num)) {
+                analysis += 'Parsed as number: ' + num + '\n';
+            } else {
+                analysis += 'Could not parse as number\n';
+            }
+        }
+    } catch (e) {
+        analysis += 'JSON parse error: ' + e.message + '\n';
+    }
+    
+    analysisDiv.innerHTML = '<pre>' + analysis + '</pre>';
+});
+</script>
+{% endblock %}

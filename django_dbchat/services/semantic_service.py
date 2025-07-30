@@ -32,6 +32,40 @@ class SemanticService:
         self.business_glossary: Dict[str, str] = {}
         self._load_business_glossary()
     
+    def get_dynamic_table_name(self, schema_info=None):
+        """Get the actual table name from available data sources"""
+        try:
+            from datasets.models import DataSource, SemanticTable
+            
+            # First try to get from active data sources
+            active_sources = DataSource.objects.filter(status='active')
+            if active_sources.exists():
+                # Get the table name from the first active source
+                source = active_sources.first()
+                if source.table_name:
+                    return source.table_name
+                
+                # If no table_name, try to get from semantic tables
+                semantic_tables = SemanticTable.objects.filter(data_source=source)
+                if semantic_tables.exists():
+                    return semantic_tables.first().name
+            
+            # Fallback: get any available table name
+            all_sources = DataSource.objects.all()
+            if all_sources.exists():
+                source = all_sources.first()
+                if source.table_name:
+                    return source.table_name
+            
+            # Last resort: return None to force error handling
+            return None
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting dynamic table name: {e}")
+            return None
+    
     def _load_business_glossary(self):
         """Load universal glossary that works across all business domains"""
         # UNIVERSAL: Generic terms that work with any dataset, any business domain
@@ -112,12 +146,43 @@ User: "sales in south" → Ask: "What would you like to know about sales in the 
 Remember: It's better to ask helpful questions than to guess or return empty results!
 """
             
-            success, response = llm_service.generate_sql(full_prompt, schema_info)
+            success, response = llm_service.generate_sql(full_prompt, schema_info, data_source=getattr(self, 'data_source', None))
             
             if success and response:
-                if response.startswith("CLARIFICATION_NEEDED:"):
-                    clarification = response.replace("CLARIFICATION_NEEDED:", "").strip()
-                    return True, "", clarification
+                # Enhanced clarification detection - handle cases where model prefixes with SELECT
+                response_cleaned = response.strip()
+                
+                # Check for clarification patterns (with or without SELECT prefix)
+                clarification_patterns = [
+                    "CLARIFICATION_NEEDED:",
+                    "SELECT CLARIFICATION_NEEDED:",
+                    "CLARIFICATION_NEEDED",
+                    "SELECT CLARIFICATION_NEEDED"
+                ]
+                
+                is_clarification = False
+                clarification_text = ""
+                
+                for pattern in clarification_patterns:
+                    if response_cleaned.startswith(pattern):
+                        is_clarification = True
+                        clarification_text = response_cleaned.replace(pattern, "").strip()
+                        # Remove any trailing semicolon from clarification
+                        clarification_text = clarification_text.rstrip(';').strip()
+                        break
+                
+                # Also check if the response contains clarification text but isn't SQL
+                if not is_clarification and "CLARIFICATION_NEEDED" in response_cleaned.upper():
+                    is_clarification = True
+                    # Extract everything after CLARIFICATION_NEEDED
+                    start_idx = response_cleaned.upper().find("CLARIFICATION_NEEDED")
+                    if start_idx != -1:
+                        clarification_text = response_cleaned[start_idx:].replace("CLARIFICATION_NEEDED:", "").replace("CLARIFICATION_NEEDED", "").strip()
+                        clarification_text = clarification_text.rstrip(';').strip()
+                
+                if is_clarification:
+                    logger.info(f"Detected clarification request: {clarification_text}")
+                    return True, "", clarification_text
                 
                 # Check for low confidence indicators in the response
                 confidence_score = self._assess_query_confidence(natural_language_query, response, schema_info)
@@ -125,7 +190,7 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                 
                 # For complex queries, confidence scoring will handle them
                 
-                if confidence_score < 40:
+                if confidence_score < 25:  # Reduced from 40% to 25% to be less aggressive
                     logger.info(f"Low confidence ({confidence_score}%), generating clarification")
                     clarification = self._generate_intelligent_clarification(natural_language_query, schema_info)
                     return True, "", clarification
@@ -141,7 +206,7 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                     
                     # If still getting empty SQL, try template-based generation
                     if not any(keyword in cleaned_response.upper() for keyword in ['SELECT', 'FROM', 'WHERE']):
-                        template_sql = self._try_template_sql_generation(natural_language_query, schema_info)
+                        template_sql = self._try_template_sql_generation(natural_language_query, schema_info, connection_type)
                         if template_sql:
                             logger.info(f"Generated SQL using template approach: {template_sql}")
                             return True, template_sql, None
@@ -327,7 +392,45 @@ Remember: It's better to ask helpful questions than to guess or return empty res
             logger.error(f"Error extracting column names: {e}")
             return []
     
-    def _try_template_sql_generation(self, query: str, schema_info: Dict[str, Any]) -> Optional[str]:
+    def _get_table_name_from_schema(self, schema_info: Dict[str, Any]) -> Optional[str]:
+        """Extract table name from schema info"""
+        try:
+            if isinstance(schema_info, dict):
+                # Look for table_name key
+                if 'table_name' in schema_info:
+                    return schema_info['table_name']
+                # Look for schema with table info
+                for key, value in schema_info.items():
+                    if isinstance(value, dict) and 'columns' in value:
+                        return key
+                # Check if it's a single table schema with metadata
+                if 'tables' in schema_info and schema_info['tables']:
+                    first_table = schema_info['tables'][0]
+                    if isinstance(first_table, dict) and 'name' in first_table:
+                        return first_table['name']
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting table name: {e}")
+            return None
+    
+    def _generate_database_specific_limit_query(self, base_query: str, limit: int, db_type: str) -> str:
+        """Generate database-specific LIMIT query syntax"""
+        db_type = db_type.lower()
+        
+        if db_type == 'sqlserver':
+            # SQL Server uses TOP syntax
+            if base_query.upper().startswith('SELECT '):
+                return base_query.replace('SELECT ', f'SELECT TOP {limit} ', 1)
+            else:
+                return f"SELECT TOP {limit} * FROM ({base_query}) AS subquery"
+        elif db_type == 'oracle':
+            # Oracle uses ROWNUM
+            return f"SELECT * FROM ({base_query}) WHERE ROWNUM <= {limit}"
+        else:
+            # PostgreSQL, MySQL, SQLite use LIMIT
+            return f"{base_query} LIMIT {limit}"
+
+    def _try_template_sql_generation(self, query: str, schema_info: Dict[str, Any], connection_type: str = "postgresql") -> Optional[str]:
         """
         Generate SQL using simple templates for common query patterns
         """
@@ -339,11 +442,139 @@ Remember: It's better to ask helpful questions than to guess or return empty res
             available_columns = self._extract_column_names(schema_info)
             logger.info(f"Available columns: {available_columns}")
             
-            # UNIVERSAL: Pattern-based ranking query generation
-            if ('top' in query_lower and any(word in query_lower for word in ['name', 'user', 'person', 'entity'])) or \
+            # Get table name from schema
+            table_name = self._get_table_name_from_schema(schema_info)
+            
+            # PATTERN 1: Year-over-year comparison (NEW)
+            import re
+            years_pattern = re.findall(r'\b(20\d{2})\b', query)
+            if (len(years_pattern) >= 2 and 
+                any(word in query_lower for word in ['compare', 'versus', 'vs']) and
+                any(word in query_lower for word in ['year', 'annual'])):
+                
+                logger.info("Matched year-over-year comparison pattern")
+                
+                # Find metric column (sales, revenue, etc.)
+                metric_col = None
+                for col in available_columns:
+                    if any(metric in col for metric in ['sales', 'revenue', 'amount', 'total', 'value']):
+                        metric_col = col
+                        break
+                
+                # Find date column
+                date_col = None
+                for col in available_columns:
+                    if any(date_term in col for date_term in ['date', 'time', 'created', 'order']):
+                        date_col = col
+                        break
+                
+                # Find segment column if mentioned
+                segment_col = None
+                segment_value = None
+                if 'consumer' in query_lower:
+                    segment_value = 'Consumer'
+                    for col in available_columns:
+                        if 'segment' in col:
+                            segment_col = col
+                            break
+                
+                if metric_col and date_col and table_name:
+                    where_clause = ""
+                    if segment_col and segment_value:
+                        where_clause = f'WHERE "{segment_col}" = \'{segment_value}\' AND '
+                    else:
+                        where_clause = "WHERE "
+                    
+                    sql = f'''SELECT 
+    YEAR("{date_col}") as year,
+    SUM("{metric_col}") as total_{metric_col.lower()}
+FROM {table_name} 
+{where_clause}YEAR("{date_col}") IN ({", ".join(years_pattern)})
+GROUP BY YEAR("{date_col}")
+ORDER BY year;'''
+                    
+                    logger.info(f"Generated year-over-year SQL: {sql}")
+                    return sql
+            
+            # ENHANCED: Top customers by sales with year filter (PRIORITY PATTERN)
+            if (('top' in query_lower or 'best' in query_lower) and 
+                ('customer' in query_lower or 'client' in query_lower) and 
+                ('sales' in query_lower or 'revenue' in query_lower)):
+                
+                logger.info("Matched TOP CUSTOMERS BY SALES pattern - PRIORITY")
+                
+                # Extract number
+                import re
+                numbers = re.findall(r'\d+', query)
+                limit = numbers[0] if numbers else '10'
+                
+                # Extract year if mentioned
+                year_filter = ""
+                years = re.findall(r'\b(20\d{2})\b', query)
+                if years:
+                    year_value = years[0]
+                    # Find date column
+                    date_col = None
+                    for col in available_columns:
+                        if 'order' in col and 'date' in col:
+                            date_col = col
+                            break
+                    if not date_col:
+                        for col in available_columns:
+                            if 'date' in col:
+                                date_col = col
+                                break
+                    
+                    if date_col:
+                        # Get original column name with proper casing
+                        original_columns = []
+                        if isinstance(schema_info, dict) and 'columns' in schema_info:
+                            original_columns = [col.get('name', '') for col in schema_info['columns'] if isinstance(col, dict)]
+                        
+                        col_mapping = {col.lower(): col for col in original_columns}
+                        proper_date_col = col_mapping.get(date_col, date_col)
+                        year_filter = f' WHERE YEAR("{proper_date_col}") = {year_value}'
+                
+                # Find customer and sales columns with proper casing
+                original_columns = []
+                if isinstance(schema_info, dict) and 'columns' in schema_info:
+                    original_columns = [col.get('name', '') for col in schema_info['columns'] if isinstance(col, dict)]
+                
+                col_mapping = {col.lower(): col for col in original_columns}
+                
+                customer_col = None
+                for col in available_columns:
+                    if 'customer' in col and 'name' in col:
+                        customer_col = col_mapping.get(col, col)
+                        break
+                if not customer_col:
+                    customer_col = next((col_mapping.get(col, col) for col in available_columns if 'customer' in col), 'Customer Name')
+                
+                sales_col = None
+                for col in available_columns:
+                    if 'sales' in col:
+                        sales_col = col_mapping.get(col, col)
+                        break
+                if not sales_col:
+                    sales_col = 'Sales'
+                
+                # Get table name
+                table_name = self._get_table_name_from_schema(schema_info)
+                
+                sql = f'''SELECT "{customer_col}", SUM("{sales_col}") AS total_sales
+FROM {table_name}{year_filter}
+GROUP BY "{customer_col}"
+ORDER BY total_sales DESC
+LIMIT {limit};'''
+                
+                logger.info(f"Generated TOP CUSTOMERS BY SALES SQL: {sql}")
+                return sql
+            
+            # UNIVERSAL: Pattern-based ranking query generation (FALLBACK)
+            elif ('top' in query_lower and any(word in query_lower for word in ['name', 'user', 'person', 'entity'])) or \
                (any(word in query_lower for word in ['best', 'highest', 'most']) and any(word in query_lower for word in ['name', 'user', 'person', 'entity'])):
                 
-                logger.info("Matched customer ranking pattern")
+                logger.info("Matched general customer ranking pattern")
                 
                 # Extract number
                 import re
@@ -421,7 +652,7 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                 if available_tables:
                     table_name = available_tables[0]  # Use first available table
                 else:
-                    table_name = "csv_data"  # fallback only
+                    table_name = get_dynamic_table_name() or "main_table"  # dynamic fallback
                 
                 # Try to get table name from schema info
                 if isinstance(schema_info, dict):
@@ -519,7 +750,7 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                     region_filter = f' AND "{region_col}" = \'{region_value}\''
                 
                 # Determine table name from schema
-                table_name = "csv_data"
+                table_name = get_dynamic_table_name() or "main_table"
                 if isinstance(schema_info, dict) and 'table_name' in schema_info:
                     table_name = schema_info['table_name']
                 elif isinstance(schema_info, dict) and 'name' in schema_info:
@@ -587,7 +818,7 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                         break
                 
                 # Determine table name from schema
-                table_name = "csv_data"
+                table_name = get_dynamic_table_name() or "main_table"
                 if isinstance(schema_info, dict) and 'table_name' in schema_info:
                     table_name = schema_info['table_name']
                 elif isinstance(schema_info, dict) and 'name' in schema_info:
@@ -629,7 +860,7 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                         break
                 
                 # Determine table name from schema
-                table_name = "csv_data"
+                table_name = get_dynamic_table_name() or "main_table"
                 if isinstance(schema_info, dict) and 'table_name' in schema_info:
                     table_name = schema_info['table_name']
                 elif isinstance(schema_info, dict) and 'name' in schema_info:
@@ -693,7 +924,7 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                 region_col = next((col_mapping.get(col, col) for col in available_columns if 'region' in col), 'Region')
                 
                 # Determine table name from schema
-                table_name = "csv_data"
+                table_name = get_dynamic_table_name() or "main_table"
                 if isinstance(schema_info, dict) and 'table_name' in schema_info:
                     table_name = schema_info['table_name']
                 elif isinstance(schema_info, dict) and 'name' in schema_info:
@@ -757,19 +988,19 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                 date_col = next((col_mapping.get(col, col) for col in available_columns if 'order_date' in col or 'date' in col), 'Order_Date')
                 
                 # Determine table name
-                table_name = "csv_data"
+                table_name = get_dynamic_table_name() or "main_table"
                 if isinstance(schema_info, dict) and 'table_name' in schema_info:
                     table_name = schema_info['table_name']
                 
-                sql = f"""
+                base_sql = f"""
                 SELECT "{product_col}", SUM("{metric_col}") as total_{metric_col.lower()}
                 FROM {table_name}
                 WHERE "{region_col}" = '{region_value}' 
                 AND strftime('%Y', "{date_col}") = '{year_value}'
                 GROUP BY "{product_col}"
-                ORDER BY SUM("{order_col}") DESC
-                LIMIT {limit}
-                """
+                ORDER BY SUM("{order_col}") DESC"""
+                
+                sql = self._generate_database_specific_limit_query(base_sql.strip(), limit, connection_type)
                 
                 logger.info(f"Generated top selling items SQL: {sql.strip()}")
                 return sql.strip()
@@ -777,13 +1008,14 @@ Remember: It's better to ask helpful questions than to guess or return empty res
             # Pattern: general "show all" or "list all"
             elif any(phrase in query_lower for phrase in ['show all', 'list all', 'all data']):
                 # Determine table name from schema
-                table_name = "csv_data"
+                table_name = get_dynamic_table_name() or "main_table"
                 if isinstance(schema_info, dict) and 'table_name' in schema_info:
                     table_name = schema_info['table_name']
                 elif isinstance(schema_info, dict) and 'name' in schema_info:
                     table_name = schema_info['name']
                 
-                sql = f"SELECT * FROM {table_name} LIMIT 100"
+                base_sql = f"SELECT * FROM {table_name}"
+                sql = self._generate_database_specific_limit_query(base_sql, 100, connection_type)
                 logger.info(f"Generated general query SQL: {sql}")
                 return sql
             
@@ -926,7 +1158,7 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                     elif 'name' in raw_schema and raw_schema['name']:
                         table_name = raw_schema['name']
                     else:
-                        table_name = "integrated_data" if connection_type == "integrated" else "csv_data"
+                        table_name = "integrated_data" if connection_type == "integrated" else (get_dynamic_table_name() or "main_table")
                     columns = raw_schema['columns']
                     self._generate_table_prompt(table_name, columns, prompt_parts)
                 else:
@@ -937,7 +1169,7 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                             self._generate_table_prompt(table_name, columns, prompt_parts)
             elif isinstance(raw_schema, list):
                 # CSV/API/Integrated data format as list
-                table_name = "integrated_data" if connection_type == "integrated" else "csv_data"
+                table_name = "integrated_data" if connection_type == "integrated" else (get_dynamic_table_name() or "main_table")
                 columns = raw_schema
                 self._generate_table_prompt(table_name, columns, prompt_parts)
             
@@ -2407,7 +2639,10 @@ Remember: It's better to ask helpful questions than to guess or return empty res
             # Factor 3: Specificity of metrics and aggregations
             vague_terms = ['top', 'best', 'good', 'high', 'low', 'some', 'many']
             vague_count = sum(1 for term in vague_terms if term in query_lower)
-            confidence_score -= vague_count * 8  # Deduct for each vague term
+            # Reduce penalty if there's clear context (specific years, segments, etc.)
+            clear_context = bool(numbers) or any(term in query_lower for term in ['consumer', 'segment', 'region'])
+            penalty = 5 if clear_context else 8  # Reduced penalty when context is clear
+            confidence_score -= vague_count * penalty
             
             # Factor 4: Presence of numbers/quantities
             import re
@@ -2427,10 +2662,11 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                 confidence_score += 10  # Multiple columns recognized - bonus
             
             # Factor 6: Question clarity (has clear subject and predicate)
-            clarity_indicators = ['show', 'list', 'find', 'get', 'what', 'how many', 'which']
+            clarity_indicators = ['show', 'list', 'find', 'get', 'what', 'how many', 'which', 
+                                'compare', 'versus', 'vs', 'analyze', 'calculate', 'display']
             has_clear_action = any(indicator in query_lower for indicator in clarity_indicators)
             if not has_clear_action:
-                confidence_score -= 15
+                confidence_score -= 10  # Reduced penalty from 15 to 10
             
             # Factor 7: Regional/temporal specificity
             regions = ['north', 'south', 'east', 'west']
@@ -2439,6 +2675,13 @@ Remember: It's better to ask helpful questions than to guess or return empty res
                 confidence_score += 5  # Regional specificity is good
             if any(time in query_lower for time in times):
                 confidence_score += 5  # Temporal specificity is good
+            
+            # Factor 7.5: Year-over-year comparison patterns (BONUS)
+            if len(numbers) >= 2 and any(term in query_lower for term in ['compare', 'versus', 'vs']):
+                # Check if numbers look like years
+                years = [int(n) for n in numbers if len(n) == 4 and 1900 <= int(n) <= 2030]
+                if len(years) >= 2:
+                    confidence_score += 15  # Big bonus for year-over-year comparisons
             
             # Factor 8: Generated SQL quality
             if generated_sql:

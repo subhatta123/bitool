@@ -1,369 +1,80 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
+{% load static %}
 
-{% block title %}ConvaBI - Dashboards{% endblock %}
+{% block extra_css %}
+<style>
+    .dashboard-card {
+        background: white;
+        border-radius: 15px;
+        padding: 25px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+        margin-bottom: 20px;
+    }
+    
+    .dashboard-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+    }
+    
+    .create-dashboard-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 25px;
+        padding: 15px 30px;
+        color: white;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    
+    .create-dashboard-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        color: white;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
+<div class="container-fluid">
     <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header bg-gradient-primary text-white">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h3 class="mb-0">
-                                <i class="fas fa-chart-bar me-2"></i>
-                                Dashboards
-                            </h3>
-                            <p class="mb-0">Interactive dashboards and data visualizations</p>
-                        </div>
-                        <div>
-                            <a href="{% url 'dashboards:create' %}" class="btn btn-success">
-                                <i class="fas fa-plus"></i> Create Dashboard
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <!-- Search and Filter Bar -->
-                    <div class="row mb-4">
-                        <div class="col-md-8">
-                            <form method="get" class="d-flex">
-                                <input type="text" name="search" class="form-control me-2" 
-                                       placeholder="Search dashboards..." value="{{ search_query }}">
-                                <button type="submit" class="btn btn-outline-primary">
-                                    <i class="fas fa-search"></i> Search
-                                </button>
-                            </form>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="d-flex justify-content-end">
-                                <span class="badge bg-primary me-2">{{ owned_count }} Owned</span>
-                                <span class="badge bg-secondary">{{ shared_count }} Shared</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Dashboard Grid -->
-                    {% if dashboards %}
-                        <div class="row">
-                            {% for dashboard in dashboards %}
-                                <div class="col-lg-4 col-md-6 mb-4">
-                                    <div class="card h-100 shadow-sm dashboard-card" data-dashboard-id="{{ dashboard.id }}">
-                                        <div class="card-body d-flex flex-column">
-                                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                                <h5 class="card-title mb-0">
-                                                    <a href="{% url 'dashboards:detail' dashboard.id %}" class="text-dark stretched-link text-decoration-none">
-                                                        {{ dashboard.name }}
-                                                    </a>
-                                                </h5>
-                                                <div class="dropdown">
-                                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="More options">
-                                                        <i class="fas fa-ellipsis-v"></i>
-                                                    </button>
-                                                    <ul class="dropdown-menu">
-                                                        <li><a class="dropdown-item" href="{% url 'dashboards:detail' dashboard.id %}"><i class="fas fa-eye fa-fw me-2"></i>View</a></li>
-                                                        <li><a class="dropdown-item" href="#"><i class="fas fa-edit fa-fw me-2"></i>Edit</a></li>
-                                                        <li><a class="dropdown-item" href="#"><i class="fas fa-copy fa-fw me-2"></i>Clone</a></li>
-                                                        <li><hr class="dropdown-divider"></li>
-                                                        <li><a class="dropdown-item text-danger" href="#" onclick="deleteDashboard('{{ dashboard.id }}', '{{ dashboard.name }}')"><i class="fas fa-trash fa-fw me-2"></i>Delete</a></li>
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                            <p class="card-text text-muted small flex-grow-1">{{ dashboard.description|truncatechars:100 }}</p>
-                                            <div class="d-flex justify-content-between align-items-center mt-3">
-                                                <small class="text-muted"><i class="fas fa-user-circle me-1"></i>{{ dashboard.owner.username }}</small>
-                                                <small class="text-muted">{{ dashboard.updated_at|timesince }} ago</small>
-                                            </div>
-                                            {% if dashboard.owner == user %}
-                                            <div class="mt-2 position-relative" style="z-index: 10;">
-                                                <button class="btn btn-sm btn-outline-danger w-100 delete-dashboard-btn" 
-                                                        data-dashboard-id="{{ dashboard.id }}" 
-                                                        data-dashboard-name="{{ dashboard.name }}"
-                                                        onclick="deleteDashboard('{{ dashboard.id }}', '{{ dashboard.name }}'); return false;">
-                                                    <i class="fas fa-trash me-1"></i>Delete Dashboard
-                                                </button>
-                                            </div>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                </div>
-                            {% endfor %}
-                        </div>
-
-                        <!-- Pagination -->
-                        {% if is_paginated %}
-                            <nav aria-label="Dashboard pagination">
-                                <ul class="pagination justify-content-center">
-                                    {% if page_obj.has_previous %}
-                                        <li class="page-item">
-                                            <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}">First</a>
-                                        </li>
-                                        <li class="page-item">
-                                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">Previous</a>
-                                        </li>
-                                    {% endif %}
-
-                                    <li class="page-item active">
-                                        <span class="page-link">
-                                            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
-                                        </span>
-                                    </li>
-
-                                    {% if page_obj.has_next %}
-                                        <li class="page-item">
-                                            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">Next</a>
-                                        </li>
-                                        <li class="page-item">
-                                            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}">Last</a>
-                                        </li>
-                                    {% endif %}
-                                </ul>
-                            </nav>
-                        {% endif %}
-                    {% else %}
-                        <!-- Empty State -->
-                        <div class="text-center py-5">
-                            <i class="fas fa-chart-bar fa-4x text-muted mb-3"></i>
-                            <h4 class="text-muted">No Dashboards Found</h4>
-                            {% if search_query %}
-                                <p class="text-muted">No dashboards match your search criteria.</p>
-                                <a href="{% url 'dashboards:list' %}" class="btn btn-outline-primary">
-                                    <i class="fas fa-times"></i> Clear Search
-                                </a>
-                            {% else %}
-                                <p class="text-muted">You haven't created any dashboards yet.</p>
-                                <a href="{% url 'dashboards:create' %}" class="btn btn-primary">
-                                    <i class="fas fa-plus"></i> Create Your First Dashboard
-                                </a>
-                            {% endif %}
-                        </div>
-                    {% endif %}
-
-                    <!-- Workflow Navigation -->
-                    <div class="mt-4 pt-3 border-top">
-                        <div class="row align-items-center">
-                            <div class="col-md-6">
-                                <h6 class="text-muted mb-2">
-                                    <i class="fas fa-route me-2"></i>ConvaBI Workflow Navigation
-                                </h6>
-                                <small class="text-muted">Continue your data journey</small>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="d-flex justify-content-end gap-2">
-                                    <a href="{% url 'core:query' %}" class="btn btn-outline-primary btn-sm">
-                                        <i class="fas fa-arrow-left me-1"></i>Back to Query
-                                    </a>
-                                    <a href="{% url 'datasets:list' %}" class="btn btn-outline-secondary btn-sm">
-                                        <i class="fas fa-database me-1"></i>Data Sources
-                                    </a>
-                                    <a href="{% url 'datasets:integration' %}" class="btn btn-outline-warning btn-sm">
-                                        <i class="fas fa-magic me-1"></i>ETL Operations
-                                    </a>
-                                    <a href="{% url 'datasets:semantic' %}" class="btn btn-outline-info btn-sm">
-                                        <i class="fas fa-brain me-1"></i>Semantic Layer
-                                    </a>
-                                    <a href="{% url 'core:home' %}" class="btn btn-outline-success btn-sm">
-                                        <i class="fas fa-home me-1"></i>Home
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-tachometer-alt"></i> My Dashboards</h1>
+                <a href="{% url 'dashboards:create' %}" class="btn create-dashboard-btn">
+                    <i class="fas fa-plus"></i> Create New Dashboard
+                </a>
             </div>
+            
+            {% if dashboards %}
+                <div class="row">
+                    {% for dashboard in dashboards %}
+                    <div class="col-md-6 col-lg-4">
+                        <div class="dashboard-card">
+                            <h5>{{ dashboard.name }}</h5>
+                            <p class="text-muted">{{ dashboard.description|truncatewords:15 }}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">
+                                    {{ dashboard.items.count }} items
+                                </small>
+                                <a href="{% url 'dashboards:detail' dashboard.id %}" class="btn btn-primary btn-sm">
+                                    View <i class="fas fa-arrow-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="text-center">
+                    <h3>No dashboards yet</h3>
+                    <p class="text-muted">Create your first dashboard to get started!</p>
+                    <a href="{% url 'dashboards:create' %}" class="btn create-dashboard-btn">
+                        <i class="fas fa-plus"></i> Create Dashboard
+                    </a>
+                </div>
+            {% endif %}
         </div>
     </div>
 </div>
 {% endblock %}
-
-{% block extra_js %}
-{% csrf_token %}
-<script>
-// Dashboard functionality
-console.log('Dashboard list JavaScript loaded'); // Debug log
-
-function deleteDashboard(dashboardId, dashboardName) {
-    console.log('deleteDashboard called with:', dashboardId, dashboardName); // Debug log
-    
-    // Prevent any default actions and stop propagation
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }
-    
-    if (!confirm(`Are you sure you want to delete the dashboard "${dashboardName}"? This action cannot be undone.`)) {
-        console.log('Deletion cancelled by user'); // Debug log
-        return;
-    }
-
-    console.log('User confirmed deletion, proceeding...'); // Debug log
-
-    const cardElement = event.target.closest('.col-lg-4') || event.target.closest('.card');
-    if (cardElement) {
-        cardElement.style.opacity = '0.5';
-        console.log('Card element found and opacity set'); // Debug log
-    } else {
-        console.log('Card element not found'); // Debug log
-    }
-
-    // Get CSRF token - multiple fallback methods
-    let csrfToken = '';
-    
-    // Method 1: Try meta tag
-    const metaTag = document.querySelector('meta[name=csrf-token]');
-    if (metaTag) {
-        csrfToken = metaTag.getAttribute('content');
-        console.log('CSRF token from meta tag:', csrfToken ? 'Found' : 'Not found');
-    }
-    
-    // Method 2: Try hidden input
-    if (!csrfToken) {
-        const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
-        if (csrfInput) {
-            csrfToken = csrfInput.value;
-            console.log('CSRF token from input:', csrfToken ? 'Found' : 'Not found');
-        }
-    }
-    
-    // Method 3: Try cookie (if using cookie-based CSRF)
-    if (!csrfToken) {
-        const cookies = document.cookie.split(';');
-        for (let cookie of cookies) {
-            if (cookie.trim().startsWith('csrftoken=')) {
-                csrfToken = cookie.trim().substring('csrftoken='.length);
-                console.log('CSRF token from cookie:', csrfToken ? 'Found' : 'Not found');
-                break;
-            }
-        }
-    }
-    
-    if (!csrfToken) {
-        console.error('No CSRF token found!');
-        showAlert('Error: Security token not found. Please refresh the page.', 'danger');
-        if (cardElement) cardElement.style.opacity = '1';
-        return;
-    }
-
-    const deleteUrl = `/dashboards/${dashboardId}/delete/`;
-    console.log('Making DELETE request to:', deleteUrl); // Debug log
-
-    // Direct DELETE request to the correct URL
-    fetch(deleteUrl, {
-        method: 'DELETE', 
-        headers: {
-            'X-CSRFToken': csrfToken,
-            'Content-Type': 'application/json'
-        }
-    })
-    .then(response => {
-        console.log('Response status:', response.status); // Debug log
-        if (response.ok) {
-            return response.json().catch(() => {
-                console.log('Response is not JSON, assuming success'); // Debug log
-                return { success: true, message: 'Dashboard deleted successfully' };
-            });
-        } else {
-            throw new Error(`HTTP ${response.status} - Failed to delete dashboard`);
-        }
-    })
-    .then(result => {
-        console.log('Delete result:', result); // Debug log
-        if (result.success) {
-            showAlert('Dashboard deleted successfully!', 'success');
-            if (cardElement) {
-                cardElement.style.transition = 'opacity 0.3s';
-                cardElement.style.opacity = '0';
-                setTimeout(() => {
-                    cardElement.remove();
-                    console.log('Card element removed from DOM'); // Debug log
-                }, 300);
-            }
-        } else {
-            throw new Error(result.error || 'Failed to delete dashboard');
-        }
-    })
-    .catch(error => {
-        console.error('Delete error:', error);
-        showAlert('Failed to delete dashboard: ' + error.message, 'danger');
-        if (cardElement) {
-            cardElement.style.opacity = '1';
-        }
-    });
-    
-    function showAlert(message, type) {
-        console.log('Showing alert:', message, type); // Debug log
-        const alertDiv = document.createElement('div');
-        alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-        alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
-        alertDiv.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-        
-        document.body.appendChild(alertDiv);
-        
-        setTimeout(() => {
-            if (alertDiv.parentNode) {
-                alertDiv.remove();
-            }
-        }, 3000);
-    }
-}
-
-// Alternative method: Add event listeners after DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM loaded, setting up delete button event listeners'); // Debug log
-    
-    // Method 1: Find all delete buttons by class (more reliable)
-    const deleteButtonsByClass = document.querySelectorAll('.delete-dashboard-btn');
-    console.log('Found delete buttons by class:', deleteButtonsByClass.length); // Debug log
-    
-    deleteButtonsByClass.forEach((button, index) => {
-        const dashboardId = button.getAttribute('data-dashboard-id');
-        const dashboardName = button.getAttribute('data-dashboard-name');
-        
-        console.log(`Delete button ${index} - ID: ${dashboardId}, Name: ${dashboardName}`); // Debug log
-        
-        // Remove any existing onclick handlers to avoid conflicts
-        button.removeAttribute('onclick');
-        
-        // Add clean event handler
-        button.addEventListener('click', function(e) {
-            console.log('Delete button clicked via class selector'); // Debug log
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            deleteDashboard(dashboardId, dashboardName);
-        });
-    });
-    
-    // Method 2: Find all delete buttons by onclick attribute (fallback)
-    const deleteButtons = document.querySelectorAll('[onclick*="deleteDashboard"]');
-    console.log('Found delete buttons by onclick:', deleteButtons.length); // Debug log
-    
-    deleteButtons.forEach((button, index) => {
-        console.log(`Setting up button ${index}:`, button); // Debug log
-        
-        // Extract dashboard ID and name from onclick attribute
-        const onclickAttr = button.getAttribute('onclick');
-        const matches = onclickAttr.match(/deleteDashboard\('([^']+)',\s*'([^']+)'\)/);
-        
-        if (matches) {
-            const dashboardId = matches[1];
-            const dashboardName = matches[2];
-            
-            console.log(`Button ${index} - ID: ${dashboardId}, Name: ${dashboardName}`); // Debug log
-            
-            // Add a direct click handler as backup
-            button.addEventListener('click', function(e) {
-                console.log('Button clicked via onclick selector'); // Debug log
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-                deleteDashboard(dashboardId, dashboardName);
-            });
-        }
-    });
-});
-</script>
-{% endblock %} 

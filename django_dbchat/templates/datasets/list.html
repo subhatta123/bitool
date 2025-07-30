@@ -499,14 +499,28 @@
                     <div class="row">
                         <div class="col-md-8">
                             <div class="mb-3">
-                                <label for="dbHost" class="form-label">Host</label>
-                                <input type="text" class="form-control" id="dbHost" name="host" placeholder="localhost" required>
+                                <label for="dbHost" class="form-label">
+                                    Host 
+                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                       data-bs-toggle="tooltip" 
+                                       data-bs-placement="top" 
+                                       title="Server hostname or IP address. Examples: localhost, 192.168.1.100, db.company.com"></i>
+                                </label>
+                                <input type="text" class="form-control" id="dbHost" name="host" placeholder="localhost or IP address" required>
+                                <div class="form-text">Examples: localhost, 192.168.1.100, database.company.com</div>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="mb-3">
-                                <label for="dbPort" class="form-label">Port</label>
-                                <input type="number" class="form-control" id="dbPort" name="port" required>
+                                <label for="dbPort" class="form-label">
+                                    Port 
+                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                       data-bs-toggle="tooltip" 
+                                       data-bs-placement="top" 
+                                       title="Database port number. Default ports: PostgreSQL=5432, MySQL=3306, SQL Server=1433, Oracle=1521"></i>
+                                </label>
+                                <input type="number" class="form-control" id="dbPort" name="port" placeholder="5432" required>
+                                <div class="form-text" id="portHelp">Default: 5432</div>
                             </div>
                         </div>
                     </div>
@@ -514,14 +528,28 @@
                     <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="dbDatabase" class="form-label">Database Name</label>
-                                <input type="text" class="form-control" id="dbDatabase" name="database" required>
+                                <label for="dbDatabase" class="form-label">
+                                    Database Name 
+                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                       data-bs-toggle="tooltip" 
+                                       data-bs-placement="top" 
+                                       title="Name of the database to connect to. This must exist on the server."></i>
+                                </label>
+                                <input type="text" class="form-control" id="dbDatabase" name="database" placeholder="my_database" required>
+                                <div class="form-text">The database must already exist on the server</div>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="dbSchema" class="form-label">Schema (Optional)</label>
-                                <input type="text" class="form-control" id="dbSchema" name="schema">
+                                <label for="dbSchema" class="form-label">
+                                    Schema (Optional) 
+                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                       data-bs-toggle="tooltip" 
+                                       data-bs-placement="top" 
+                                       title="Database schema name. Leave empty to use default schema (usually 'public' for PostgreSQL)."></i>
+                                </label>
+                                <input type="text" class="form-control" id="dbSchema" name="schema" placeholder="public">
+                                <div class="form-text">Default schema will be used if empty</div>
                             </div>
                         </div>
                     </div>
@@ -529,14 +557,95 @@
                     <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="dbUsername" class="form-label">Username</label>
-                                <input type="text" class="form-control" id="dbUsername" name="username" required>
+                                <label for="dbUsername" class="form-label">
+                                    Username 
+                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                       data-bs-toggle="tooltip" 
+                                       data-bs-placement="top" 
+                                       title="Database user with read access to the tables you want to query."></i>
+                                </label>
+                                <input type="text" class="form-control" id="dbUsername" name="username" placeholder="database_user" required>
+                                <div class="form-text">User must have read permissions</div>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="dbPassword" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="dbPassword" name="password" required>
+                                <label for="dbPassword" class="form-label">
+                                    Password 
+                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                       data-bs-toggle="tooltip" 
+                                       data-bs-placement="top" 
+                                       title="Password for the database user. This will be encrypted and stored securely."></i>
+                                </label>
+                                <input type="password" class="form-control" id="dbPassword" name="password" placeholder="••••••••" required>
+                                <div class="form-text">Encrypted and stored securely</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Table Selection Section (Hidden by default) -->
+                    <div id="tableSelectionSection" class="card bg-light mb-3" style="display: none;">
+                        <div class="card-header">
+                            <i class="fas fa-table"></i> Select Tables to Import
+                        </div>
+                        <div class="card-body">
+                            <div id="tablesLoadingIndicator" class="text-center" style="display: none;">
+                                <i class="fas fa-spinner fa-spin"></i> Loading tables...
+                            </div>
+                            <div id="tablesContainer">
+                                <p class="text-muted">Please test the connection first to load available tables.</p>
+                            </div>
+                            <div class="form-text">
+                                <strong>Note:</strong> You must select at least one table to proceed with the connection.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Database Connection Examples -->
+                    <div class="card bg-light mb-3">
+                        <div class="card-header">
+                            <i class="fas fa-info-circle"></i> Connection Examples
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>PostgreSQL</h6>
+                                    <small>
+                                        Host: localhost<br>
+                                        Port: 5432<br>
+                                        Database: myapp_production<br>
+                                        Username: postgres
+                                    </small>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>MySQL</h6>
+                                    <small>
+                                        Host: 192.168.1.100<br>
+                                        Port: 3306<br>
+                                        Database: sales_db<br>
+                                        Username: mysql_user
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="row mt-2">
+                                <div class="col-md-6">
+                                    <h6>SQL Server</h6>
+                                    <small>
+                                        Host: sqlserver.company.com<br>
+                                        Port: 1433<br>
+                                        Database: CompanyDB<br>
+                                        Username: sa
+                                    </small>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Oracle</h6>
+                                    <small>
+                                        Host: oracle-db.local<br>
+                                        Port: 1521<br>
+                                        Database: ORCL<br>
+                                        Username: system
+                                    </small>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -547,11 +656,11 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-primary" onclick="testDatabaseConnection()">
+                    <button type="button" class="btn btn-outline-primary" onclick="testDatabaseConnection(event)">
                         <i class="fas fa-plug"></i> Test Connection
                     </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" id="saveConnectionBtn" disabled>
                         <i class="fas fa-save"></i> Save Connection
                     </button>
                 </div>
@@ -596,7 +705,7 @@
                     <div id="apiAuthFields"></div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-primary" onclick="testApiConnection()">
+                    <button type="button" class="btn btn-outline-primary" onclick="testApiConnection(event)">
                         <i class="fas fa-plug"></i> Test Connection
                     </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -628,6 +737,9 @@ function showConnectionModal(type) {
         document.getElementById('databaseModalTitle').innerHTML = 
             `<i class="fas fa-database"></i> ${type.charAt(0).toUpperCase() + type.slice(1)} Connection`;
         document.getElementById('dbPort').value = dbPorts[type] || '';
+        // Auto-fill defaults when modal is shown
+        updateDatabaseDefaults();
+        
         new bootstrap.Modal(document.getElementById('databaseModal')).show();
     }
 }
@@ -680,15 +792,43 @@ function deleteSource(sourceId) {
     }
 }
 
-function testDatabaseConnection() {
+// Auto-fill default ports based on database type
+function updateDatabaseDefaults() {
+    const dbType = document.getElementById('dbType').value;
+    const portField = document.getElementById('dbPort');
+    const portHelp = document.getElementById('portHelp');
+    
+    const defaults = {
+        'postgresql': { port: 5432, help: 'Default: 5432' },
+        'mysql': { port: 3306, help: 'Default: 3306' },
+        'sqlserver': { port: 1433, help: 'Default: 1433' },
+        'oracle': { port: 1521, help: 'Default: 1521' },
+        'sqlite': { port: '', help: 'Not applicable for SQLite' }
+    };
+    
+    if (defaults[dbType]) {
+        portField.value = defaults[dbType].port;
+        portHelp.textContent = defaults[dbType].help;
+        
+        // Disable port field for SQLite
+        portField.disabled = (dbType === 'sqlite');
+        portField.required = (dbType !== 'sqlite');
+    }
+}
+
+function testDatabaseConnection(event) {
     const form = document.getElementById('databaseForm');
     const formData = new FormData(form);
     const data = Object.fromEntries(formData.entries());
     
-    const btn = event.target;
+    const btn = event ? event.target : document.querySelector('#databaseModal button[onclick="testDatabaseConnection(event)"]');
     const originalText = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
     btn.disabled = true;
+    
+    // Clear any previous alerts
+    const existingAlerts = document.querySelectorAll('.connection-test-alert');
+    existingAlerts.forEach(alert => alert.remove());
     
     fetch('/datasets/test/database/', {
         method: 'POST',
@@ -699,14 +839,48 @@ function testDatabaseConnection() {
         body: JSON.stringify(data)
     })
     .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('success', data.message);
+    .then(result => {
+        const alertClass = result.success ? 'alert-success' : 'alert-danger';
+        const alertIcon = result.success ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle';
+        const alertTitle = result.success ? 'Connection Successful!' : 'Connection Failed';
+        
+        const alertHtml = `
+            <div class="alert ${alertClass} connection-test-alert mt-3" role="alert">
+                <i class="${alertIcon}"></i>
+                <strong>${alertTitle}</strong><br>
+                ${result.message || result.error || 'Unknown error occurred'}
+            </div>
+        `;
+        
+        // Insert alert before modal footer
+        const modalBody = document.querySelector('#databaseModal .modal-body');
+        modalBody.insertAdjacentHTML('beforeend', alertHtml);
+        
+        // Auto-scroll to alert
+        const newAlert = modalBody.querySelector('.connection-test-alert');
+        newAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        
+        // Also show as toast for better visibility
+        if (result.success) {
+            showAlert('success', result.message);
+            // Load tables after successful connection
+            loadDatabaseTables(data);
         } else {
-            showAlert('danger', data.error || 'Connection test failed');
+            showAlert('danger', result.message || result.error);
         }
     })
     .catch(error => {
+        const alertHtml = `
+            <div class="alert alert-danger connection-test-alert mt-3" role="alert">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Connection Error!</strong><br>
+                Network error: ${error.message}
+            </div>
+        `;
+        
+        const modalBody = document.querySelector('#databaseModal .modal-body');
+        modalBody.insertAdjacentHTML('beforeend', alertHtml);
+        
         showAlert('danger', 'Error testing connection: ' + error.message);
     })
     .finally(() => {
@@ -715,12 +889,12 @@ function testDatabaseConnection() {
     });
 }
 
-function testApiConnection() {
+function testApiConnection(event) {
     const form = document.getElementById('apiForm');
     const formData = new FormData(form);
     const data = Object.fromEntries(formData.entries());
     
-    const btn = event.target;
+    const btn = event ? event.target : document.querySelector('#apiModal button[onclick="testApiConnection(event)"]');
     const originalText = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
     btn.disabled = true;
@@ -796,14 +970,24 @@ document.getElementById('csvForm').addEventListener('submit', function(e) {
 document.getElementById('databaseForm').addEventListener('submit', function(e) {
     e.preventDefault();
     
+    // Validate table selection
+    const selectedTables = getSelectedTables();
+    if (selectedTables.length === 0) {
+        showAlert('danger', 'Please select at least one table to import.');
+        return;
+    }
+    
     const formData = new FormData(this);
+    // Add selected tables to form data
+    formData.append('selected_tables', JSON.stringify(selectedTables));
+    
     const submitBtn = this.querySelector('button[type="submit"]');
     const originalText = submitBtn.innerHTML;
     
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
     submitBtn.disabled = true;
     
-    fetch('/datasets/create/database/', {
+    fetch('/datasets/create-database/', {
         method: 'POST',
         headers: {
             'X-CSRFToken': ConvaBI.getCsrfToken()
@@ -1719,6 +1903,130 @@ function finalizeImport() {
         `;
     });
 }
+
+function loadDatabaseTables(connectionData) {
+    // Show table selection section
+    document.getElementById('tableSelectionSection').style.display = 'block';
+    document.getElementById('tablesLoadingIndicator').style.display = 'block';
+    document.getElementById('tablesContainer').innerHTML = '';
+    
+    fetch('/datasets/get-tables/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': ConvaBI.getCsrfToken(),
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(connectionData)
+    })
+    .then(response => response.json())
+    .then(result => {
+        document.getElementById('tablesLoadingIndicator').style.display = 'none';
+        
+        if (result.success && result.tables && result.tables.length > 0) {
+            displayTableSelection(result.tables);
+        } else {
+            document.getElementById('tablesContainer').innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    No tables found or error loading tables: ${result.message || 'Unknown error'}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        document.getElementById('tablesLoadingIndicator').style.display = 'none';
+        document.getElementById('tablesContainer').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i>
+                Error loading tables: ${error.message}
+            </div>
+        `;
+    });
+}
+
+function displayTableSelection(tables) {
+    const container = document.getElementById('tablesContainer');
+    
+    let tablesHtml = `
+        <div class="mb-3">
+            <label class="form-label">
+                <strong>Available Tables</strong>
+                <small class="text-muted">(Select at least one)</small>
+            </label>
+        </div>
+    `;
+    
+    tables.forEach((table, index) => {
+        tablesHtml += `
+            <div class="form-check mb-2">
+                <input class="form-check-input table-checkbox" type="checkbox" 
+                       value="${table.name}" id="table_${index}" 
+                       onchange="validateTableSelection()">
+                <label class="form-check-label" for="table_${index}">
+                    <strong>${table.name}</strong>
+                    <br><small class="text-muted">${table.description}</small>
+                </label>
+            </div>
+        `;
+    });
+    
+    tablesHtml += `
+        <div class="mt-3">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAllTables()">
+                <i class="fas fa-check-square"></i> Select All
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="clearAllTables()">
+                <i class="fas fa-square"></i> Clear All
+            </button>
+        </div>
+    `;
+    
+    container.innerHTML = tablesHtml;
+}
+
+function validateTableSelection() {
+    const checkboxes = document.querySelectorAll('.table-checkbox:checked');
+    const saveBtn = document.getElementById('saveConnectionBtn');
+    
+    if (checkboxes.length > 0) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Connection';
+    } else {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Connection (Select Tables)';
+    }
+}
+
+function selectAllTables() {
+    document.querySelectorAll('.table-checkbox').forEach(checkbox => {
+        checkbox.checked = true;
+    });
+    validateTableSelection();
+}
+
+function clearAllTables() {
+    document.querySelectorAll('.table-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    validateTableSelection();
+}
+
+function getSelectedTables() {
+    const selectedTables = [];
+    document.querySelectorAll('.table-checkbox:checked').forEach(checkbox => {
+        selectedTables.push(checkbox.value);
+    });
+    return selectedTables;
+}
+
+// Enable bootstrap tooltips on page load
+document.addEventListener('DOMContentLoaded', function() {
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
+
 </script>
 
 {% csrf_token %}

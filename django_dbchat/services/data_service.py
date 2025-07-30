@@ -61,18 +61,15 @@ class DataService:
         # Create cache key for connection pooling
         cache_key = self._create_connection_cache_key(connection_info)
         
-        # Try to get from cache first
+        # Clear any existing cached connections to prevent engine/cursor errors
         if cache_key in self.connections_cache:
             try:
-                conn = self.connections_cache[cache_key]
-                if self._test_connection_health(conn, connection_type):
-                    return conn
-                else:
-                    # Remove stale connection
-                    del self.connections_cache[cache_key]
-            except Exception:
-                if cache_key in self.connections_cache:
-                    del self.connections_cache[cache_key]
+                old_conn = self.connections_cache[cache_key]
+                if hasattr(old_conn, 'close'):
+                    old_conn.close()
+            except:
+                pass
+            del self.connections_cache[cache_key]
         
         # Create new connection with retry logic
         max_retries = 3
@@ -103,8 +100,8 @@ class DataService:
                         return conn  # Return DataFrame even if empty (valid state)
                     # If conn is None for CSV, continue to retry
                 elif conn is not None:
-                    # For database connections, cache and return
-                    self.connections_cache[cache_key] = conn
+                    # For database connections, return directly (skip caching for now)
+                    # self.connections_cache[cache_key] = conn  # Disabled to prevent engine/cursor mixing
                     return conn
                     
             except Exception as e:
@@ -322,14 +319,32 @@ class DataService:
                 logger.error(f"CSV file too large: {file_size} bytes (max: {max_file_size})")
                 return None
             
-            # Read CSV file with error handling
+            # Read CSV file with comprehensive encoding handling
             logger.info(f"Reading CSV from: {resolved_path}")
             
-            try:
-                df = pd.read_csv(resolved_path, encoding='utf-8')
-            except UnicodeDecodeError:
-                # Try with different encoding
-                df = pd.read_csv(resolved_path, encoding='latin-1')
+            # Try multiple encodings in order of likelihood
+            encodings_to_try = ['utf-8', 'utf-16', 'latin-1', 'cp1252', 'iso-8859-1', 'windows-1252']
+            
+            df = None
+            successful_encoding = None
+            
+            for encoding in encodings_to_try:
+                try:
+                    logger.info(f"Attempting to read CSV with encoding: {encoding}")
+                    df = pd.read_csv(resolved_path, encoding=encoding)
+                    successful_encoding = encoding
+                    logger.info(f"Successfully read CSV with {encoding} encoding")
+                    break
+                except UnicodeDecodeError as e:
+                    logger.warning(f"Failed to read CSV with {encoding} encoding: {e}")
+                    continue
+                except Exception as e:
+                    logger.warning(f"Unexpected error reading CSV with {encoding} encoding: {e}")
+                    continue
+            
+            if df is None:
+                logger.error(f"Failed to read CSV file with any encoding: {resolved_path}")
+                return None
             
             logger.info(f"Successfully loaded CSV with {len(df)} rows and {len(df.columns)} columns")
             
@@ -695,16 +710,16 @@ class DataService:
             available_tables = [t[0] for t in conn.execute("SHOW TABLES").fetchall()]
             logger.info(f"Available tables in DuckDB: {available_tables}")
             
-            # Enhanced table name matching - find the best match
-            actual_table_name = self._find_best_table_match(table_name, available_tables)
+                        # FIXED: Use consistent table name resolution to prevent switching
+            actual_table_name = self._get_consistent_table_name(query, available_tables, table_name)
             if not actual_table_name:
                 logger.error(f"No matching table found for: {table_name}")
                 logger.error(f"Available tables: {available_tables}")
                 return False, f"Table not found: {table_name}"
-            
-            logger.info(f"Using actual table name: {actual_table_name}")
-            
-            # FIXED: Enhanced query adaptation with proper alias handling
+
+            logger.info(f"Using consistent table name: {actual_table_name}")
+
+            # FIXED: Enhanced query adaptation with consistent table name usage
             adapted_query = self._adapt_query_with_better_mapping(query, actual_table_name, conn)
             
             # NEW: Validate and fix SQL syntax before execution
@@ -815,12 +830,39 @@ class DataService:
     def _validate_and_fix_sql_syntax(self, query: str) -> str:
         """
         Validate and fix SQL syntax issues for DuckDB compatibility
-        FIXED: Use dedicated SQL fixer for comprehensive syntax repair
+        FIXED: Handle double quote issues and use SQLFixer correctly
         """
         try:
+            import re
+            
+            # CRITICAL FIX: Remove malformed double quotes first
+            fixed_query = query
+            
+            # Fix double quotes like ""Sales"" -> "Sales"
+            fixed_query = re.sub(r'""([^"]*?)""', r'"\1"', fixed_query)
+            
+            # Fix multiple consecutive quotes
+            fixed_query = re.sub(r'""+', '"', fixed_query)
+            
+            # Fix empty quoted strings
+            fixed_query = re.sub(r'""', '"', fixed_query)
+            
             # Use the dedicated SQL fixer for comprehensive syntax repair
-            from .sql_fixer import sql_fixer
-            fixed_query = sql_fixer.fix_sql_syntax(query)
+            try:
+                from services.sql_fixer import SQLFixer
+                fixed_query = SQLFixer.fix_sql_syntax(fixed_query)
+            except ImportError:
+                logger.warning("SQLFixer not available, using basic fixes")
+            except Exception as fixer_error:
+                logger.warning(f"SQLFixer failed: {fixer_error}, continuing with basic fixes")
+            
+            # Additional basic fixes
+            # Convert backticks to double quotes
+            fixed_query = re.sub(r'`([^`]+)`', r'"\1"', fixed_query)
+            
+            # Ensure proper semicolon ending
+            if not fixed_query.strip().endswith(';'):
+                fixed_query = fixed_query.strip() + ';'
             
             # Log if any changes were made
             if fixed_query != query:
@@ -832,11 +874,18 @@ class DataService:
             
         except Exception as e:
             logger.error(f"Error validating SQL syntax: {e}")
-            # Fallback: at minimum convert backticks to double quotes
-            fallback = re.sub(r'`([^`]+)`', r'"\1"', query)
-            if fallback != query:
-                logger.info(f"Fallback syntax fix: converted backticks to double quotes")
-            return fallback
+            # Ultimate fallback: just clean up obvious issues
+            try:
+                import re
+                fallback = query
+                fallback = re.sub(r'""([^"]*?)""', r'"\1"', fallback)  # Fix double quotes
+                fallback = re.sub(r'`([^`]+)`', r'"\1"', fallback)      # Fix backticks
+                fallback = re.sub(r'""+', '"', fallback)                # Fix multiple quotes
+                if not fallback.strip().endswith(';'):
+                    fallback = fallback.strip() + ';'
+                return fallback
+            except:
+                return query
 
     def _find_best_table_match(self, requested_table: str, available_tables: List[str]) -> Optional[str]:
         """
@@ -955,99 +1004,156 @@ class DataService:
 
     def _adapt_query_with_better_mapping(self, query: str, table_name: str, conn) -> str:
         """
-        Adapt query with better column mapping and SQL alias handling
-        FIXED: Proper handling of SQL aliases and column mapping + data source name replacement
+        Adapt query with better column mapping and CONSISTENT table name usage
+        FIXED: Prevent table name switching during execution
         """
         try:
             # Get actual table schema
             schema_info = conn.execute(f"DESCRIBE {table_name}").fetchall()
             available_columns = [row[0] for row in schema_info]
             
-            logger.info(f"Available columns in {table_name}: {available_columns[:10]}...")  # Show first 10
+            logger.info(f"Adapting query for table: {table_name}")
+            logger.info(f"Available columns: {available_columns[:10]}...")  # Show first 10
             
             # Start with the original query
             adapted_query = query
             
-            # CRITICAL FIX: Replace data source names with actual table names
-            # Extract all potential table references from the query
+            # CRITICAL FIX: Use consistent table name throughout the entire process
             import re
             
-            # Find all table references in FROM and JOIN clauses
-            table_references = []
+            # Step 1: Replace ALL table references with the confirmed table name
+            # This prevents switching between different table names
             
-            # Find FROM clauses
-            from_matches = re.findall(r'\bFROM\s+([a-zA-Z0-9_]+)', adapted_query, re.IGNORECASE)
-            table_references.extend(from_matches)
-            
-            # Find JOIN clauses
-            join_matches = re.findall(r'\bJOIN\s+([a-zA-Z0-9_]+)', adapted_query, re.IGNORECASE)
-            table_references.extend(join_matches)
-            
-            # Replace all table references with the actual table name
-            for table_ref in table_references:
-                if table_ref != table_name:  # Don't replace if it's already the correct table name
-                    logger.info(f"Replacing table reference '{table_ref}' with '{table_name}'")
-                    # Use word boundaries to ensure exact replacement
-                    pattern = r'\b' + re.escape(table_ref) + r'\b'
-                    adapted_query = re.sub(pattern, table_name, adapted_query, flags=re.IGNORECASE)
-            
-            # ADDITIONAL: Handle standard table patterns (fallback)
-            table_patterns = [
-                r'\bdata\b', r'\btable\b', r'\bmain_table\b', r'\bcsv_data\b',
-                r'\bsource_id_[a-f0-9_]+\b'  # Match UUID-like table names
+            # Common table reference patterns that might appear in queries
+            generic_table_patterns = [
+                r'\bFROM\s+([a-zA-Z0-9_]+)(?!\s*\()',
+                r'\b((?:INNER\s+|LEFT\s+|RIGHT\s+|FULL\s+|CROSS\s+)?JOIN)\s+([a-zA-Z0-9_]+)(?!\s*\()',
+                r'\bUPDATE\s+([a-zA-Z0-9_]+)',
+                r'\bINTO\s+([a-zA-Z0-9_]+)',
             ]
             
-            for pattern in table_patterns:
-                if re.search(pattern, adapted_query, flags=re.IGNORECASE):
-                    logger.info(f"Replacing table pattern '{pattern}' with '{table_name}'")
-                    adapted_query = re.sub(pattern, table_name, adapted_query, flags=re.IGNORECASE)
+            for pattern in generic_table_patterns:
+                def replace_table_ref(match):
+                    if len(match.groups()) == 2:
+                        # JOIN pattern
+                        join_type = match.group(1)
+                        return f"{join_type} {table_name}"
+                    else:
+                        # FROM, UPDATE, INTO patterns
+                        return match.group(0).split()[0] + f" {table_name}"
+                
+                adapted_query = re.sub(pattern, replace_table_ref, adapted_query, flags=re.IGNORECASE)
             
-            # FIXED: Better column mapping using actual schema
+            # Step 2: Fix column mapping using actual schema with improved logic
             adapted_query = self._map_columns_intelligently(adapted_query, available_columns)
             
-            # FIXED: Clean up invalid SQL aliases
+            # Step 3: Clean up any SQL syntax issues
             adapted_query = self._fix_sql_aliases(adapted_query)
             
-            logger.info(f"Final adapted query: {adapted_query}")
+            # Step 4: FINAL verification - ensure we're only using the specified table
+            # Replace any remaining generic table names with our confirmed table
+            adapted_query = re.sub(r'\b(data|table|main_table|csv_data)\b(?!\s*\()', table_name, adapted_query, flags=re.IGNORECASE)
+            
+            logger.info(f"Final adapted query for {table_name}: {adapted_query}")
             return adapted_query
             
         except Exception as e:
-            logger.error(f"Error adapting query: {e}")
+            logger.error(f"Error adapting query for table {table_name}: {e}")
             return query
+
+    def _get_consistent_table_name(self, query: str, available_tables: List[str], source_id: str) -> str:
+        """
+        Get a consistent table name to use throughout query execution
+        """
+        try:
+            # Extract UUID patterns from source_id
+            import re
+            uuid_patterns = re.findall(r'[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12}', source_id)
+            
+            if uuid_patterns:
+                uuid_pattern = uuid_patterns[0]
+                logger.info(f"Looking for table matching UUID pattern: {uuid_pattern}")
+                
+                # Find the best matching table
+                for table in available_tables:
+                    if uuid_pattern.replace('_', '') in table.replace('_', ''):
+                        logger.info(f"Found consistent table: {table}")
+                        return table
+            
+            # Fallback to source_id based matching
+            for table in available_tables:
+                if source_id.replace('-', '').replace('_', '') in table.replace('-', '').replace('_', ''):
+                    logger.info(f"Found fallback table: {table}")
+                    return table
+            
+            # Last resort - use first available table
+            if available_tables:
+                logger.warning(f"Using first available table as fallback: {available_tables[0]}")
+                return available_tables[0]
+            
+            logger.error("No suitable table found")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting consistent table name: {e}")
+            return available_tables[0] if available_tables else None
     
     def _map_columns_intelligently(self, query: str, available_columns: List[str]) -> str:
         """
-        Map columns intelligently based on available schema
-        FIXED: Better column name mapping without hardcoding
+        Map column references in query to actual available columns with FIXED double quote handling
         """
         try:
-            # Create smart mappings based on actual column names
-            column_mappings = {}
+            import re
             
-            # UNIVERSAL: Dynamic pattern-based column mapping without hardcoded business terms
-            from .universal_schema_service import universal_schema_service
+            # Create mapping of potential column references to actual columns
+            column_mapping = {}
             
+            # First, create exact matches
             for col in available_columns:
-                patterns = universal_schema_service.discover_column_patterns(col)
+                column_mapping[col] = col
+                column_mapping[f'"{col}"'] = f'"{col}"'
                 
-                # Create dynamic mappings based on discovered patterns, not hardcoded business terms
-                for pattern in patterns:
-                    if pattern != 'generic':
-                        # Create semantic alias mapping
-                        column_mappings[f'"{pattern}_column"'] = f'"{col}"'
+                # Also map underscore versions to space versions
+                underscore_version = col.replace(' ', '_')
+                if underscore_version != col:
+                    column_mapping[underscore_version] = f'"{col}"'
+                    column_mapping[f'"{underscore_version}"'] = f'"{col}"'
                 
-                # Always include exact column name mapping
-                column_mappings[f'"{col}"'] = f'"{col}"'
-                column_mappings[col] = f'"{col}"'
+                # Map space versions to quoted space versions
+                if ' ' in col:
+                    column_mapping[col] = f'"{col}"'
             
-            # Apply mappings
-            adapted_query = query
-            for old_col, new_col in column_mappings.items():
-                if old_col in adapted_query:
-                    adapted_query = adapted_query.replace(old_col, new_col)
-                    logger.info(f"Mapped column: {old_col} -> {new_col}")
+            # Apply column mapping with FIXED regex to avoid double quotes
+            mapped_query = query
             
-            return adapted_query
+            for potential_ref, actual_ref in column_mapping.items():
+                # CRITICAL FIX: Avoid double quoting by checking if already quoted
+                if actual_ref.startswith('"') and actual_ref.endswith('"'):
+                    clean_actual_ref = actual_ref
+                else:
+                    clean_actual_ref = f'"{actual_ref}"'
+                
+                # Pattern 1: Replace unquoted column references
+                if not potential_ref.startswith('"'):
+                    # Replace whole word matches only
+                    pattern = r'\b' + re.escape(potential_ref) + r'\b'
+                    mapped_query = re.sub(pattern, clean_actual_ref, mapped_query, flags=re.IGNORECASE)
+                
+                # Pattern 2: Replace quoted column references but avoid double quoting
+                else:
+                    # Only replace if not already properly quoted
+                    if potential_ref != clean_actual_ref:
+                        mapped_query = mapped_query.replace(potential_ref, clean_actual_ref)
+            
+            # CRITICAL FIX: Remove any double quotes that may have been created
+            mapped_query = re.sub(r'""([^"]*?)""', r'"\1"', mapped_query)
+            
+            # Additional cleanup for malformed quotes
+            mapped_query = re.sub(r'""+', '"', mapped_query)  # Multiple quotes to single
+            mapped_query = re.sub(r'""', '"', mapped_query)   # Double quotes to single
+            
+            logger.info(f"Column mapping result: {query} -> {mapped_query}")
+            return mapped_query
             
         except Exception as e:
             logger.error(f"Error in intelligent column mapping: {e}")
@@ -1206,6 +1312,12 @@ class DataService:
                 schema = self._get_postgresql_schema(connection)
             elif connection_info.get('type') == 'sqlite':
                 schema = self._get_sqlite_schema(connection)
+            elif connection_info.get('type') == 'mysql':
+                schema = self._get_mysql_schema(connection)
+            elif connection_info.get('type') == 'sqlserver':
+                schema = self._get_sqlserver_schema(connection, connection_info)
+            elif connection_info.get('type') == 'oracle':
+                schema = self._get_oracle_schema(connection)
             elif connection_info.get('type') == 'csv':
                 schema = self._get_csv_schema(connection)
             elif connection_info.get('type') == 'etl_result':
@@ -1216,6 +1328,13 @@ class DataService:
             # ENHANCED: Apply ETL transformations to schema for CSV sources
             if connection_info.get('type') == 'csv' and schema:
                 schema = self._apply_etl_transformations_to_schema(schema, connection_info)
+            
+            # CRITICAL FIX: Add business metrics to all schema responses
+            if schema and isinstance(schema, dict):
+                business_metrics = self._get_business_metrics_for_schema()
+                if business_metrics:
+                    schema['business_metrics'] = business_metrics
+                    logger.info(f"Added {len(business_metrics)} business metrics to schema (fallback path)")
             
             return schema
                 
@@ -1271,6 +1390,12 @@ class DataService:
                             fallback_table_name = f"ds_{data_source.id.hex.replace('-', '')}"
                             schema['table_name'] = fallback_table_name
                             logger.info(f"[SCHEMA_DUCKDB] Using fallback table name: {fallback_table_name}")
+                        
+                        # CRITICAL FIX: Add business metrics to schema for LLM context
+                        business_metrics = self._get_business_metrics_for_schema()
+                        if business_metrics:
+                            schema['business_metrics'] = business_metrics
+                            logger.info(f"[SCHEMA_DUCKDB] Added {len(business_metrics)} business metrics to schema")
                         
                         return schema
                     else:
@@ -1378,6 +1503,152 @@ class DataService:
         
         return schema
     
+    def _get_mysql_schema(self, connection) -> Dict[str, Any]:
+        """Get MySQL schema information"""
+        schema = {'tables': {}}
+        
+        try:
+            cursor = connection.cursor()
+            
+            # Get tables
+            cursor.execute("SHOW TABLES")
+            tables = cursor.fetchall()
+            
+            for table_row in tables:
+                table_name = table_row[0]
+                
+                # Get column information
+                cursor.execute(f"DESCRIBE {table_name}")
+                columns = cursor.fetchall()
+                
+                columns_list = []
+                for col in columns:
+                    columns_list.append({
+                        'name': col[0],
+                        'type': col[1],
+                        'nullable': col[2] == 'YES',
+                        'default': col[4] if col[4] else None
+                    })
+                
+                schema['tables'][table_name] = {
+                    'columns': columns_list,
+                    'column_count': len(columns_list)
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to get MySQL schema: {e}")
+            return {'error': str(e)}
+        
+        return schema
+    
+    def _get_sqlserver_schema(self, connection, connection_info: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Get SQL Server schema information"""
+        schema = {'tables': {}}
+        
+        try:
+            cursor = connection.cursor()
+            
+            # Get selected tables if specified, otherwise get all tables
+            selected_tables = []
+            if connection_info and connection_info.get('tables'):
+                selected_tables = connection_info['tables']
+                logger.info(f"Using selected SQL Server tables: {selected_tables}")
+            else:
+                # Get all tables
+                cursor.execute("""
+                    SELECT TABLE_NAME 
+                    FROM INFORMATION_SCHEMA.TABLES 
+                    WHERE TABLE_TYPE = 'BASE TABLE' 
+                    AND TABLE_SCHEMA = 'dbo'
+                    ORDER BY TABLE_NAME
+                """)
+                tables = cursor.fetchall()
+                selected_tables = [table_row[0] for table_row in tables]
+                logger.info(f"Using all SQL Server tables: {selected_tables}")
+            
+            for table_name in selected_tables:
+                # Get column information
+                cursor.execute(f"""
+                    SELECT 
+                        COLUMN_NAME,
+                        DATA_TYPE,
+                        IS_NULLABLE,
+                        COLUMN_DEFAULT,
+                        CHARACTER_MAXIMUM_LENGTH
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = '{table_name}'
+                    AND TABLE_SCHEMA = 'dbo'
+                    ORDER BY ORDINAL_POSITION
+                """)
+                columns = cursor.fetchall()
+                
+                columns_list = []
+                for col in columns:
+                    columns_list.append({
+                        'name': col[0],
+                        'type': col[1],
+                        'nullable': col[2] == 'YES',
+                        'default': col[3] if col[3] else None
+                    })
+                
+                schema['tables'][table_name] = {
+                    'columns': columns_list,
+                    'column_count': len(columns_list)
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to get SQL Server schema: {e}")
+            return {'error': str(e)}
+        
+        return schema
+    
+    def _get_oracle_schema(self, connection) -> Dict[str, Any]:
+        """Get Oracle schema information"""
+        schema = {'tables': {}}
+        
+        try:
+            cursor = connection.cursor()
+            
+            # Get tables
+            cursor.execute("SELECT table_name FROM user_tables ORDER BY table_name")
+            tables = cursor.fetchall()
+            
+            for table_row in tables:
+                table_name = table_row[0]
+                
+                # Get column information
+                cursor.execute(f"""
+                    SELECT 
+                        column_name,
+                        data_type,
+                        nullable,
+                        data_default
+                    FROM user_tab_columns
+                    WHERE table_name = '{table_name}'
+                    ORDER BY column_id
+                """)
+                columns = cursor.fetchall()
+                
+                columns_list = []
+                for col in columns:
+                    columns_list.append({
+                        'name': col[0],
+                        'type': col[1],
+                        'nullable': col[2] == 'Y',
+                        'default': col[3] if col[3] else None
+                    })
+                
+                schema['tables'][table_name] = {
+                    'columns': columns_list,
+                    'column_count': len(columns_list)
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to get Oracle schema: {e}")
+            return {'error': str(e)}
+        
+        return schema
+    
     def _get_csv_schema(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Get CSV schema information using centralized type mapping utilities"""
         
@@ -1437,6 +1708,74 @@ class DataService:
         except Exception as e:
             logger.error(f"Error generating ETL result schema: {e}")
             return {'error': str(e)}
+    
+    def _get_business_metrics_for_schema(self) -> List[Dict[str, Any]]:
+        """Get user-defined business metrics for LLM schema context"""
+        try:
+            import duckdb
+            import os
+            
+            db_path = os.path.join('data', 'integrated.duckdb')
+            if not os.path.exists(db_path):
+                logger.info("DuckDB file not found, no business metrics available")
+                return []
+            
+            conn = duckdb.connect(db_path)
+            
+            try:
+                # Check if business metrics table exists
+                tables = conn.execute("SHOW TABLES").fetchall()
+                table_names = [table[0] for table in tables]
+                
+                if 'user_business_metrics' not in table_names:
+                    logger.info("User business metrics table not found")
+                    return []
+                
+                # Get active business metrics
+                metrics_query = """
+                SELECT 
+                    metric_name,
+                    display_name,
+                    description,
+                    formula,
+                    category,
+                    data_type,
+                    unit,
+                    aggregation_type,
+                    business_context
+                FROM user_business_metrics 
+                WHERE is_active = TRUE
+                ORDER BY category, metric_name
+                """
+                
+                metrics_result = conn.execute(metrics_query).fetchall()
+                
+                business_metrics = []
+                for metric in metrics_result:
+                    (name, display, desc, formula, category, dtype, unit, 
+                     agg_type, context) = metric
+                    
+                    business_metrics.append({
+                        'metric_name': name,
+                        'display_name': display,
+                        'description': desc,
+                        'formula': formula,
+                        'category': category,
+                        'data_type': dtype,
+                        'unit': unit,
+                        'aggregation_type': agg_type,
+                        'business_context': context
+                    })
+                
+                logger.info(f"Successfully loaded {len(business_metrics)} business metrics for schema")
+                return business_metrics
+                
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            logger.warning(f"Error loading business metrics for schema: {e}")
+            return []
     
     def _apply_etl_transformations_to_schema(self, schema: Dict[str, Any], connection_info: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1776,74 +2115,296 @@ class DataService:
     
     def test_connection(self, connection_info: Dict[str, Any]) -> Tuple[bool, str]:
         """
-        Test database connection with enhanced error reporting
+        Test database connection with enhanced error reporting and detailed troubleshooting
         """
+        connection_type = connection_info.get('type', 'unknown')
+        
+        # Validate required fields first
+        validation_error = self._validate_connection_info(connection_info)
+        if validation_error:
+            return False, validation_error
+        
         try:
             connection = self.get_connection(connection_info)
-            connection_type = connection_info.get('type', 'unknown')
             
-            # Handle different connection types safely - FIXED: Enhanced DataFrame validation
+            if connection is None:
+                return False, self._get_connection_failure_message(connection_info)
+            
+            # Handle different connection types safely
             if connection_type == 'csv':
                 if isinstance(connection, pd.DataFrame):
-                    # FIXED: Use proper .empty check instead of boolean context
                     if not connection.empty:
                         return True, f"CSV connection successful. {len(connection)} rows, {len(connection.columns)} columns."
                     else:
                         return False, "CSV file is empty or could not be read"
                 else:
-                    # Test database connection with a simple query
-                    try:
-                        if connection_type == 'postgresql':
-                            cursor = connection.cursor()
-                            cursor.execute("SELECT version()")
-                            version = cursor.fetchone()[0]
-                            cursor.close()
-                            return True, f"PostgreSQL connection successful. Version: {version[:50]}..."
-                        elif connection_type == 'mysql':
-                            cursor = connection.cursor()
-                            cursor.execute("SELECT VERSION()")
-                            version = cursor.fetchone()[0]
-                            cursor.close()
-                            return True, f"MySQL connection successful. Version: {version}"
-                        elif connection_type == 'sqlite':
-                            cursor = connection.cursor()
-                            cursor.execute("SELECT sqlite_version()")
-                            version = cursor.fetchone()[0]
-                            return True, f"SQLite connection successful. Version: {version}"
-                        else:
-                            return True, f"{connection_type.title()} connection successful"
-                    except Exception as e:
-                        return False, f"Connection established but test query failed: {str(e)}"
-            else:
-                return False, "Failed to establish connection"
+                    return False, "Invalid CSV data format"
+            
+            # Test database connection with a simple query
+            try:
+                if connection_type == 'postgresql':
+                    cursor = connection.cursor()
+                    cursor.execute("SELECT version()")
+                    version = cursor.fetchone()[0]
+                    cursor.close()
+                    return True, f"PostgreSQL connection successful. Version: {version[:50]}..."
+                elif connection_type == 'mysql':
+                    cursor = connection.cursor()
+                    cursor.execute("SELECT VERSION()")
+                    version = cursor.fetchone()[0]
+                    cursor.close()
+                    return True, f"MySQL connection successful. Version: {version}"
+                elif connection_type == 'sqlite':
+                    cursor = connection.cursor()
+                    cursor.execute("SELECT sqlite_version()")
+                    version = cursor.fetchone()[0]
+                    return True, f"SQLite connection successful. Version: {version}"
+                elif connection_type == 'sqlserver':
+                    cursor = connection.cursor()
+                    cursor.execute("SELECT @@VERSION")
+                    version = cursor.fetchone()[0]
+                    cursor.close()
+                    return True, f"SQL Server connection successful. Version: {version[:50]}..."
+                elif connection_type == 'oracle':
+                    cursor = connection.cursor()
+                    cursor.execute("SELECT * FROM v$version WHERE ROWNUM = 1")
+                    version = cursor.fetchone()[0]
+                    cursor.close()
+                    return True, f"Oracle connection successful. Version: {version[:50]}..."
+                else:
+                    return True, f"{connection_type.title()} connection successful"
+                    
+            except Exception as query_error:
+                return False, f"Connection established but test query failed: {str(query_error)}"
                 
         except Exception as e:
-            logger.error(f"Connection test failed: {e}")
-            return False, f"Connection test failed: {str(e)}"
+            logger.error(f"Connection test failed for {connection_type}: {e}")
+            return False, self._get_detailed_error_message(e, connection_info)
+    
+    def _validate_connection_info(self, connection_info: Dict[str, Any]) -> Optional[str]:
+        """Validate connection parameters and return error message if invalid"""
+        connection_type = connection_info.get('type')
+        
+        if not connection_type:
+            return "Connection type is required"
+        
+        if connection_type in ['postgresql', 'mysql', 'sqlserver', 'oracle']:
+            required_fields = ['host', 'port', 'database', 'username', 'password']
+            missing_fields = []
+            
+            for field in required_fields:
+                if not connection_info.get(field):
+                    missing_fields.append(field)
+            
+            if missing_fields:
+                return f"Missing required fields: {', '.join(missing_fields)}"
+            
+            # Validate port is numeric
+            try:
+                port = int(connection_info.get('port', 0))
+                if port <= 0 or port > 65535:
+                    return "Port must be a number between 1 and 65535"
+            except (ValueError, TypeError):
+                return "Port must be a valid number"
+        
+        return None
+    
+    def _get_connection_failure_message(self, connection_info: Dict[str, Any]) -> str:
+        """Generate helpful error message based on connection type"""
+        connection_type = connection_info.get('type', 'unknown')
+        host = connection_info.get('host', 'unknown')
+        port = connection_info.get('port', 'unknown')
+        database = connection_info.get('database', 'unknown')
+        
+        base_message = f"Failed to connect to {connection_type} database"
+        
+        if connection_type == 'postgresql':
+            return (f"{base_message} at {host}:{port}/{database}. "
+                   "Check: 1) Server is running, 2) Host/port are correct, "
+                   "3) Database exists, 4) Username/password are valid, "
+                   "5) PostgreSQL accepts connections from your IP")
+        elif connection_type == 'mysql':
+            return (f"{base_message} at {host}:{port}/{database}. "
+                   "Check: 1) MySQL server is running, 2) Host/port are correct, "
+                   "3) Database exists, 4) Username/password are valid, "
+                   "5) User has connection privileges")
+        elif connection_type == 'sqlserver':
+            return (f"{base_message} at {host}:{port}/{database}. "
+                   "Check: 1) SQL Server is running, 2) TCP/IP is enabled, "
+                   "3) Host/port are correct, 4) Database exists, "
+                   "5) SQL Server authentication is enabled")
+        elif connection_type == 'oracle':
+            return (f"{base_message} at {host}:{port}/{database}. "
+                   "Check: 1) Oracle listener is running, 2) Service name is correct, "
+                   "3) Host/port are correct, 4) Username/password are valid")
+        else:
+            return f"{base_message}. Please check your connection parameters."
+    
+    def _get_detailed_error_message(self, error: Exception, connection_info: Dict[str, Any]) -> str:
+        """Generate detailed error message based on exception type"""
+        error_str = str(error).lower()
+        connection_type = connection_info.get('type', 'unknown')
+        
+        # Connection refused errors
+        if 'connection refused' in error_str or 'could not connect' in error_str:
+            return (f"Connection refused - the {connection_type} server is not accepting connections. "
+                   "Check if the server is running and the host/port are correct.")
+        
+        # Timeout errors
+        elif 'timeout' in error_str or 'timed out' in error_str:
+            return (f"Connection timeout - the {connection_type} server is not responding. "
+                   "Check network connectivity and firewall settings.")
+        
+        # Authentication errors
+        elif any(phrase in error_str for phrase in ['authentication failed', 'access denied', 'login failed', 'invalid user']):
+            return "Authentication failed - check your username and password."
+        
+        # Database not found errors
+        elif any(phrase in error_str for phrase in ['database', 'schema']) and 'not exist' in error_str:
+            return f"Database '{connection_info.get('database', 'unknown')}' does not exist on the server."
+        
+        # Host not found errors
+        elif 'name or service not known' in error_str or 'getaddrinfo failed' in error_str:
+            return f"Host '{connection_info.get('host', 'unknown')}' not found - check the hostname or IP address."
+        
+        # SSL/TLS errors
+        elif 'ssl' in error_str or 'tls' in error_str:
+            return "SSL/TLS connection error - check SSL settings and certificates."
+        
+        # Permission errors
+        elif 'permission denied' in error_str or 'access denied' in error_str:
+            return "Permission denied - the user may not have connection privileges."
+        
+        # Generic error with helpful context
+        else:
+            return f"Connection failed: {str(error)}. Please verify all connection parameters."
+    
+    def get_database_tables(self, connection_info: Dict[str, Any]) -> Tuple[bool, List[Dict[str, Any]], str]:
+        """
+        Get list of tables from database connection
+        Returns: (success, tables_list, message)
+        """
+        connection_type = connection_info.get('type', 'unknown')
+        
+        try:
+            connection = self.get_connection(connection_info)
+            if connection is None:
+                return False, [], f"Failed to connect to {connection_type} database"
+            
+            tables = []
+            
+            if connection_type == 'postgresql':
+                cursor = connection.cursor()
+                cursor.execute("""
+                    SELECT 
+                        table_name,
+                        COALESCE(obj_description(('"' || table_name || '"')::regclass), '') as description
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_type = 'BASE TABLE'
+                    ORDER BY table_name
+                """)
+                for row in cursor.fetchall():
+                    tables.append({
+                        'name': row[0],
+                        'description': row[1] or f"Table: {row[0]}",
+                        'type': 'table'
+                    })
+                cursor.close()
+                
+            elif connection_type == 'mysql':
+                cursor = connection.cursor()
+                cursor.execute("SHOW TABLES")
+                for row in cursor.fetchall():
+                    table_name = row[0]
+                    tables.append({
+                        'name': table_name,
+                        'description': f"MySQL table: {table_name}",
+                        'type': 'table'
+                    })
+                cursor.close()
+                
+            elif connection_type == 'sqlserver':
+                cursor = connection.cursor()
+                cursor.execute("""
+                    SELECT 
+                        TABLE_NAME,
+                        COALESCE(CAST(ep.value AS NVARCHAR(255)), 'SQL Server table: ' + TABLE_NAME) as description
+                    FROM INFORMATION_SCHEMA.TABLES t
+                    LEFT JOIN sys.tables st ON st.name = t.TABLE_NAME
+                    LEFT JOIN sys.extended_properties ep ON ep.major_id = st.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
+                    WHERE TABLE_TYPE = 'BASE TABLE'
+                    AND TABLE_SCHEMA = 'dbo'
+                    ORDER BY TABLE_NAME
+                """)
+                for row in cursor.fetchall():
+                    tables.append({
+                        'name': row[0],
+                        'description': row[1] or f"SQL Server table: {row[0]}",
+                        'type': 'table'
+                    })
+                cursor.close()
+                
+            elif connection_type == 'oracle':
+                cursor = connection.cursor()
+                cursor.execute("""
+                    SELECT 
+                        table_name,
+                        COALESCE(comments, 'Oracle table: ' || table_name) as description
+                    FROM user_tables 
+                    ORDER BY table_name
+                """)
+                for row in cursor.fetchall():
+                    tables.append({
+                        'name': row[0],
+                        'description': row[1] or f"Oracle table: {row[0]}",
+                        'type': 'table'
+                    })
+                cursor.close()
+                
+            elif connection_type == 'sqlite':
+                cursor = connection.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                for row in cursor.fetchall():
+                    table_name = row[0]
+                    tables.append({
+                        'name': table_name,
+                        'description': f"SQLite table: {table_name}",
+                        'type': 'table'
+                    })
+                
+            else:
+                return False, [], f"Database type {connection_type} not supported for table listing"
+            
+            return True, tables, f"Found {len(tables)} tables in {connection_type} database"
+                
+        except Exception as e:
+            logger.error(f"Error getting tables from {connection_type}: {e}")
+            return False, [], f"Error listing tables: {str(e)}"
+        
+        finally:
+            # Close connection
+            if connection and hasattr(connection, 'close'):
+                try:
+                    connection.close()
+                except:
+                    pass
     
     def _log_query(self, user_id: int, query: str, status: str, 
                    rows_returned: int, error_message: Optional[str] = None, 
                    execution_time: Optional[float] = None):
-        """Enhanced query logging with execution time"""
+        """Enhanced query logging with execution time - DISABLED to prevent duplicates"""
+        # This method is disabled to prevent duplicate QueryLog entries
+        # The main query logging is now handled in core/views.py with proper result serialization
         try:
-            # Map status to QueryLog status choices
-            log_status = 'completed' if status == 'SUCCESS' else 'error'
-            
-            QueryLog.objects.create(
-                user_id=user_id,
-                natural_query=query[:1000],  # Use correct field name
-                generated_sql=query[:1000],  # Store the SQL query
-                status=log_status,  # Use correct status values
-                error_message=error_message or "",
-                execution_time=execution_time  # Use correct field name
-            )
+            logger.debug(f"Query executed: {query[:100]}... Status: {status}, Rows: {rows_returned}, Time: {execution_time}s")
         except Exception as e:
-            logger.error(f"Failed to log query: {e}")
+            logger.error(f"Failed to log query debug info: {e}")
     
     def get_data_preview(self, connection_info: Dict[str, Any], 
                         table_name: str = None, limit: int = 100) -> Tuple[bool, Any]:
         """
-        Get preview of data from table
+        Get preview of data from table with database-specific SQL syntax
         """
         try:
             if connection_info.get('type') == 'csv':
@@ -1861,7 +2422,20 @@ class DataService:
                 else:
                     return False, "No tables found"
             
-            query = f"SELECT * FROM {table_name} LIMIT {limit}"
+            # Generate database-specific query syntax
+            db_type = connection_info.get('type', 'postgresql').lower()
+            
+            if db_type == 'sqlserver':
+                # SQL Server uses TOP syntax
+                query = f"SELECT TOP {limit} * FROM {table_name}"
+            elif db_type == 'oracle':
+                # Oracle uses ROWNUM
+                query = f"SELECT * FROM {table_name} WHERE ROWNUM <= {limit}"
+            else:
+                # PostgreSQL, MySQL, SQLite use LIMIT
+                query = f"SELECT * FROM {table_name} LIMIT {limit}"
+            
+            logger.info(f"Generated preview query for {db_type}: {query}")
             return self.execute_query(query, connection_info)
             
         except Exception as e:
@@ -1980,3 +2554,31 @@ class DataService:
             except Exception as e:
                 logger.warning(f"Error closing connection {cache_key}: {e}")
         self.connections_cache.clear() 
+
+    def generate_limit_query(self, base_query: str, limit: int, db_type: str) -> str:
+        """
+        Generate database-specific LIMIT query syntax
+        
+        Args:
+            base_query: The base SQL query (e.g., "SELECT * FROM table")
+            limit: Number of rows to limit
+            db_type: Database type ('sqlserver', 'oracle', 'postgresql', 'mysql', etc.)
+            
+        Returns:
+            Query with appropriate limit syntax for the database type
+        """
+        db_type = db_type.lower()
+        
+        if db_type == 'sqlserver':
+            # SQL Server uses TOP syntax
+            # Replace SELECT with SELECT TOP N
+            if base_query.upper().startswith('SELECT '):
+                return base_query.replace('SELECT ', f'SELECT TOP {limit} ', 1)
+            else:
+                return f"SELECT TOP {limit} * FROM ({base_query}) AS subquery"
+        elif db_type == 'oracle':
+            # Oracle uses ROWNUM
+            return f"SELECT * FROM ({base_query}) WHERE ROWNUM <= {limit}"
+        else:
+            # PostgreSQL, MySQL, SQLite use LIMIT
+            return f"{base_query} LIMIT {limit}"

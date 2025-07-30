@@ -128,7 +128,7 @@ class UserManagementView(LoginRequiredMixin, UserPassesTestMixin, ListView):
         # Add filter options
         context['search_query'] = self.request.GET.get('search', '')
         context['selected_role'] = self.request.GET.get('role', '')
-        context['role_choices'] = ['admin', 'user', 'viewer']
+        context['role_choices'] = ['user', 'creator', 'viewer', 'admin']
         
         return context
 
@@ -282,6 +282,22 @@ class UserPreferencesView(LoginRequiredMixin, TemplateView):
                 'save_query_history': {'type': 'boolean', 'default': True},
                 'auto_format_sql': {'type': 'boolean', 'default': True},
                 'query_timeout': {'type': 'select', 'options': [30, 60, 120, 300], 'default': 60},
+            },
+            'regional': {
+                'timezone': {
+                    'type': 'select', 
+                    'options': [
+                        'UTC', 'US/Eastern', 'US/Central', 'US/Mountain', 'US/Pacific',
+                        'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Amsterdam',
+                        'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Kolkata', 'Asia/Dubai',
+                        'Australia/Sydney', 'Australia/Melbourne',
+                        'America/New_York', 'America/Los_Angeles', 'America/Chicago', 
+                        'America/Denver', 'America/Toronto', 'America/Sao_Paulo'
+                    ], 
+                    'default': 'UTC'
+                },
+                'date_format': {'type': 'select', 'options': ['YYYY-MM-DD', 'MM/DD/YYYY', 'DD/MM/YYYY'], 'default': 'YYYY-MM-DD'},
+                'time_format': {'type': 'select', 'options': ['24h', '12h'], 'default': '24h'},
             }
         }
         
@@ -330,7 +346,7 @@ def update_user_roles(request, user_id):
         roles = data.get('roles', [])
         
         # Validate roles
-        valid_roles = ['admin', 'user', 'viewer']
+        valid_roles = ['user', 'creator', 'viewer', 'admin']
         roles = [role for role in roles if role in valid_roles]
         
         user.roles = roles

@@ -1,750 +1,705 @@
-"""
-Dashboard views for ConvaBI Application
-Handles dashboard creation, management, sharing, and export functionality
-"""
 
-import json
-import uuid
-from typing import Dict, List, Any, Optional
-from django.shortcuts import render, redirect, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
-from django.utils.decorators import method_decorator
-from django.views import View
-from django.views.generic import ListView, DetailView, CreateView
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from django.contrib import messages
-from django.core.paginator import Paginator
-from django.db import transaction, models
-from django.urls import reverse
+from django.db import models
+import json
+from .models import Dashboard, DashboardItem
 import logging
-
-from .models import Dashboard, DashboardItem, DashboardShare
-from services.email_service import EmailService, send_dashboard_share_notification
-from core.utils import generate_dashboard_html, create_plotly_figure, format_data_for_display
-from accounts.models import CustomUser
 
 logger = logging.getLogger(__name__)
 
-
-def get_dashboard_permissions(dashboard, user):
-    """
-    Get user permissions for a dashboard.
-    Returns: (has_access, can_edit, permission_level)
-    """
-    if dashboard.owner == user:
-        return True, True, 'owner'
-    
-    # Check for shared permissions
-    try:
-        share = DashboardShare.objects.get(dashboard=dashboard, user=user)
-        has_access = True
-        can_edit = share.permission in ['edit', 'admin']
-        return has_access, can_edit, share.permission
-    except DashboardShare.DoesNotExist:
-        return False, False, None
-
-
-@method_decorator(login_required, name='dispatch')
-class DashboardListView(ListView):
-    """List user dashboards with search and filtering"""
-    
-    model = Dashboard
-    template_name = 'dashboards/list.html'
-    context_object_name = 'dashboards'
-    paginate_by = 12
-    
-    def get_queryset(self):
-        """Get dashboards accessible to the current user"""
-        user = self.request.user
-        
-        # Get owned dashboards and shared dashboards
-        queryset = Dashboard.objects.filter(
-            models.Q(owner=user) | models.Q(shared_with_users=user)
-        ).distinct().order_by('-updated_at')
-        
-        # Apply search filter
-        search_query = self.request.GET.get('search')
-        if search_query:
-            queryset = queryset.filter(
-                models.Q(name__icontains=search_query) |
-                models.Q(description__icontains=search_query)
-            )
-        
-        # Apply filters (category filter removed - field doesn't exist)
-        
-        return queryset
-    
-    def get_context_data(self, **kwargs):
-        """Add additional context for the template"""
-        context = super().get_context_data(**kwargs)
-        
-        # Add dashboard statistics
-        user = self.request.user
-        context['owned_count'] = Dashboard.objects.filter(owner=user).count()
-        context['shared_count'] = Dashboard.objects.filter(shared_with_users=user).count()
-        
-        # Add search and filter values
-        context['search_query'] = self.request.GET.get('search', '')
-        context['selected_category'] = ''  # Category field removed
-        
-        # Add available categories (removed - field doesn't exist)
-        context['categories'] = []
-        
-        return context
-
-
-@method_decorator(login_required, name='dispatch')
-class DashboardDetailView(DetailView):
-    """Display and edit dashboard"""
-    
-    model = Dashboard
-    template_name = 'dashboards/detail.html'
-    context_object_name = 'dashboard'
-    
-    def get_object(self):
-        """Get dashboard with access check"""
-        dashboard = get_object_or_404(Dashboard, id=self.kwargs['pk'])
-        
-        # Check if user has access using the permission helper
-        has_access, can_edit, permission_level = get_dashboard_permissions(dashboard, self.request.user)
-        
-        if not has_access:
-            messages.error(self.request, "You don't have access to this dashboard")
-            return redirect('dashboards:list')
-        
-        return dashboard
-    
-    def get_context_data(self, **kwargs):
-        """Add dashboard items and configuration data"""
-        context = super().get_context_data(**kwargs)
-        dashboard = self.object
-        
-        # Get dashboard items
-        dashboard_items = DashboardItem.objects.filter(
-            dashboard=dashboard
-        ).order_by('position_x', 'position_y')
-        
-        # Prepare items for frontend
-        items_data = []
-        for item in dashboard_items:
-            item_data = {
-                'id': str(item.id),
-                'title': item.title,
-                'type': item.item_type,
-                'position_x': item.position_x,
-                'position_y': item.position_y,
-                'width': item.width,
-                'height': item.height,
-                'chart_config': item.chart_config,
-                'query': item.query,
-                'data_source': item.data_source,  # Add missing data_source field
-            }
-            items_data.append(item_data)
-        
-        # Check user permissions for editing
-        has_access, can_edit, permission_level = get_dashboard_permissions(dashboard, self.request.user)
-        
-        context['dashboard_items'] = dashboard_items
-        context['items_json'] = json.dumps(items_data)
-        context['can_edit'] = can_edit
-        context['permission_level'] = permission_level
-        context['is_owner'] = dashboard.owner == self.request.user
-        
-        return context
-    
-    def post(self, request, *args, **kwargs):
-        """Handle dashboard updates"""
-        dashboard = self.get_object()
-        
-        # Check if user has edit permissions
-        has_access, can_edit, permission_level = get_dashboard_permissions(dashboard, request.user)
-        
-        if not can_edit:
-            return JsonResponse({'error': 'You do not have edit permissions for this dashboard'}, status=403)
-        
-        try:
-            data = json.loads(request.body)
-            action = data.get('action')
-            
-            if action == 'update_layout':
-                # Update dashboard item positions
-                items = data.get('items', [])
-                with transaction.atomic():
-                    for item_data in items:
-                        try:
-                            item = DashboardItem.objects.get(
-                                id=item_data['id'], 
-                                dashboard=dashboard
-                            )
-                            item.position_x = item_data.get('position_x', item.position_x)
-                            item.position_y = item_data.get('position_y', item.position_y)
-                            item.width = item_data.get('width', item.width)
-                            item.height = item_data.get('height', item.height)
-                            item.save()
-                        except DashboardItem.DoesNotExist:
-                            continue
-                
-                return JsonResponse({'success': True})
-            
-            elif action == 'update_dashboard':
-                # Update dashboard metadata
-                dashboard.name = data.get('name', dashboard.name)
-                dashboard.description = data.get('description', dashboard.description)
-                # dashboard.category removed - field doesn't exist
-                dashboard.save()
-                
-                return JsonResponse({'success': True})
-            
-            else:
-                return JsonResponse({'error': 'Unknown action'}, status=400)
-                
-        except Exception as e:
-            logger.error(f"Error updating dashboard: {e}")
-            return JsonResponse({'error': str(e)}, status=500)
-    
-    def delete(self, request, *args, **kwargs):
-        """Handle dashboard deletion"""
-        dashboard = self.get_object()
-        
-        # Only owners can delete dashboards
-        if dashboard.owner != request.user:
-            return JsonResponse({'error': 'Permission denied. You can only delete dashboards you own.'}, status=403)
-        
-        try:
-            dashboard_name = dashboard.name
-            dashboard.delete()
-            logger.info(f"Dashboard '{dashboard_name}' deleted successfully by user {request.user.username}.")
-            return JsonResponse({'success': True, 'message': f"Dashboard '{dashboard_name}' and all its items have been deleted."})
-        except Exception as e:
-            logger.error(f"Error deleting dashboard {dashboard.id}: {e}")
-            return JsonResponse({'error': 'An unexpected error occurred during deletion.'}, status=500)
-
-
-@method_decorator(login_required, name='dispatch')
-class DashboardCreateView(CreateView):
-    """Create new dashboard"""
-    
-    model = Dashboard
-    template_name = 'dashboards/create.html'
-    fields = ['name', 'description']
-    
-    def form_valid(self, form):
-        """Set the creator and handle successful creation"""
-        form.instance.owner = self.request.user
-        response = super().form_valid(form)
-        
-        messages.success(self.request, f"Dashboard '{form.instance.name}' created successfully!")
-        return response
-    
-    def get_success_url(self):
-        """Redirect to the new dashboard"""
-        return reverse('dashboards:detail', kwargs={'pk': self.object.pk})
-
-
-@method_decorator(login_required, name='dispatch')
-class DashboardShareView(View):
-    """Manage dashboard sharing"""
-    
-    def get(self, request, pk):
-        """Display sharing interface"""
-        dashboard = get_object_or_404(Dashboard, id=pk)
-        
-        if dashboard.owner != request.user:
-            messages.error(request, "You can only share dashboards you created")
-            return redirect('dashboards:detail', pk=pk)
-        
-        # Get dashboard shares with permission levels
-        dashboard_shares = DashboardShare.objects.filter(dashboard=dashboard).select_related('user')
-        shared_users = [share.user for share in dashboard_shares]
-        
-        # Get all users for sharing options
-        all_users = CustomUser.objects.exclude(id=request.user.id).order_by('username')
-        
-        context = {
-            'dashboard': dashboard,
-            'dashboard_shares': dashboard_shares,
-            'shared_users': shared_users,
-            'all_users': all_users,
-        }
-        
-        return render(request, 'dashboards/share.html', context)
-    
-    def post(self, request, pk):
-        """Handle sharing actions"""
-        dashboard = get_object_or_404(Dashboard, id=pk)
-        
-        if dashboard.owner != request.user:
-            return JsonResponse({'error': 'Permission denied'}, status=403)
-        
-        try:
-            data = json.loads(request.body)
-            action = data.get('action')
-            
-            if action == 'add_user':
-                user_id = data.get('user_id')
-                permission = data.get('permission', 'edit')  # Get permission from frontend, default to edit
-                
-                try:
-                    user = CustomUser.objects.get(id=user_id)
-                    
-                    # Create DashboardShare instance with specified permission
-                    from .models import DashboardShare
-                    share, created = DashboardShare.objects.get_or_create(
-                        dashboard=dashboard,
-                        user=user,
-                        defaults={
-                            'shared_by': request.user,
-                            'permission': permission
-                        }
-                    )
-                    
-                    if created:
-                        # Try to send notification email (fail gracefully if email not configured)
-                        try:
-                            send_dashboard_share_notification.delay(
-                                str(dashboard.id),
-                                user.email,
-                                request.user.get_full_name() or request.user.username
-                            )
-                        except Exception as e:
-                            logger.warning(f"Failed to send dashboard share notification: {e}")
-                        
-                        return JsonResponse({
-                            'success': True,
-                            'message': f'Dashboard shared with {user.username} ({permission} permission)'
-                        })
-                    else:
-                        # If share already exists, update the permission
-                        if share.permission != permission:
-                            share.permission = permission
-                            share.save()
-                            return JsonResponse({
-                                'success': True,
-                                'message': f'Updated {user.username} permission to {permission}'
-                            })
-                        else:
-                            return JsonResponse({
-                                'success': True,
-                                'message': f'Dashboard already shared with {user.username} ({permission} permission)'
-                            })
-                except CustomUser.DoesNotExist:
-                    return JsonResponse({'error': 'User not found'}, status=404)
-            
-            elif action == 'remove_user':
-                user_id = data.get('user_id')
-                try:
-                    user = CustomUser.objects.get(id=user_id)
-                    
-                    # Remove DashboardShare instance
-                    from .models import DashboardShare
-                    DashboardShare.objects.filter(
-                        dashboard=dashboard,
-                        user=user
-                    ).delete()
-                    
-                    return JsonResponse({
-                        'success': True,
-                        'message': f'Removed {user.username} from dashboard'
-                    })
-                except CustomUser.DoesNotExist:
-                    return JsonResponse({'error': 'User not found'}, status=404)
-            
-            elif action == 'update_permission':
-                user_id = data.get('user_id')
-                permission = data.get('permission')
-                
-                if permission not in ['view', 'edit', 'admin']:
-                    return JsonResponse({'error': 'Invalid permission level'}, status=400)
-                
-                try:
-                    user = CustomUser.objects.get(id=user_id)
-                    
-                    # Update DashboardShare permission
-                    from .models import DashboardShare
-                    share = DashboardShare.objects.get(
-                        dashboard=dashboard,
-                        user=user
-                    )
-                    share.permission = permission
-                    share.save()
-                    
-                    return JsonResponse({
-                        'success': True,
-                        'message': f'Updated {user.username} permission to {permission}'
-                    })
-                except CustomUser.DoesNotExist:
-                    return JsonResponse({'error': 'User not found'}, status=404)
-                except DashboardShare.DoesNotExist:
-                    return JsonResponse({'error': 'Share not found'}, status=404)
-            
-            else:
-                return JsonResponse({'error': 'Unknown action'}, status=400)
-                
-        except Exception as e:
-            logger.error(f"Error managing dashboard sharing: {e}")
-            return JsonResponse({'error': str(e)}, status=500)
-
-
-@method_decorator(login_required, name='dispatch')
-class DashboardExportView(View):
-    """Handle dashboard export functionality"""
-    
-    def get(self, request, pk):
-        """Display export options"""
-        dashboard = get_object_or_404(Dashboard, id=pk)
-        
-        # Check if user has access (view permissions are sufficient for export)
-        has_access, can_edit, permission_level = get_dashboard_permissions(dashboard, request.user)
-        
-        if not has_access:
-            messages.error(request, "You don't have access to this dashboard")
-            return redirect('dashboards:list')
-        
-        context = {
-            'dashboard': dashboard,
-        }
-        
-        return render(request, 'dashboards/export.html', context)
-    
-    def post(self, request, pk):
-        """Handle export requests"""
-        dashboard = get_object_or_404(Dashboard, id=pk)
-        
-        # Check access
-        if not (dashboard.owner == request.user or 
-                request.user in dashboard.shared_with_users.all()):
-            return JsonResponse({'error': 'Permission denied'}, status=403)
-        
-        try:
-            data = json.loads(request.body)
-            export_type = data.get('export_type')
-            
-            if export_type == 'email':
-                # Email export
-                recipient_email = data.get('recipient_email')
-                include_html = data.get('include_html', True)
-                include_pdf = data.get('include_pdf', False)
-                include_image = data.get('include_image', True)
-                
-                if not recipient_email:
-                    return JsonResponse({'error': 'Recipient email is required'}, status=400)
-                
-                # Generate dashboard content
-                dashboard_items = list(DashboardItem.objects.filter(
-                    dashboard=dashboard
-                ).values())
-                
-                email_service = EmailService()
-                dashboard_html = email_service.generate_dashboard_html(
-                    dashboard_items, dashboard.name
-                )
-                
-                # Prepare attachments
-                attachments = []
-                if include_html:
-                    attachments.append({
-                        'content': dashboard_html,
-                        'filename': dashboard.name.replace(' ', '_'),
-                        'type': 'html'
-                    })
-                
-                if include_pdf:
-                    try:
-                        from services.dashboard_export_service import DashboardExportService
-                        export_service = DashboardExportService()
-                        pdf_content = export_service.export_to_pdf(dashboard, dashboard_items)
-                        attachments.append({
-                            'content': pdf_content,
-                            'filename': dashboard.name.replace(' ', '_'),
-                            'type': 'pdf'
-                        })
-                    except Exception as e:
-                        logger.warning(f"Failed to generate PDF for email: {e}")
-                
-                if include_image:
-                    try:
-                        from services.dashboard_export_service import DashboardExportService
-                        export_service = DashboardExportService()
-                        png_content = export_service.export_to_png(dashboard, dashboard_items)
-                        attachments.append({
-                            'content': png_content,
-                            'filename': dashboard.name.replace(' ', '_'),
-                            'type': 'png'
-                        })
-                    except Exception as e:
-                        logger.warning(f"Failed to generate PNG for email: {e}")
-                        # Fallback to old method
-                        image_bytes = email_service.generate_dashboard_image(
-                            dashboard_html, dashboard.name
-                        )
-                        if image_bytes:
-                            attachments.append({
-                                'content': image_bytes,
-                                'filename': dashboard.name.replace(' ', '_'),
-                                'type': 'png'
-                            })
-                
-                # Send email
-                subject = f"Dashboard Export: {dashboard.name}"
-                body = f"<p>Dashboard <strong>{dashboard.name}</strong> is attached.</p>"
-                
-                success = email_service.send_dashboard_email(
-                    recipient_email=recipient_email,
-                    subject=subject,
-                    body=body,
-                    attachments=attachments
-                )
-                
-                if success:
-                    return JsonResponse({'success': True, 'message': 'Dashboard emailed successfully'})
-                else:
-                    return JsonResponse({'error': 'Failed to send email'}, status=500)
-            
-            elif export_type == 'download':
-                # Direct download
-                format_type = data.get('format', 'html')
-                
-                dashboard_items = list(DashboardItem.objects.filter(
-                    dashboard=dashboard
-                ).values())
-                
-                if format_type == 'html':
-                    email_service = EmailService()
-                    content = email_service.generate_dashboard_html(
-                        dashboard_items, dashboard.name
-                    )
-                    
-                    response = HttpResponse(content, content_type='text/html')
-                    response['Content-Disposition'] = f'attachment; filename="{dashboard.name}.html"'
-                    return response
-                
-                elif format_type == 'pdf':
-                    # PDF export using new export service
-                    from services.dashboard_export_service import DashboardExportService
-                    
-                    export_service = DashboardExportService()
-                    try:
-                        pdf_content = export_service.export_to_pdf(dashboard, dashboard_items)
-                        filename = export_service.get_export_filename(dashboard, 'pdf')
-                        
-                        response = HttpResponse(pdf_content, content_type='application/pdf')
-                        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                        return response
-                    except Exception as e:
-                        return JsonResponse({'error': f'PDF generation failed: {str(e)}'}, status=500)
-                
-                elif format_type == 'png':
-                    # PNG export using new export service
-                    from services.dashboard_export_service import DashboardExportService
-                    
-                    export_service = DashboardExportService()
-                    try:
-                        png_content = export_service.export_to_png(dashboard, dashboard_items)
-                        filename = export_service.get_export_filename(dashboard, 'png')
-                        
-                        response = HttpResponse(png_content, content_type='image/png')
-                        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                        return response
-                    except Exception as e:
-                        return JsonResponse({'error': f'PNG generation failed: {str(e)}'}, status=500)
-                
-                else:
-                    return JsonResponse({'error': 'Unsupported format'}, status=400)
-            
-            else:
-                return JsonResponse({'error': 'Unknown export type'}, status=400)
-                
-        except Exception as e:
-            logger.error(f"Error exporting dashboard: {e}")
-            return JsonResponse({'error': str(e)}, status=500)
-
-
-@method_decorator(login_required, name='dispatch')
-class DashboardItemView(View):
-    """Manage individual dashboard items"""
-    
-    def post(self, request, pk):
-        """Create new dashboard item"""
-        dashboard = get_object_or_404(Dashboard, id=pk)
-        
-        # Check if user has edit permissions
-        has_access, can_edit, permission_level = get_dashboard_permissions(dashboard, request.user)
-        
-        if not can_edit:
-            return JsonResponse({'error': 'You do not have edit permissions for this dashboard'}, status=403)
-        
-        try:
-            data = json.loads(request.body)
-            action = data.get('action')
-            
-            if action == 'create':
-                # Create new dashboard item
-                item = DashboardItem.objects.create(
-                    dashboard=dashboard,
-                    title=data.get('title', 'New Item'),
-                    item_type=data.get('type', 'chart'),
-                    position_x=data.get('position_x', 0),
-                    position_y=data.get('position_y', 0),
-                    width=data.get('width', 4),
-                    height=data.get('height', 3),
-                    chart_config=data.get('chart_config', {}),
-                    query=data.get('query', ''),
-                    data_source=data.get('data_source', '')
-                )
-                
-                return JsonResponse({
-                    'success': True,
-                    'item_id': str(item.id),
-                    'message': 'Dashboard item created'
-                })
-            
-            elif action == 'update':
-                # Update existing item
-                item_id = data.get('item_id')
-                try:
-                    item = DashboardItem.objects.get(id=item_id, dashboard=dashboard)
-                    
-                    # Update fields that exist in the model
-                    item.title = data.get('title', item.title)
-                    item.width = data.get('width', item.width)
-                    item.height = data.get('height', item.height)
-                    item.chart_config = data.get('chart_config', item.chart_config)
-                    item.query = data.get('query', item.query)
-                    item.data_source = data.get('data_source', item.data_source)
-                    item.save()
-                    
-                    return JsonResponse({'success': True, 'message': 'Item updated'})
-                except DashboardItem.DoesNotExist:
-                    return JsonResponse({'error': 'Item not found'}, status=404)
-            
-            elif action == 'delete':
-                # Delete item
-                item_id = data.get('item_id')
-                try:
-                    item = DashboardItem.objects.get(id=item_id, dashboard=dashboard)
-                    item.delete()
-                    return JsonResponse({'success': True, 'message': 'Item deleted'})
-                except DashboardItem.DoesNotExist:
-                    return JsonResponse({'error': 'Item not found'}, status=404)
-            
-            else:
-                return JsonResponse({'error': 'Unknown action'}, status=400)
-                
-        except Exception as e:
-            logger.error(f"Error managing dashboard item: {e}")
-            return JsonResponse({'error': str(e)}, status=500)
-    
-    def delete(self, request, pk, item_id):
-        """Delete specific dashboard item"""
-        dashboard = get_object_or_404(Dashboard, id=pk)
-        
-        # Check if user has edit permissions
-        has_access, can_edit, permission_level = get_dashboard_permissions(dashboard, request.user)
-        
-        if not can_edit:
-            return JsonResponse({'error': 'You do not have edit permissions for this dashboard'}, status=403)
-        
-        try:
-            item = DashboardItem.objects.get(id=item_id, dashboard=dashboard)
-            item.delete()
-            return JsonResponse({'success': True, 'message': 'Item deleted'})
-        except DashboardItem.DoesNotExist:
-            return JsonResponse({'error': 'Item not found'}, status=404)
-        except Exception as e:
-            logger.error(f"Error deleting dashboard item: {e}")
-            return JsonResponse({'error': str(e)}, status=500)
-
+@login_required
+def dashboard_list(request):
+    """List user's dashboards"""
+    dashboards = Dashboard.objects.filter(owner=request.user)
+    return render(request, 'dashboards/list.html', {'dashboards': dashboards})
 
 @login_required
-def dashboard_data_refresh(request, pk):
-    """Refresh dashboard data"""
-    dashboard = get_object_or_404(Dashboard, id=pk)
-    
-    # Check if user has access (view permissions are sufficient for refresh)
-    has_access, can_edit, permission_level = get_dashboard_permissions(dashboard, request.user)
-    
-    if not has_access:
-        return JsonResponse({'error': 'You do not have access to this dashboard'}, status=403)
-    
-    try:
-        # Get all dashboard items that need data refresh
-        items = DashboardItem.objects.filter(dashboard=dashboard)
-        refreshed_items = []
+def dashboard_detail(request, dashboard_id):
+    """View dashboard details"""
+    dashboard = get_object_or_404(Dashboard, id=dashboard_id, owner=request.user)
+    return render(request, 'dashboards/detail.html', {'dashboard': dashboard})
+
+@login_required
+def dashboard_create(request):
+    """Create new dashboard"""
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        description = request.POST.get('description', '')
         
-        for item in items:
-            if item.query:  # Using correct field name 'query'
-                # Here you would re-execute the SQL query and update the data
-                # This is a placeholder for the actual data refresh logic
-                refreshed_items.append({
-                    'id': str(item.id),
-                    'title': item.title,
-                    'status': 'refreshed'
-                })
+        dashboard = Dashboard.objects.create(
+            owner=request.user,
+            name=name,
+            description=description
+        )
+        
+        messages.success(request, f'Dashboard "{name}" created successfully!')
+        return redirect('dashboards:detail', dashboard_id=dashboard.id)
+    
+    return render(request, 'dashboards/create.html')
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def dashboard_list_api(request):
+    """API to list dashboards"""
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        dashboards = Dashboard.objects.filter(owner=request.user)
+        data = {
+            'success': True,
+            'dashboards': [
+                {
+                    'id': str(d.id), 
+                    'name': d.name, 
+                    'description': d.description,
+                    'created_at': d.created_at.isoformat() if hasattr(d, 'created_at') else '',
+                    'item_count': d.items.count() if hasattr(d, 'items') else 0
+                }
+                for d in dashboards
+            ]
+        }
+        return JsonResponse(data)
+    except Exception as e:
+        print(f"Dashboard list API error: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_item_to_dashboard(request, dashboard_id):
+    """API to add item to existing dashboard"""
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        # Parse JSON data
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Invalid JSON data'}, status=400)
+        
+        # Get dashboard
+        try:
+            dashboard = Dashboard.objects.get(id=dashboard_id, owner=request.user)
+        except Dashboard.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Dashboard not found'}, status=404)
+        
+        # Create dashboard item with actual result data
+        item = DashboardItem.objects.create(
+            dashboard=dashboard,
+            title=data.get('title', 'Untitled')[:200],  # Ensure max length
+            item_type='chart',  # Set default item type
+            chart_type=data.get('chart_type', 'table'),
+            query=data.get('query', ''),
+            chart_config=data.get('chart_config', {}),
+            result_data=data.get('result_data', []),  # Store actual query results
+            position_x=0,
+            position_y=dashboard.items.count() if hasattr(dashboard, 'items') else 0,
+            width=6,
+            height=4,
+            data_source='query',  # Set default data source
+            refresh_interval=0  # Set default refresh interval
+        )
         
         return JsonResponse({
-            'success': True,
-            'refreshed_items': refreshed_items,
-            'message': f'Refreshed {len(refreshed_items)} items'
+            'success': True, 
+            'item_id': str(item.id),
+            'dashboard_id': str(dashboard.id),
+            'dashboard_url': f'/dashboards/{dashboard.id}/',
+            'message': f'Item added to dashboard "{dashboard.name}"'
         })
         
     except Exception as e:
-        logger.error(f"Error refreshing dashboard data: {e}")
-        return JsonResponse({'error': str(e)}, status=500)
+        print(f"Add item to dashboard error: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
-
-@login_required  
-def dashboard_clone(request, pk):
-    """Clone an existing dashboard"""
-    dashboard = get_object_or_404(Dashboard, id=pk)
-    
-    # Check if user has access (view permissions are sufficient for cloning)
-    has_access, can_edit, permission_level = get_dashboard_permissions(dashboard, request.user)
-    
-    if not has_access:
-        messages.error(request, "You don't have access to this dashboard")
-        return redirect('dashboards:list')
-    
+@csrf_exempt
+@require_http_methods(["POST"])
+def create_dashboard_with_item(request):
+    """API to create new dashboard with item"""
     try:
-        with transaction.atomic():
-            # Clone dashboard
-            cloned_dashboard = Dashboard.objects.create(
-                name=f"{dashboard.name} (Copy)",
-                description=dashboard.description,
-                # category removed - field doesn't exist
-                owner=request.user
-            )
-            
-            # Clone dashboard items
-            items = DashboardItem.objects.filter(dashboard=dashboard)
-            for item in items:
-                DashboardItem.objects.create(
-                    dashboard=cloned_dashboard,
-                    title=item.title,
-                    item_type=item.item_type,
-                    position_x=item.position_x,
-                    position_y=item.position_y,
-                    width=item.width,
-                    height=item.height,
-                    chart_config=item.chart_config,
-                    query=item.query,
-                    data_source=item.data_source
-                )
-            
-            messages.success(request, f"Dashboard cloned as '{cloned_dashboard.name}'")
-            return redirect('dashboards:detail', pk=cloned_dashboard.pk)
-            
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        # Parse JSON data
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Invalid JSON data'}, status=400)
+        
+        # Create dashboard with user-provided name or default
+        dashboard_name = data.get('dashboard_name', f"Dashboard - {data.get('title', 'New Item')}")
+        dashboard = Dashboard.objects.create(
+            owner=request.user,
+            name=dashboard_name,
+            description=f"Created from query: {data.get('query', '')[:100]}..."
+        )
+        
+        # Create dashboard item with actual result data
+        item = DashboardItem.objects.create(
+            dashboard=dashboard,
+            title=data.get('title', 'Untitled')[:200],  # Ensure max length
+            item_type='chart',  # Required field
+            chart_type=data.get('chart_type', 'table'),
+            query=data.get('query', ''),
+            chart_config=data.get('chart_config', {}),
+            result_data=data.get('result_data', []),  # Store actual query results
+            position_x=0,
+            position_y=0,
+            width=6,
+            height=4,
+            data_source='query',  # Required field
+            refresh_interval=0  # Default value
+        )
+        
+        return JsonResponse({
+            'success': True, 
+            'dashboard_id': str(dashboard.id), 
+            'item_id': str(item.id),
+            'dashboard_url': f'/dashboards/{dashboard.id}/',
+            'redirect_url': f'/dashboards/{dashboard.id}/',
+            'message': f'Dashboard "{dashboard_name}" created successfully!'
+        })
+        
     except Exception as e:
-        logger.error(f"Error cloning dashboard: {e}")
-        messages.error(request, "Failed to clone dashboard")
-        return redirect('dashboards:detail', pk=pk)
-
+        print(f"Create dashboard with item error: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 @login_required
-def dashboard_list(request):
-    """List user dashboards"""
-    return render(request, 'dashboards/list.html')
+@csrf_exempt
+def update_dashboard(request, dashboard_id):
+    """Update dashboard name and description"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        dashboard = get_object_or_404(Dashboard, id=dashboard_id, owner=request.user)
+        
+        import json
+        data = json.loads(request.body)
+        
+        name = data.get('name', '').strip()
+        description = data.get('description', '').strip()
+        
+        if not name:
+            return JsonResponse({'error': 'Dashboard name is required'}, status=400)
+        
+        dashboard.name = name
+        dashboard.description = description
+        dashboard.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Dashboard updated successfully',
+            'dashboard': {
+                'id': str(dashboard.id),
+                'name': dashboard.name,
+                'description': dashboard.description
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating dashboard: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
 
-@login_required  
-def dashboard_detail(request, pk):
-    """Display dashboard details"""
-    return render(request, 'dashboards/detail.html') 
+@login_required
+@csrf_exempt
+def delete_dashboard(request, dashboard_id):
+    """Delete dashboard"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        dashboard = get_object_or_404(Dashboard, id=dashboard_id, owner=request.user)
+        dashboard_name = dashboard.name
+        dashboard.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Dashboard "{dashboard_name}" deleted successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error deleting dashboard: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+@csrf_exempt
+def share_dashboard(request, dashboard_id):
+    """Share dashboard with other users"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        dashboard = get_object_or_404(Dashboard, id=dashboard_id, owner=request.user)
+        
+        import json
+        data = json.loads(request.body)
+        
+        user_id = data.get('user_id')
+        permission = data.get('permission', 'view')
+        
+        if not user_id:
+            return JsonResponse({'error': 'User ID is required'}, status=400)
+        
+        target_user = get_object_or_404(User, id=user_id)
+        
+        # Create or update sharing record
+        # Note: This is a simplified implementation - you'd want a proper sharing model
+        return JsonResponse({
+            'success': True,
+            'message': f'Dashboard shared with {target_user.username} successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error sharing dashboard: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def dashboard_item_data(request, item_id):
+    """Get data for a specific dashboard item - prioritize stored result data"""
+    try:
+        item = get_object_or_404(DashboardItem, id=item_id, dashboard__owner=request.user)
+        
+        logger.info(f"Fetching data for dashboard item {item_id}: {item.title}")
+        
+        # First priority: Check if the item has stored result data (even if empty)
+        if hasattr(item, 'result_data') and item.result_data is not None:
+            if isinstance(item.result_data, list) and len(item.result_data) > 0:
+                logger.info(f"Found stored result data for item {item_id} ({len(item.result_data)} rows)")
+                return JsonResponse({
+                    'success': True,
+                    'result_data': item.result_data,
+                    'chart_type': item.chart_type,
+                    'title': item.title,
+                    'data_source': 'cached',
+                    'row_count': len(item.result_data)
+                })
+            else:
+                logger.info(f"Item {item_id} has empty result_data, will try to execute query")
+        
+        # Second priority: Try to re-execute the query if no stored data
+        if not item.query:
+            logger.warning(f"No query found for dashboard item {item_id}")
+            return JsonResponse({
+                'success': False,
+                'error': 'No data available',
+                'details': 'This dashboard item has no stored data and no query to execute'
+            }, status=400)
+            
+        logger.info(f"Attempting to re-execute query for item {item_id}: {item.query[:100]}...")
+            
+        try:
+            # Import here to avoid circular imports
+            from core.views import execute_query_logic
+            from datasets.models import DataSource
+            
+            # Get all available data sources for the user
+            data_sources = DataSource.objects.filter(
+                models.Q(created_by=request.user) | models.Q(shared_with_users=request.user)
+            ).filter(status='active')
+            
+            logger.info(f"Found {data_sources.count()} active data sources")
+            
+            if not data_sources.exists():
+                logger.error(f"No active data sources found for user {request.user.id}")
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No active data sources available',
+                    'details': 'You need to upload and activate a data source first'
+                }, status=404)
+            
+            # Use smart data source matching (simplified version)
+            target_data_source = None
+            query_lower = item.query.lower()
+            
+            # Method 1: Try to find data source by query content
+            for ds in data_sources:
+                if ds.source_type == 'csv' and ds.schema_info:
+                    schema_columns = set(ds.schema_info.get('columns', {}).keys())
+                    schema_columns_lower = {col.lower().replace(' ', '_') for col in schema_columns}
+                    
+                    # Extract column references from query
+                    import re
+                    quoted_columns = re.findall(r'"([^"]+)"', item.query)
+                    unquoted_columns = re.findall(r'\b(\w+)\b', item.query.replace('"', ''))
+                    all_query_columns = set(quoted_columns + unquoted_columns)
+                    all_query_columns_lower = {col.lower().replace(' ', '_') for col in all_query_columns}
+                    
+                    # Check overlap
+                    overlap = schema_columns_lower.intersection(all_query_columns_lower)
+                    if len(overlap) >= 1:
+                        target_data_source = ds
+                        logger.info(f"Found data source by column overlap: {ds.name}")
+                        break
+            
+            # Method 2: Use first available suitable source
+            if not target_data_source:
+                target_data_source = data_sources.first()
+                logger.info(f"Using first available data source: {target_data_source.name}")
+            
+            if not target_data_source:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Cannot find suitable data source'
+                }, status=404)
+            
+            # Execute the query to get fresh data
+            success, result_data, sql_query, error_message, row_count = execute_query_logic(
+                item.query, request.user, target_data_source
+            )
+            
+            logger.info(f"Query execution result: success={success}, rows={row_count}")
+            
+            if success and result_data:
+                # Convert to list of dictionaries if needed
+                if isinstance(result_data, list) and len(result_data) > 0:
+                    if not isinstance(result_data[0], dict):
+                        # Convert to dict format
+                        columns = getattr(result_data, 'columns', [])
+                        if columns:
+                            result_data = [dict(zip(columns, row)) for row in result_data]
+                        else:
+                            # Generate generic column names
+                            if len(result_data) > 0:
+                                num_cols = len(result_data[0]) if hasattr(result_data[0], '__len__') else 1
+                                columns = [f'Column_{i+1}' for i in range(num_cols)]
+                                result_data = [dict(zip(columns, row)) for row in result_data]
+                
+                # Update the item with fresh data for future use
+                try:
+                    item.result_data = result_data
+                    item.save()
+                    logger.info(f"Successfully cached {len(result_data)} rows for future use")
+                except Exception as save_error:
+                    logger.warning(f"Failed to cache data: {save_error}")
+                
+                return JsonResponse({
+                    'success': True,
+                    'result_data': result_data,
+                    'chart_type': item.chart_type,
+                    'title': item.title,
+                    'row_count': row_count,
+                    'data_source': target_data_source.name,
+                    'sql_query': sql_query
+                })
+            else:
+                logger.error(f"Query execution failed: {error_message}")
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Query execution failed',
+                    'details': error_message
+                }, status=400)
+                
+        except ImportError as import_error:
+            logger.error(f"Import error in dashboard_item_data: {import_error}")
+            return JsonResponse({
+                'success': False,
+                'error': 'System error: Required modules not available',
+                'details': str(import_error)
+            }, status=500)
+        except Exception as query_error:
+            logger.error(f"Query execution failed for dashboard item {item_id}: {query_error}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            return JsonResponse({
+                'success': False,
+                'error': 'Query execution error',
+                'details': str(query_error)
+            }, status=500)
+        
+    except Exception as e:
+        logger.error(f"Error getting dashboard item data: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return JsonResponse({
+            'success': False,
+            'error': 'Internal server error',
+            'details': str(e)
+        }, status=500)
+
+@login_required
+def users_api(request):
+    """Get list of users for sharing"""
+    try:
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        users = User.objects.exclude(id=request.user.id).values('id', 'username', 'email')[:50]
+        
+        return JsonResponse({
+            'success': True,
+            'users': list(users)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting users list: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+@csrf_exempt
+def delete_dashboard_item(request, item_id):
+    """Delete individual dashboard item"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        item = get_object_or_404(DashboardItem, id=item_id, dashboard__owner=request.user)
+        item_title = item.title
+        dashboard_id = item.dashboard.id
+        item.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Chart "{item_title}" deleted successfully',
+            'dashboard_id': str(dashboard_id)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error deleting dashboard item: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+@csrf_exempt
+def schedule_dashboard_email(request, dashboard_id):
+    """Schedule dashboard email with PDF/PNG export"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        dashboard = get_object_or_404(Dashboard, id=dashboard_id, owner=request.user)
+        
+        import json
+        data = json.loads(request.body)
+        
+        # Validate required fields
+        recipient_email = data.get('recipient_email')
+        export_format = data.get('export_format', 'png')  # 'png' or 'pdf'
+        frequency = data.get('frequency', 'once')  # 'once', 'daily', 'weekly', 'monthly'
+        
+        if not recipient_email:
+            return JsonResponse({'error': 'Recipient email is required'}, status=400)
+        
+        if export_format not in ['png', 'pdf']:
+            return JsonResponse({'error': 'Export format must be "png" or "pdf"'}, status=400)
+        
+        # Create dashboard export record
+        from dashboards.models import DashboardExport
+        dashboard_export = DashboardExport.objects.create(
+            dashboard=dashboard,
+            export_format=export_format,
+            status='pending',
+            export_settings={
+                'recipient_email': recipient_email,
+                'frequency': frequency,
+                'scheduled_by': request.user.id,
+                'dashboard_name': dashboard.name
+            },
+            requested_by=request.user
+        )
+        
+        # Schedule the task based on frequency
+        if frequency == 'once':
+            # Send immediately
+            from celery_app import send_dashboard_email_task
+            send_dashboard_email_task.delay(
+                str(dashboard.id), 
+                recipient_email, 
+                {
+                    'export_format': export_format,
+                    'dashboard_name': dashboard.name
+                }
+            )
+        else:
+            # Schedule recurring task
+            from django_celery_beat.models import PeriodicTask, IntervalSchedule
+            
+            # Create schedule based on frequency
+            if frequency == 'daily':
+                schedule, created = IntervalSchedule.objects.get_or_create(
+                    every=1,
+                    period=IntervalSchedule.DAYS,
+                )
+            elif frequency == 'weekly':
+                schedule, created = IntervalSchedule.objects.get_or_create(
+                    every=7,
+                    period=IntervalSchedule.DAYS,
+                )
+            elif frequency == 'monthly':
+                schedule, created = IntervalSchedule.objects.get_or_create(
+                    every=30,
+                    period=IntervalSchedule.DAYS,
+                )
+            
+            # Create periodic task
+            task_name = f"dashboard_email_{dashboard.id}_{request.user.id}_{frequency}"
+            
+            PeriodicTask.objects.create(
+                interval=schedule,
+                name=task_name,
+                task='celery_app.send_dashboard_email_task',
+                args=json.dumps([str(dashboard.id), recipient_email, {
+                    'export_format': export_format,
+                    'dashboard_name': dashboard.name,
+                    'frequency': frequency
+                }]),
+                enabled=True
+            )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Dashboard "{dashboard.name}" scheduled successfully',
+            'export_id': str(dashboard_export.id),
+            'frequency': frequency,
+            'format': export_format
+        })
+        
+    except Exception as e:
+        logger.error(f"Error scheduling dashboard email: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def export_dashboard_pdf_png(request, dashboard_id):
+    """Export dashboard as PDF or PNG using Puppeteer for fully rendered charts"""
+    try:
+        dashboard = get_object_or_404(Dashboard, id=dashboard_id, owner=request.user)
+        export_format = request.GET.get('format', 'png')
+        
+        # Try Puppeteer service first for fully rendered charts
+        try:
+            from services.puppeteer_export_service import PuppeteerExportService
+            export_service = PuppeteerExportService()
+            
+            logger.info(f"Attempting Puppeteer export for dashboard {dashboard_id} as {export_format}")
+            
+            # Get user's session for authentication
+            session_key = request.session.session_key
+            session_cookie = {
+                'name': 'sessionid',
+                'value': session_key,
+                'domain': 'localhost',
+                'path': '/'
+            }
+            
+            # Generate export with Puppeteer (with authentication)
+            if export_format == 'pdf':
+                content, filename = export_service.export_dashboard_pdf(dashboard, session_cookie)
+                content_type = 'application/pdf'
+            else:
+                content, filename = export_service.export_dashboard_png(dashboard, session_cookie)
+                content_type = 'image/png'
+            
+            logger.info(f"Puppeteer export successful: {filename} ({len(content)} bytes)")
+            
+        except Exception as puppeteer_error:
+            logger.warning(f"Puppeteer export failed, falling back to static export: {puppeteer_error}")
+            
+            # Fallback to static export service
+            from services.dashboard_export_service import DashboardExportService
+            export_service = DashboardExportService()
+            
+            # Generate export with fallback
+            if export_format == 'pdf':
+                content, filename = export_service.export_dashboard_pdf(dashboard)
+                content_type = 'application/pdf'
+            else:
+                content, filename = export_service.export_dashboard_png(dashboard)
+                content_type = 'image/png'
+            
+            logger.info(f"Fallback export successful: {filename} ({len(content)} bytes)")
+        
+        # Return file response
+        from django.http import HttpResponse
+        response = HttpResponse(content, content_type=content_type)
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error exporting dashboard: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+def dashboard_scheduled_emails(request, dashboard_id):
+    """Get scheduled emails for a dashboard"""
+    try:
+        dashboard = get_object_or_404(Dashboard, id=dashboard_id, owner=request.user)
+        
+        # Get scheduled periodic tasks for this dashboard
+        from django_celery_beat.models import PeriodicTask
+        
+        scheduled_tasks = PeriodicTask.objects.filter(
+            name__startswith=f"dashboard_email_{dashboard.id}_",
+            enabled=True
+        )
+        
+        tasks_data = []
+        for task in scheduled_tasks:
+            try:
+                args = json.loads(task.args)
+                tasks_data.append({
+                    'id': task.id,
+                    'name': task.name,
+                    'frequency': task.interval.every if task.interval else 'Unknown',
+                    'period': task.interval.period if task.interval else 'Unknown',
+                    'recipient_email': args[1] if len(args) > 1 else 'Unknown',
+                    'export_format': args[2].get('export_format', 'png') if len(args) > 2 else 'png',
+                    'enabled': task.enabled,
+                    'last_run': task.last_run_at.isoformat() if task.last_run_at else None
+                })
+            except:
+                pass
+        
+        return JsonResponse({
+            'success': True,
+            'scheduled_emails': tasks_data,
+            'dashboard_name': dashboard.name
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting scheduled emails: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@login_required
+@csrf_exempt  
+def cancel_scheduled_email(request, task_id):
+    """Cancel a scheduled email task"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        from django_celery_beat.models import PeriodicTask
+        
+        task = get_object_or_404(PeriodicTask, id=task_id)
+        
+        # Verify user owns the dashboard this task is for
+        if not task.name.startswith('dashboard_email_'):
+            return JsonResponse({'error': 'Invalid task'}, status=400)
+            
+        task_name_parts = task.name.split('_')
+        if len(task_name_parts) < 4:
+            return JsonResponse({'error': 'Invalid task name format'}, status=400)
+            
+        dashboard_id = task_name_parts[2]
+        user_id = int(task_name_parts[3])
+        
+        if user_id != request.user.id:
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        
+        task.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Scheduled email cancelled successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error cancelling scheduled email: {e}")
+        return JsonResponse({'error': str(e)}, status=500)

@@ -299,6 +299,153 @@ class EnhancedLLMService:
         if hasattr(self, 'conn'):
             self.conn.close()
 
+    def _get_enhanced_schema_context(self, data_source, schema_info=None):
+        """
+        Get enhanced schema context with data format information for better LLM understanding
+        """
+        if not data_source:
+            return "No data source available."
+        
+        try:
+            from datasets.models import SemanticTable, SemanticColumn
+            
+            context_parts = [
+                f"DATABASE: {data_source.name}",
+                f"SOURCE TYPE: {data_source.source_type}",
+                ""
+            ]
+            
+            # Get schema information
+            if schema_info and isinstance(schema_info, dict):
+                if 'columns' in schema_info:
+                    context_parts.append("COLUMNS AND DATA TYPES:")
+                    for col_info in schema_info['columns']:
+                        if isinstance(col_info, dict):
+                            col_name = col_info.get('name', 'Unknown')
+                            col_type = col_info.get('type', 'string')
+                            context_parts.append(f"  - \"{col_name}\" ({col_type})")
+                    context_parts.append("")
+            
+            # Add critical data format information
+            context_parts.extend([
+                "CRITICAL DATA FORMAT RULES:",
+                "1. DATE COLUMNS:",
+                "   - Stored as strings in DD-MM-YYYY format (e.g., '26-04-2015', '15-03-2016')",
+                "   - To filter by YEAR: use substr(\"Order_Date\", 7, 4) = '2015'",
+                "   - To filter by MONTH: use substr(\"Order_Date\", 4, 2) = '04'",
+                "   - To filter by DAY: use substr(\"Order_Date\", 1, 2) = '26'",
+                "   - Common date columns: Order_Date, Ship_Date, Created_Date",
+                "",
+                "2. COLUMN NAMING:",
+                "   - Column names with spaces must use double quotes: \"Customer Name\"",
+                "   - Underscore versions available: Customer_Name (no quotes needed)",
+                "   - Always prefer double-quoted space versions for clarity",
+                "",
+                "3. AGGREGATION RULES:",
+                "   - Use SUM() for sales, revenue, profit calculations",
+                "   - Use COUNT() for counting records",
+                "   - Use AVG() for average calculations",
+                "   - Always use GROUP BY with aggregations",
+                "",
+                "4. TOP N QUERIES:",
+                "   - Use ORDER BY with appropriate sorting (DESC for highest values)",
+                "   - Always include LIMIT clause: LIMIT 3, LIMIT 10, etc.",
+                "   - Example: ORDER BY SUM(\"Sales\") DESC LIMIT 3",
+                "",
+                "5. REGION/CATEGORY FILTERING:",
+                "   - Text values: 'South', 'North', 'East', 'West'",
+                "   - Use exact case matching or UPPER() for case-insensitive",
+                "   - Example: WHERE \"Region\" = 'South'",
+                ""
+            ])
+            
+            # Add semantic layer information if available
+            try:
+                semantic_tables = SemanticTable.objects.filter(data_source=data_source)
+                if semantic_tables.exists():
+                    context_parts.append("SEMANTIC LAYER INFORMATION:")
+                    for table in semantic_tables:
+                        context_parts.append(f"  Table: {table.table_name}")
+                        
+                        # Get semantic columns
+                        semantic_columns = SemanticColumn.objects.filter(semantic_table=table)
+                        if semantic_columns.exists():
+                            context_parts.append("  Columns:")
+                            for col in semantic_columns:
+                                col_type = col.semantic_type or 'dimension'
+                                business_name = col.business_name or col.column_name
+                                context_parts.append(f"    - {business_name} ({col_type})")
+                        context_parts.append("")
+            except Exception as semantic_error:
+                logger.debug(f"Could not load semantic information: {semantic_error}")
+            
+            # Add sample query patterns
+            context_parts.extend([
+                "SAMPLE QUERY PATTERNS:",
+                "• Top customers: SELECT \"Customer_Name\", SUM(\"Sales\") FROM table GROUP BY \"Customer_Name\" ORDER BY SUM(\"Sales\") DESC LIMIT 3",
+                "• Sales by year: SELECT substr(\"Order_Date\", 7, 4) as Year, SUM(\"Sales\") FROM table GROUP BY substr(\"Order_Date\", 7, 4)",
+                "• Regional analysis: SELECT \"Region\", SUM(\"Sales\") FROM table WHERE \"Region\" = 'South' GROUP BY \"Region\"",
+                "• Date filtering: SELECT * FROM table WHERE substr(\"Order_Date\", 7, 4) = '2015'",
+                ""
+            ])
+            
+            return "\n".join(context_parts)
+            
+        except Exception as e:
+            logger.error(f"Error generating enhanced schema context: {e}")
+            return f"Schema context error: {str(e)}"
+
+    def _get_sample_data_context(self, data_source, limit=3):
+        """
+        Get sample data to help LLM understand actual data patterns
+        """
+        try:
+            from services.data_service import DataService
+            data_service = DataService()
+            
+            # Get sample data
+            success, sample_df, error_msg = data_service.get_sample_data(data_source, limit=limit)
+            
+            if success and sample_df is not None and not sample_df.empty:
+                context_parts = [
+                    f"SAMPLE DATA ({limit} rows):",
+                    ""
+                ]
+                
+                # Add column headers
+                headers = " | ".join([f'"{col}"' for col in sample_df.columns])
+                context_parts.append(headers)
+                context_parts.append("-" * len(headers))
+                
+                # Add sample rows
+                for _, row in sample_df.head(limit).iterrows():
+                    row_data = " | ".join([str(val) if val is not None else 'NULL' for val in row.values])
+                    context_parts.append(row_data)
+                
+                context_parts.extend([
+                    "",
+                    "DATA PATTERNS OBSERVED:",
+                ])
+                
+                # Analyze patterns
+                for col in sample_df.columns:
+                    sample_values = sample_df[col].dropna().astype(str).head(3).tolist()
+                    if sample_values:
+                        if any(re.match(r'\d{2}-\d{2}-\d{4}', val) for val in sample_values):
+                            context_parts.append(f"• {col}: Date format DD-MM-YYYY detected")
+                        elif all(val.replace('.', '').replace('-', '').isdigit() for val in sample_values):
+                            context_parts.append(f"• {col}: Numeric values (use SUM/AVG for aggregation)")
+                        else:
+                            context_parts.append(f"• {col}: Text values (use for grouping/filtering)")
+                
+                return "\n".join(context_parts)
+            else:
+                return "SAMPLE DATA: Not available"
+                
+        except Exception as e:
+            logger.error(f"Error getting sample data context: {e}")
+            return f"SAMPLE DATA: Error loading ({str(e)})"
+
 def test_enhanced_llm_service():
     """Test the enhanced LLM service with various query types"""
     

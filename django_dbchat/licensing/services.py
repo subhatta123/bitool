@@ -347,6 +347,11 @@ def check_user_permission(user: User, permission: str) -> bool:
         bool: True if user has permission, False otherwise
     """
     try:
+        # CRITICAL FIX: Superusers bypass all license checks
+        if user.is_superuser:
+            logger.debug(f"Superuser {user.username} granted permission {permission}")
+            return True
+        
         license_info = get_user_license_info(user)
         
         if not license_info['has_license']:
@@ -374,6 +379,26 @@ def get_user_permissions(user: User) -> Dict[str, bool]:
         Dict[str, bool]: Dictionary of permissions
     """
     try:
+        # CRITICAL FIX: Superusers get all permissions
+        if user.is_superuser:
+            logger.debug(f"Superuser {user.username} granted all permissions")
+            return {
+                'can_query': True,
+                'can_view_dashboards': True,
+                'can_create_dashboards': True,
+                'can_upload_data': True,
+                'can_manage_data_sources': True,
+                'can_perform_etl': True,
+                'can_manage_semantic_layer': True,
+                'can_export_dashboards': True,
+                'can_share_dashboards': True,
+                'can_view_query_history': True,
+                'can_manage_account': True,
+                'can_change_llm_model': True,
+                'can_change_email_config': True,
+                'can_view_user_profile': True,
+            }
+        
         license_info = get_user_license_info(user)
         
         if not license_info['has_license'] or license_info['status'] != 'active':
